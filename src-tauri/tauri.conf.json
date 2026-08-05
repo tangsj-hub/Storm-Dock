@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Storm Dock",
+  "version": "0.1.0",
+  "identifier": "app.cc-login.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Storm Dock",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "width": 920,
+        "height": 640,
+        "minWidth": 820,
+        "minHeight": 540
+      }
+    ],
+    "security": { "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'" }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.icns"]
+  }
+}

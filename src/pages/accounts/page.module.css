@@ -1,0 +1,48 @@
+.shell { min-height: 100vh; padding: 56px 32px 24px; }
+.header { align-items: center; border-bottom: 1px solid #e1e5eb; display: grid; grid-template-columns: 1fr auto 1fr; min-height: 52px; padding-bottom: 18px; }
+.brand { align-items: center; display: flex; font-size: 17px; font-weight: 720; gap: 8px; }
+.brand svg { color: #377ef0; }
+.settingsButton { align-items: center; border-radius: 4px; color: #7b8693; display: inline-flex; height: 26px; justify-content: center; margin-left: 2px; width: 26px; }
+.settingsButton:hover { background: #e9edf2; color: #20242c; }
+.switcher [role="tablist"] { background: #e9edf2; border: 1px solid #dbe1e8; border-radius: 7px; display: flex; gap: 2px; padding: 3px; }
+.appTab { background: transparent; border: 0; border-radius: 4px; color: #68717d; font-size: 13px; font-weight: 600; line-height: 28px; padding: 0 14px; }
+.appTab[data-state="active"] { background: #fff; box-shadow: 0 1px 2px rgb(25 34 48 / 15%); color: #20242c; }
+.toolbar { align-items: center; display: flex; gap: 8px; justify-self: end; }
+.iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
+.iconButton:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
+.addButton { align-items: center; background: #286fdd; border: 1px solid #286fdd; border-radius: 5px; color: #fff; display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; }
+.addButton:hover { background: #1f60c6; }
+.addButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }
+.workspace { margin: 30px auto 0; max-width: 1060px; }
+.accountList { display: grid; gap: 8px; }
+.accountCard { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: grid; grid-template-columns: 28px 1fr auto; min-height: 72px; padding: 10px 14px; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.accountCard:hover { border-color: #b8c5d4; box-shadow: 0 2px 5px rgb(30 42 58 / 7%); }
+.current { background: #f7faff; border-color: #8bb6f5; box-shadow: inset 3px 0 #377ef0; }
+.dragging { box-shadow: 0 8px 20px rgb(30 42 58 / 18%); opacity: .78; }
+.dragHandle { color: #9aa5b1; cursor: grab; outline: none; touch-action: none; user-select: none; }
+.dragHandle:focus-visible { color: #377ef0; }
+.accountCopy strong { display: block; font-size: 14px; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accountCopy span { background: #f1f3f6; border: 1px solid #e0e5eb; border-radius: 3px; color: #66717d; display: inline-block; font-size: 10px; font-weight: 650; line-height: 17px; margin-top: 5px; padding: 0 5px; }
+.accountActions { align-items: center; display: flex; gap: 7px; }
+.currentBadge, .activate { align-items: center; border-radius: 4px; display: inline-flex; font-size: 12px; font-weight: 600; gap: 5px; justify-content: center; min-height: 30px; padding: 0 9px; }
+.currentBadge { background: #e6f0ff; color: #2464c3; }
+.activate { background: #fff; border: 1px solid #cdd6e0; color: #2c5d9b; }
+.progress { display: grid; gap: 5px; min-width: 170px; }
+.progress > span { color: #52606d; font-size: 11px; font-weight: 600; }
+.progressRoot { background: #e4eaf1; border-radius: 999px; height: 5px; overflow: hidden; }
+.progressIndicator, .progressError { display: block; height: 100%; transition: transform .2s ease; width: 100%; }
+.progressIndicator { background: #286fdd; }
+.progressError { background: #c43f3f; }
+.empty { align-items: center; background: #fff; border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
+.empty h2 { color: #343b45; font-size: 16px; margin: 14px 0 6px; }
+.empty p { font-size: 13px; }
+.toastViewport { bottom: 24px; display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }
+.dialogOverlay { background: rgb(20 29 40 / 42%); inset: 0; position: fixed; z-index: 30; }
+.dialogContent { background: #fff; border: 1px solid #dce3eb; border-radius: 7px; box-shadow: 0 18px 42px rgb(20 29 40 / 24%); left: 50%; max-width: 440px; padding: 24px; position: fixed; top: 50%; transform: translate(-50%, -50%); width: calc(100vw - 48px); z-index: 31; }
+.dialogContent h2 { font-size: 17px; margin: 0 0 9px; }
+.dialogContent [data-description] { color: #5f6b78; font-size: 13px; line-height: 1.55; }
+.dialogWarning { background: #fff7e6; border: 1px solid #f2d9a7; border-radius: 5px; color: #805d1a; font-size: 12px; line-height: 1.5; margin: 16px 0 20px; padding: 9px 10px; }
+.dialogActions { display: flex; gap: 8px; justify-content: flex-end; }
+.dialogCancel, .dialogConfirm { border-radius: 5px; font-size: 13px; font-weight: 650; min-height: 34px; padding: 0 12px; }
+.dialogCancel { background: #fff; border: 1px solid #ccd5df; color: #374151; }
+.dialogConfirm { background: #c43f3f; border: 1px solid #c43f3f; color: #fff; }

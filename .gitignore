@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+.build/
+.build-release/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# Logs and test output
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+coverage/
+
+# Editor and temporary files
+.idea/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,8 @@
+:root { background: #f6f7f9; color: #20242c; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 820px; }
+button, input, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .48; }
+button:focus-visible, textarea:focus-visible, a:focus-visible, [role="tab"]:focus-visible { outline: 2px solid #377ef0; outline-offset: 2px; }
+h1, h2, p { margin: 0; }

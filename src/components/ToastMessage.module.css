@@ -1,0 +1,5 @@
+.viewport { bottom: 24px; display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }
+.toast { animation: enter .18s ease-out; background: #202b38; border: 1px solid #344559; border-radius: 6px; box-shadow: 0 10px 24px rgb(20 29 40 / 18%); color: #fff; font-size: 13px; line-height: 1.4; padding: 11px 13px; }
+.toast[data-state="closed"] { animation: exit .15s ease-in; }
+@keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes exit { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(8px); } }

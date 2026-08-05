@@ -4,7 +4,7 @@
 .header h1 { font-size: 18px; font-weight: 720; }
 .back { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; font-size: 22px; height: 34px; justify-content: center; text-decoration: none; width: 34px; }
 .back:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
-.workspace { margin: 38px auto 0; max-width: 720px; }
+.workspace { display: grid; gap: 12px; margin: 38px auto 0; max-width: 720px; }
 .settingRow { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: flex; justify-content: space-between; min-height: 86px; padding: 18px 20px; }
 .settingCopy { align-items: center; display: flex; gap: 13px; }
 .icon { align-items: center; background: #e9f1ff; border-radius: 5px; color: #286fdd; display: inline-flex; height: 38px; justify-content: center; width: 38px; }
@@ -12,6 +12,9 @@
 .settingCopy p { color: #697482; font-size: 13px; }
 .languageTrigger { align-items: center; background: #fff; border: 1px solid #ccd5df; border-radius: 5px; color: #374151; display: inline-flex; font-size: 13px; font-weight: 600; gap: 22px; justify-content: space-between; min-height: 34px; min-width: 160px; padding: 0 10px 0 12px; }
 .languageTrigger:hover, .languageTrigger[data-state="open"] { border-color: #91a3b7; background: #f8fafc; }
+.databasePath { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.databaseButton { background: #fff; border: 1px solid #ccd5df; border-radius: 5px; color: #374151; font-size: 13px; font-weight: 600; min-height: 34px; padding: 0 12px; }
+.databaseButton:hover { background: #f8fafc; border-color: #91a3b7; }
 .languageTrigger:focus-visible { border-color: #91a3b7; outline: none; }
 .menu { background: #fff; border: 1px solid #d9e0e8; border-radius: 6px; box-shadow: 0 8px 20px rgb(30 42 58 / 14%); min-width: 160px; padding: 4px; }
 .menuItem { align-items: center; border-radius: 4px; color: #374151; cursor: pointer; display: flex; font-size: 13px; justify-content: space-between; outline: none; padding: 8px; }

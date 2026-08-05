@@ -3,38 +3,40 @@ import { initReactI18next } from "react-i18next";
 
 const resources = {
   zh: { translation: {
-    appName: "Storm Dock", settings: "设置", applications: "应用", refresh: "刷新本机状态", addAccount: "新增账户",
-    accounts: "账户管理", addAccountTitle: "新增账户", back: "返回账户列表",
+    appName: "Storm Dock", settings: "设置", applications: "应用", refresh: "刷新本机状态", refreshing: "正在刷新本机状态与订阅信息...", refreshed: "本机状态已刷新。", subscriptionsRefreshed: "本机状态与订阅信息已刷新。", subscriptionsRefreshIncomplete: "{{count}} 个账户未能刷新；凭证缺失的账户请重新导入。", addAccount: "新增账户",
+    accounts: "账户管理", addAccountTitle: "新增账户", back: "返回账户列表", close: "关闭", export: "导出", exported: "账户已导出。", exportTitle: "导出 JSON", exportDescription: "导出内容包含登录凭证和会话信息，请妥善保管。", copy: "复制", copied: "已复制", download: "下载",
     cursor: "Cursor", codex: "Codex", unsupportedTitle: "Codex 桌面端待支持", unsupportedDescription: "当前版本不会读取或改写 Codex 的登录数据。",
     emptyTitle: "还没有账户", emptyDescription: "使用右上角的新增按钮添加 Cursor 账户。",
-    current: "使用中", switch: "切换", retry: "重试", remove: "删除 {{account}}", drag: "拖动 {{account}}",
+    current: "使用中", switch: "切换", retry: "重试", remove: "删除 {{account}}", drag: "拖动 {{account}}", viewUsage: "查看 {{account}} 的用量", exportAccount: "导出 {{account}}",
+    usageTitle: "Cursor 用量", usageRefresh: "刷新用量", usageLoading: "正在查询 Cursor 用量...", usagePrimary: "套餐用量", usageOnDemand: "按需用量", usageReset: "重置日期", usageModels: "按模型请求数", usageWeekly: "近 7 天", usageWeeklyUnavailable: "近 7 天用量暂不可用。", usageNoModels: "未返回模型请求数据。", usageUnknown: "--", usageRequests: "请求", usageUnits: "加权单位", usageCheckedAt: "更新于 {{time}}", usageEmptyTitle: "暂无用量数据", usageEmptyDescription: "刷新后将在这里保存该账户的最近一次用量。",
     officialLogin: "官方登录", importCurrent: "导入当前账户", tokenImport: "Token / JSON",
     officialLoginTitle: "官方登录", officialLoginDescription: "在 Cursor 中完成授权后，可返回此处继续管理账号。", startLogin: "开始登录",
     importCurrentTitle: "导入当前账户", importCurrentDescription: "读取当前 Cursor 的登录账户并加入列表。", cursorNotReady: "Cursor 未就绪。",
     tokenImportTitle: "Token / JSON 导入", tokenImportDescription: "粘贴 Access Token、JWT 或导出的 Cursor 凭证。", credential: "凭证内容", cancel: "取消", import: "导入账户",
     imported: "已导入 {{account}}。", deleted: "账户已删除。Cursor 当前登录状态未被修改。", reordered: "账户顺序已更新。",
-    settingsTitle: "设置", language: "语言", languageDescription: "选择应用界面显示语言。", chinese: "简体中文", english: "English", languageSaved: "语言已切换为 {{language}}。",
+    settingsTitle: "设置", language: "语言", languageDescription: "选择应用界面显示语言。", chinese: "简体中文", english: "English", languageSaved: "语言已切换为 {{language}}。", database: "账户数据库", databaseLoading: "正在读取数据库位置...", databaseMove: "迁移到同步目录", databaseMoved: "账户数据库已迁移。", databaseChooseDirectory: "选择同步目录",
     switchProgress: "账号切换进度", cursorLaunched: "账号已切换，Cursor 已启动。", cursorRestarted: "账号已切换，Cursor 已重新启动。", restartRequired: "账号已切换。需要重启 Cursor 才生效。",
     restartDialogTitle: "Cursor 正在运行", restartDialogDescription: "当前 Cursor 仍在使用旧登录状态。确认后将强制结束并重新启动 Cursor。", restartDialogWarning: "强制终止会丢失 Cursor 中未保存的内容。", cancelCountdown: "取消 ({{seconds}})", forceRestart: "强制终止并启动",
     switchStages: { loading: "读取账户凭证", applying: "写入并验证 Cursor 会话", persisting: "保存账户状态", launching: "启动 Cursor", terminating: "正在结束 Cursor", restartRequired: "等待重启确认", complete: "切换完成", error: "切换失败" },
-    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "本机" }
+    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "本机" }, subscriptionPlans: { pro: "Pro", free: "Free" }, subscriptionDays: "{{count}}day", subscriptionUnknownExpiry: "--", subscriptionExpired: "已过期"
   }},
   en: { translation: {
-    appName: "Storm Dock", settings: "Settings", applications: "Applications", refresh: "Refresh local state", addAccount: "Add account",
-    accounts: "Account management", addAccountTitle: "Add account", back: "Back to accounts",
+    appName: "Storm Dock", settings: "Settings", applications: "Applications", refresh: "Refresh local state", refreshing: "Refreshing local state and subscription details...", refreshed: "Local state refreshed.", subscriptionsRefreshed: "Local state and subscription details refreshed.", subscriptionsRefreshIncomplete: "{{count}} accounts could not refresh. Re-import accounts with missing credentials.", addAccount: "Add account",
+    accounts: "Account management", addAccountTitle: "Add account", back: "Back to accounts", close: "Close", export: "Export", exported: "Accounts exported.", exportTitle: "Export JSON", exportDescription: "Exported data includes sign-in credentials and session information. Keep it secure.", copy: "Copy", copied: "Copied", download: "Download",
     cursor: "Cursor", codex: "Codex", unsupportedTitle: "Codex desktop support is coming", unsupportedDescription: "This version does not read or change Codex sign-in data.",
     emptyTitle: "No accounts yet", emptyDescription: "Use the Add account button to add a Cursor account.",
-    current: "Current", switch: "Switch", retry: "Retry", remove: "Delete {{account}}", drag: "Drag {{account}}",
+    current: "Current", switch: "Switch", retry: "Retry", remove: "Delete {{account}}", drag: "Drag {{account}}", viewUsage: "View usage for {{account}}", exportAccount: "Export {{account}}",
+    usageTitle: "Cursor usage", usageRefresh: "Refresh usage", usageLoading: "Fetching Cursor usage...", usagePrimary: "Plan usage", usageOnDemand: "On-demand usage", usageReset: "Reset date", usageModels: "Requests by model", usageWeekly: "Last 7 days", usageWeeklyUnavailable: "Last 7 days usage is unavailable.", usageNoModels: "No model request data was returned.", usageUnknown: "--", usageRequests: "requests", usageUnits: "weighted units", usageCheckedAt: "Updated {{time}}", usageEmptyTitle: "No usage data yet", usageEmptyDescription: "Refresh to save the latest usage for this account here.",
     officialLogin: "Official login", importCurrent: "Import current account", tokenImport: "Token / JSON",
     officialLoginTitle: "Official login", officialLoginDescription: "Complete authorization in Cursor, then return here to manage the account.", startLogin: "Start login",
     importCurrentTitle: "Import current account", importCurrentDescription: "Read the active Cursor account and add it to the list.", cursorNotReady: "Cursor is not ready.",
     tokenImportTitle: "Import Token / JSON", tokenImportDescription: "Paste an access token, JWT, or exported Cursor credential.", credential: "Credential", cancel: "Cancel", import: "Import account",
     imported: "Imported {{account}}.", deleted: "Account deleted. Cursor's active sign-in state was not changed.", reordered: "Account order updated.",
-    settingsTitle: "Settings", language: "Language", languageDescription: "Choose the display language for the application.", chinese: "Simplified Chinese", english: "English", languageSaved: "Language changed to {{language}}.",
+    settingsTitle: "Settings", language: "Language", languageDescription: "Choose the display language for the application.", chinese: "Simplified Chinese", english: "English", languageSaved: "Language changed to {{language}}.", database: "Account database", databaseLoading: "Reading database location...", databaseMove: "Move to sync folder", databaseMoved: "Account database moved.", databaseChooseDirectory: "Choose sync folder",
     switchProgress: "Account switch progress", cursorLaunched: "Account switched and Cursor started.", cursorRestarted: "Account switched and Cursor restarted.", restartRequired: "Account switched. Restart Cursor for the change to take effect.",
     restartDialogTitle: "Cursor is running", restartDialogDescription: "Cursor is still using the previous sign-in state. Confirm to force quit and restart it.", restartDialogWarning: "Force quitting may lose unsaved work in Cursor.", cancelCountdown: "Cancel ({{seconds}})", forceRestart: "Force quit and start",
     switchStages: { loading: "Reading account credentials", applying: "Writing and verifying the Cursor session", persisting: "Saving account state", launching: "Starting Cursor", terminating: "Quitting Cursor", restartRequired: "Waiting for restart confirmation", complete: "Switch complete", error: "Switch failed" },
-    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "Native" }
+    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "Native" }, subscriptionPlans: { pro: "Pro", free: "Free" }, subscriptionDays_one: "{{count}} day", subscriptionDays_other: "{{count}} days", subscriptionUnknownExpiry: "--", subscriptionExpired: "Expired"
   }}
 };
 

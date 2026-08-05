@@ -10,12 +10,13 @@
 .toolbar { align-items: center; display: flex; gap: 8px; justify-self: end; }
 .iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
 .iconButton:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
+.spinning { animation: spin .8s linear infinite; }
 .addButton { align-items: center; background: #286fdd; border: 1px solid #286fdd; border-radius: 5px; color: #fff; display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; }
 .addButton:hover { background: #1f60c6; }
 .addButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }
 .workspace { margin: 30px auto 0; max-width: 1060px; }
 .accountList { display: grid; gap: 8px; }
-.accountCard { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: grid; grid-template-columns: 28px 1fr auto; min-height: 72px; padding: 10px 14px; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.accountCard { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: grid; grid-template-columns: 28px 1fr auto; min-height: 72px; padding: 10px 14px; transition: border-color .15s, box-shadow .15s; }
 .accountCard:hover { border-color: #b8c5d4; box-shadow: 0 2px 5px rgb(30 42 58 / 7%); }
 .current { background: #f7faff; border-color: #8bb6f5; box-shadow: inset 3px 0 #377ef0; }
 .dragging { box-shadow: 0 8px 20px rgb(30 42 58 / 18%); opacity: .78; }
@@ -46,3 +47,4 @@
 .dialogCancel, .dialogConfirm { border-radius: 5px; font-size: 13px; font-weight: 650; min-height: 34px; padding: 0 12px; }
 .dialogCancel { background: #fff; border: 1px solid #ccd5df; color: #374151; }
 .dialogConfirm { background: #c43f3f; border: 1px solid #c43f3f; color: #fff; }
+@keyframes spin { to { transform: rotate(360deg); } }

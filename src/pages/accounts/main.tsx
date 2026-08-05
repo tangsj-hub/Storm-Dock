@@ -5,12 +5,15 @@ import { CSS } from "@dnd-kit/utilities";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Progress from "@radix-ui/react-progress";
 import * as Tabs from "@radix-ui/react-tabs";
-import { Check, GripVertical, KeyRound, LogIn, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from "lucide-react";
+import { Check, ChartNoAxesCombined, Download, FileOutput, GripVertical, KeyRound, LogIn, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
+import { ExportDialog } from "../../components/ExportDialog";
+import { Tooltip } from "../../components/Tooltip";
 import "../../i18n";
 import { listAccounts, listApplications } from "../../lib/api";
 import { type Account, type ApplicationKind, type ApplicationStatus } from "../../lib/types";
@@ -27,16 +30,28 @@ type SwitchProgress = {
 
 type SwitchOutcome = { restartRequired: boolean };
 
-function SortableAccount({ account, busy, onRemove, onSwitch, progress }: { account: Account; busy: boolean; onRemove: (account: Account) => void; onSwitch: (account: Account) => void; progress?: SwitchProgress }) {
+function subscriptionLabel(account: Account, t: (key: string, options?: Record<string, unknown>) => string) {
+  const plan = account.subscription.plan;
+  if (!plan) return undefined;
+  const name = t(`subscriptionPlans.${plan.toLowerCase()}`, { defaultValue: plan });
+  if (!account.subscription.expiresAt) return `${name} ${t("subscriptionUnknownExpiry")}`;
+  const days = account.daysRemaining;
+  if (days === undefined) return `${name} ${t("subscriptionUnknownExpiry")}`;
+  return days > 0 ? `${name} ${t("subscriptionDays", { count: days })}` : `${name} ${t("subscriptionExpired")}`;
+}
+
+function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress }: { account: Account; busy: boolean; onExport: (account: Account) => void; onRemove: (account: Account) => void; onSwitch: (account: Account) => void; progress?: SwitchProgress }) {
   const { t } = useTranslation();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: account.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
   return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical className={styles.dragHandle} aria-label={t("drag", { account: account.label })} size={24} {...attributes} {...listeners} />
-    <div className={styles.accountCopy}><strong>{account.label}</strong><span>{t(`importTypes.${account.importType}`)}</span></div>
+    <div className={styles.accountCopy}><strong>{account.label}</strong>{subscriptionLabel(account, t) && <span>{subscriptionLabel(account, t)}</span>}</div>
     <div className={styles.accountActions}>
       {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button>}
       {progress?.status === "error" && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
-      <button className={styles.iconButton} disabled={busy} onClick={() => onRemove(account)} title={t("remove", { account: account.label })} type="button"><Trash2 aria-hidden="true" size={19} /></button>
+      <Tooltip content={t("viewUsage", { account: account.label })}><a aria-label={t("viewUsage", { account: account.label })} className={styles.iconButton} href={`/usage.html?accountId=${encodeURIComponent(account.id)}`}><ChartNoAxesCombined aria-hidden="true" size={18} /></a></Tooltip>
+      <Tooltip content={t("exportAccount", { account: account.label })}><button aria-label={t("exportAccount", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onExport(account)} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>
+      <Tooltip content={t("remove", { account: account.label })}><button aria-label={t("remove", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onRemove(account)} type="button"><Trash2 aria-hidden="true" size={19} /></button></Tooltip>
     </div>
   </article>;
 }
@@ -47,17 +62,23 @@ function AccountsPage() {
   const [selected, setSelected] = useState<ApplicationKind>("cursor");
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [notice, setNotice] = useState(() => new URLSearchParams(window.location.search).get("notice") ?? undefined);
   const [switchProgress, setSwitchProgress] = useState<SwitchProgress>();
   const [restartDialog, setRestartDialog] = useState<{ account: Account; operationId: string }>();
+  const [exportData, setExportData] = useState<unknown>();
+  const [exportTarget, setExportTarget] = useState<Account>();
   const [countdown, setCountdown] = useState(10);
   const activeOperationId = useRef<string | undefined>(undefined);
-  const sensors = useSensors(useSensor(PointerSensor), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const latestLoad = useRef(0);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const isCursor = selected === "cursor";
-
   const showError = (error: unknown) => setNotice(error instanceof Error ? error.message : String(error));
   const load = async () => {
+    const request = ++latestLoad.current;
     const [nextApplications, nextAccounts] = await Promise.all([listApplications(), listAccounts(selected)]);
+    if (request !== latestLoad.current) return;
     setApplications(nextApplications);
     setAccounts(nextAccounts);
   };
@@ -144,6 +165,17 @@ function AccountsPage() {
     return () => window.clearInterval(timer);
   }, [restartDialog?.operationId]);
   const remove = (account: Account) => act(async () => { const { invoke } = await import("@tauri-apps/api/core"); await invoke("delete_account", { id: account.id }); setNotice(t("deleted")); });
+  const refresh = async () => {
+    setBusy(true);
+    setRefreshing(true);
+    setRefreshFailed(false);
+    setNotice(t("refreshing"));
+    let failed = 0;
+    if (isCursor) for (const account of accounts) {
+      try { await invoke("refresh_account_subscription", { id: account.id }); } catch { failed += 1; }
+    }
+    try { await load(); setNotice(t(failed ? "subscriptionsRefreshIncomplete" : accounts.length && isCursor ? "subscriptionsRefreshed" : "refreshed", { count: failed })); } catch (error) { setRefreshFailed(true); showError(error); } finally { setBusy(false); setRefreshing(false); }
+  };
   const reorder = async (activeId: string, targetId?: string) => {
     (document.activeElement as HTMLElement | null)?.blur();
     if (!targetId || activeId === targetId) return;
@@ -154,22 +186,32 @@ function AccountsPage() {
     setAccounts(next);
     if (await act(async () => { const { invoke } = await import("@tauri-apps/api/core"); await invoke("reorder_accounts", { kind: selected, ids: next.map((account) => account.id) }); })) setNotice(t("reordered"));
   };
+  const exportAccounts = async () => {
+    const file = await save({ defaultPath: `${selected}-accounts.json`, filters: [{ name: "JSON", extensions: ["json"] }], title: t("exportTitle") });
+    if (!file) return;
+    if (await act(async () => { await invoke("export_cursor_accounts", { file }); })) setNotice(t("exported"));
+  };
+  const openAccountExport = async (account: Account) => {
+    try { setExportData(await invoke<unknown>("get_cursor_export_record", { id: account.id })); setExportTarget(account); }
+    catch (error) { showError(error); }
+  };
 
   return <Toast.Provider><main className={styles.shell}>
     <header className={styles.header}>
-      <div className={styles.brand}><ShieldCheck aria-hidden="true" size={19} /><span>{t("appName")}</span><a className={styles.settingsButton} href="/settings.html" title={t("settings")}><Settings aria-hidden="true" size={16} /></a></div>
+      <div className={styles.brand}><ShieldCheck aria-hidden="true" size={19} /><span>{t("appName")}</span><Tooltip content={t("settings")}><a aria-label={t("settings")} className={styles.settingsButton} href="/settings.html"><Settings aria-hidden="true" size={16} /></a></Tooltip></div>
       <Tabs.Root className={styles.switcher} onValueChange={(value) => setSelected(value as ApplicationKind)} value={selected}><Tabs.List aria-label={t("applications")}>
         {(["cursor", "codex"] as const).map((kind) => <Tabs.Trigger className={styles.appTab} key={kind} value={kind}>{applications.find((app) => app.kind === kind)?.label ?? t(kind)}</Tabs.Trigger>)}
       </Tabs.List></Tabs.Root>
-      <div className={styles.toolbar}><button className={styles.iconButton} disabled={busy} onClick={() => void load().catch(showError)} title={t("refresh")} type="button"><RefreshCw aria-hidden="true" size={19} /></button><a aria-disabled={busy || !isCursor} className={styles.addButton} href={busy || !isCursor ? undefined : "/add.html"}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a></div>
+      <div className={styles.toolbar}><Tooltip content={t("export")}><button aria-label={t("export")} className={styles.iconButton} disabled={busy || !isCursor || !accounts.length} onClick={() => void exportAccounts()} type="button"><Download aria-hidden="true" size={19} /></button></Tooltip><Tooltip content={t("refresh")}><button aria-label={t("refresh")} className={styles.iconButton} disabled={busy} onClick={() => void refresh()} type="button"><RefreshCw aria-hidden="true" className={refreshing ? styles.spinning : undefined} size={19} /></button></Tooltip><a aria-disabled={busy || !isCursor} className={styles.addButton} href={busy || !isCursor ? undefined : "/add.html"}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a></div>
     </header>
     <section className={styles.workspace}>
       {selected === "codex" ? <div className={styles.empty}><h2>{t("unsupportedTitle")}</h2><p>{t("unsupportedDescription")}</p></div> : accounts.length === 0 ? <div className={styles.empty}><KeyRound aria-hidden="true" size={32} /><h2>{t("emptyTitle")}</h2><p>{t("emptyDescription")}</p></div> :
-        <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => void reorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount account={account} busy={busy} key={account.id} onRemove={remove} onSwitch={switchTo} progress={switchProgress?.accountId === account.id ? switchProgress : undefined} />)}</div></SortableContext></DndContext>}
+        <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => void reorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount account={account} busy={busy} key={account.id} onExport={(account) => void openAccountExport(account)} onRemove={remove} onSwitch={switchTo} progress={switchProgress?.accountId === account.id ? switchProgress : undefined} />)}</div></SortableContext></DndContext>}
     </section>
   </main>
   <AlertDialog.Root onOpenChange={(open) => { if (!open && restartDialog) cancelRestart(); }} open={Boolean(restartDialog)}><AlertDialog.Portal><AlertDialog.Overlay className={styles.dialogOverlay} /><AlertDialog.Content className={styles.dialogContent}><AlertDialog.Title>{t("restartDialogTitle")}</AlertDialog.Title><AlertDialog.Description>{t("restartDialogDescription")}</AlertDialog.Description><p className={styles.dialogWarning}>{t("restartDialogWarning")}</p><div className={styles.dialogActions}><AlertDialog.Cancel asChild><button autoFocus className={styles.dialogCancel} onClick={cancelRestart} type="button">{t("cancelCountdown", { seconds: countdown })}</button></AlertDialog.Cancel><button className={styles.dialogConfirm} onClick={() => void forceRestart()} type="button">{t("forceRestart")}</button></div></AlertDialog.Content></AlertDialog.Portal></AlertDialog.Root>
-  <ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
+  {exportTarget && exportData !== undefined && <ExportDialog data={[exportData]} filename={`cursor-account-${exportTarget.id}.json`} onOpenChange={(open) => { if (!open) setExportTarget(undefined); }} open />}
+  <ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} status={refreshing ? "loading" : refreshFailed ? "error" : "success"} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
 }
 
 createRoot(document.getElementById("root")!).render(<AccountsPage />);

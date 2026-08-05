@@ -1,5 +1,11 @@
 .viewport { bottom: 24px; display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }
-.toast { animation: enter .18s ease-out; background: #202b38; border: 1px solid #344559; border-radius: 6px; box-shadow: 0 10px 24px rgb(20 29 40 / 18%); color: #fff; font-size: 13px; line-height: 1.4; padding: 11px 13px; }
+.toast { align-items: center; animation: enter .18s ease-out; background: #202b38; border: 1px solid #344559; border-radius: 6px; box-shadow: 0 10px 24px rgb(20 29 40 / 18%); color: #fff; display: flex; font-size: 13px; gap: 8px; line-height: 1.4; padding: 11px 13px; }
+.success svg { color: #74d39a; }
+.error { background: #482a2d; border-color: #80434b; }
+.error svg { color: #ff9a9a; }
+.loading svg { color: #9fc3ff; }
+.spinning { animation: spin .8s linear infinite; }
 .toast[data-state="closed"] { animation: exit .15s ease-in; }
 @keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes exit { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(8px); } }
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -13,8 +13,9 @@ Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个
 
 ## 数据与安全
 
-- 账号标签、排序和使用时间保存于应用数据目录的 `accounts.json`。
-- 会话凭证仅保存于 macOS Keychain 或 Windows Credential Manager，不会写入 `accounts.json`、发送到前端或记录到日志。
+- 账号数据和完整会话保存在本地 SQLite 数据库 `storm-dock.db`；默认位于应用数据目录，可在设置中迁移到 Dropbox、OneDrive、iCloud、WebDAV 挂载目录等同步目录。
+- 数据库会话不会发送到前端、导出 JSON 或记录到日志。同步目录中的数据库为明文，访问权限由同步服务和用户负责。
+- 同步目录只支持设备间串行写入：切换设备前关闭另一台设备上的 Storm Dock 并等待同步完成。
 - 切换 Cursor 前会备份当前会话；写入后会验证结果，验证失败即尝试恢复原会话。
 - 只处理已识别的 Cursor 本地数据结构；未知结构会被拒绝。
 - “官方登录”只启动 Cursor 完成其官方授权流程，Storm Dock 不接收 OAuth 回调或网页登录凭证。
@@ -23,7 +24,7 @@ Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个
 
 - Tauri v2 / Rust
 - React / TypeScript / Vite
-- macOS Keychain 与 Windows Credential Manager
+- SQLite（单文件同步模式）
 
 ## 开发
 

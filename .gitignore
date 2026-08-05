@@ -31,3 +31,6 @@ coverage/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Other files
+CursorMeter/

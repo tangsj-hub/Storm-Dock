@@ -1,44 +1,47 @@
-# Plat. Dock
+# Storm Dock
 
-跨平台本地账户切换器，使用 Tauri v2、Rust、React 和 TypeScript 构建。
+Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个账号，并在需要时切换本机登录状态。当前支持 Cursor，Codex 桌面端已列入管理入口，认证数据支持仍在开发中。
 
-## 支持状态
+## 功能状态
 
-| 应用 | 状态 |
-| --- | --- |
-| Cursor | 支持官方登录接力、本机登录态、Access Token 与兼容导出 JSON 导入，以及账号切换。只识别 `state.vscdb` 的已验证结构。 |
-| Codex 桌面端 | 待支持；当前版本不读取或写入其认证数据。 |
+| 平台 | 状态 | 能力 |
+| --- | --- | --- |
+| Cursor | 已支持 | 官方登录接力、导入当前登录账户、Access Token / JSON 导入、账号排序与切换 |
+| Codex 桌面端 | 开发中 | 当前不会读取、写入或导入 Codex 登录数据 |
 
-支持 macOS 与 Windows。切换只修改目标应用本地登录态；若应用正在运行，需完全退出后重新启动才会生效。
+支持 macOS 和 Windows。Cursor 切换会更新该应用的本地登录状态；若 Cursor 正在运行，Storm Dock 会要求确认后才强制重启，避免未保存内容丢失。
 
-## 安全模型
+## 数据与安全
 
-- 账户名称和时间戳保存在应用数据目录的 `accounts.json`。
-- Cursor 会话只保存在 macOS Keychain 或 Windows Credential Manager；不会传给 React、写入元数据或日志。
-- 写入 Cursor 前读取原始会话；写后验证失败会立即恢复此前会话。
-- 未识别的 Cursor 数据库结构会被拒绝，不执行写入。
-- “官方登录”只启动 Cursor 官方界面完成 OAuth，Plat. Dock 不冒充 OAuth 客户端，也不接收网页登录回调。
+- 账号标签、排序和使用时间保存于应用数据目录的 `accounts.json`。
+- 会话凭证仅保存于 macOS Keychain 或 Windows Credential Manager，不会写入 `accounts.json`、发送到前端或记录到日志。
+- 切换 Cursor 前会备份当前会话；写入后会验证结果，验证失败即尝试恢复原会话。
+- 只处理已识别的 Cursor 本地数据结构；未知结构会被拒绝。
+- “官方登录”只启动 Cursor 完成其官方授权流程，Storm Dock 不接收 OAuth 回调或网页登录凭证。
+
+## 技术栈
+
+- Tauri v2 / Rust
+- React / TypeScript / Vite
+- macOS Keychain 与 Windows Credential Manager
 
 ## 开发
 
-前置条件：Node.js 20+、Rust stable，以及对应平台的 Tauri 系统依赖。
+前置条件：Node.js 20+、Rust stable，以及目标平台所需的 Tauri 系统依赖。
 
 ```bash
 npm install
 npm run tauri dev
 ```
 
-生产构建：
+`npm run dev` 仅启动 Vite 前端；本地桌面功能请使用 `npm run tauri dev`。
 
-```bash
-npm run tauri build
-```
-
-## 验证
+## 构建与验证
 
 ```bash
 npm run build
 cargo test --manifest-path src-tauri/Cargo.toml
+npm run tauri build
 ```
 
-发布前须在 macOS 与 Windows 分别使用两个自有 Cursor 账号完成导入、A/B 切换、应用重启后的身份验证，以及无权限和验证失败时的恢复测试。
+发布前应在 macOS 与 Windows 上使用自有 Cursor 账号验证：导入、账号切换、重启后的身份状态，以及写入验证失败时的恢复行为。

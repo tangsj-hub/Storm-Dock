@@ -1,8 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Storm Dock",
+  "mainBinaryName": "Storm Dock",
   "version": "0.1.0",
-  "identifier": "app.cc-login.desktop",
+  "identifier": "app.storm-dock.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build",
@@ -27,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.icns"]
+    "icon": ["icons/icon.icns"],
+    "macOS": { "bundleName": "Storm Dock" }
   }
 }

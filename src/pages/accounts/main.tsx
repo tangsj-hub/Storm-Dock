@@ -14,6 +14,8 @@ import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { ExportDialog } from "../../components/ExportDialog";
 import { Tooltip } from "../../components/Tooltip";
+import codexIcon from "../../assets/codex.svg";
+import cursorIcon from "../../assets/cursor.svg";
 import "../../i18n";
 import { listAccounts, listApplications } from "../../lib/api";
 import { type Account, type ApplicationKind, type ApplicationStatus } from "../../lib/types";
@@ -49,9 +51,9 @@ function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress
     <div className={styles.accountActions}>
       {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button>}
       {progress?.status === "error" && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
-      <Tooltip content={t("viewUsage", { account: account.label })}><a aria-label={t("viewUsage", { account: account.label })} className={styles.iconButton} href={`/usage.html?accountId=${encodeURIComponent(account.id)}`}><ChartNoAxesCombined aria-hidden="true" size={18} /></a></Tooltip>
-      <Tooltip content={t("exportAccount", { account: account.label })}><button aria-label={t("exportAccount", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onExport(account)} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>
-      <Tooltip content={t("remove", { account: account.label })}><button aria-label={t("remove", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onRemove(account)} type="button"><Trash2 aria-hidden="true" size={19} /></button></Tooltip>
+      <Tooltip content={t("usage")}><a aria-label={t("viewUsage", { account: account.label })} className={styles.iconButton} href={`/usage.html?accountId=${encodeURIComponent(account.id)}`}><ChartNoAxesCombined aria-hidden="true" size={18} /></a></Tooltip>
+      <Tooltip content={t("export")}><button aria-label={t("exportAccount", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onExport(account)} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>
+      <Tooltip content={t("delete")}><button aria-label={t("remove", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onRemove(account)} type="button"><Trash2 aria-hidden="true" size={19} /></button></Tooltip>
     </div>
   </article>;
 }
@@ -200,7 +202,7 @@ function AccountsPage() {
     <header className={styles.header}>
       <div className={styles.brand}><ShieldCheck aria-hidden="true" size={19} /><span>{t("appName")}</span><Tooltip content={t("settings")}><a aria-label={t("settings")} className={styles.settingsButton} href="/settings.html"><Settings aria-hidden="true" size={16} /></a></Tooltip></div>
       <Tabs.Root className={styles.switcher} onValueChange={(value) => setSelected(value as ApplicationKind)} value={selected}><Tabs.List aria-label={t("applications")}>
-        {(["cursor", "codex"] as const).map((kind) => <Tabs.Trigger className={styles.appTab} key={kind} value={kind}>{applications.find((app) => app.kind === kind)?.label ?? t(kind)}</Tabs.Trigger>)}
+        {(["cursor", "codex"] as const).map((kind) => <Tabs.Trigger className={styles.appTab} key={kind} value={kind}><img alt="" src={kind === "cursor" ? cursorIcon : codexIcon} />{applications.find((app) => app.kind === kind)?.label ?? t(kind)}</Tabs.Trigger>)}
       </Tabs.List></Tabs.Root>
       <div className={styles.toolbar}><Tooltip content={t("export")}><button aria-label={t("export")} className={styles.iconButton} disabled={busy || !isCursor || !accounts.length} onClick={() => void exportAccounts()} type="button"><Download aria-hidden="true" size={19} /></button></Tooltip><Tooltip content={t("refresh")}><button aria-label={t("refresh")} className={styles.iconButton} disabled={busy} onClick={() => void refresh()} type="button"><RefreshCw aria-hidden="true" className={refreshing ? styles.spinning : undefined} size={19} /></button></Tooltip><a aria-disabled={busy || !isCursor} className={styles.addButton} href={busy || !isCursor ? undefined : "/add.html"}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a></div>
     </header>

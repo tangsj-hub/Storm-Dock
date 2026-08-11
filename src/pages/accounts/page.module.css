@@ -1,11 +1,12 @@
-.shell { min-height: 100vh; padding: 56px 32px 24px; }
+.shell { min-height: 100vh; padding: var(--page-shell-padding); }
 .header { align-items: center; border-bottom: 1px solid #e1e5eb; display: grid; grid-template-columns: 1fr auto 1fr; min-height: 52px; padding-bottom: 18px; }
 .brand { align-items: center; display: flex; font-size: 17px; font-weight: 720; gap: 8px; }
 .brand svg { color: #377ef0; }
 .settingsButton { align-items: center; border-radius: 4px; color: #7b8693; display: inline-flex; height: 26px; justify-content: center; margin-left: 2px; width: 26px; }
 .settingsButton:hover { background: #e9edf2; color: #20242c; }
 .switcher [role="tablist"] { background: #e9edf2; border: 1px solid #dbe1e8; border-radius: 7px; display: flex; gap: 2px; padding: 3px; }
-.appTab { background: transparent; border: 0; border-radius: 4px; color: #68717d; font-size: 13px; font-weight: 600; line-height: 28px; padding: 0 14px; }
+.appTab { align-items: center; background: transparent; border: 0; border-radius: 4px; color: #68717d; display: inline-flex; font-size: 13px; font-weight: 600; gap: 6px; line-height: 28px; padding: 0 14px; }
+.appTab img { height: 15px; width: 15px; }
 .appTab[data-state="active"] { background: #fff; box-shadow: 0 1px 2px rgb(25 34 48 / 15%); color: #20242c; }
 .toolbar { align-items: center; display: flex; gap: 8px; justify-self: end; }
 .iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
@@ -14,11 +15,11 @@
 .addButton { align-items: center; background: #286fdd; border: 1px solid #286fdd; border-radius: 5px; color: #fff; display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; }
 .addButton:hover { background: #1f60c6; }
 .addButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }
-.workspace { margin: 30px auto 0; max-width: 1060px; }
+.workspace { margin: 30px auto 0; max-width: var(--page-content-width); }
 .accountList { display: grid; gap: 8px; }
 .accountCard { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: grid; grid-template-columns: 28px 1fr auto; min-height: 72px; padding: 10px 14px; transition: border-color .15s, box-shadow .15s; }
 .accountCard:hover { border-color: #b8c5d4; box-shadow: 0 2px 5px rgb(30 42 58 / 7%); }
-.current { background: #f7faff; border-color: #8bb6f5; box-shadow: inset 3px 0 #377ef0; }
+.current { background: #f7faff; border-color: #8bb6f5; }
 .dragging { box-shadow: 0 8px 20px rgb(30 42 58 / 18%); opacity: .78; }
 .dragHandle { color: #9aa5b1; cursor: grab; outline: none; touch-action: none; user-select: none; }
 .dragHandle:focus-visible { color: #377ef0; }

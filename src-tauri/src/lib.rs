@@ -18,7 +18,6 @@ use time::{Date, Duration as TimeDuration, OffsetDateTime};
 
 const DATABASE_NAME: &str = "storm-dock.db";
 const DATABASE_PATH_FILE: &str = "database-path.txt";
-const LEGACY_SECRET_SERVICE: &str = "app.cc-login.desktop";
 const CURSOR_KEYS: [&str; 7] = [
     "cursorAuth/accessToken",
     "cursorAuth/refreshToken",
@@ -812,7 +811,7 @@ impl CursorAdapter {
         Ok(db)
     }
 
-    fn read_session(&self, db: &Connection) -> Result<Session> {
+    fn read_session_unchecked(&self, db: &Connection) -> Result<Session> {
         let mut values = BTreeMap::new();
         for key in CURSOR_KEYS {
             let value = db.query_row(
@@ -828,18 +827,20 @@ impl CursorAdapter {
                 Err(error) => return Err(error.into()),
             }
         }
-        if !values.contains_key(ACCESS_TOKEN_KEY) {
+        Ok(Session { values, raw_export: None })
+    }
+
+    fn read_session(&self, db: &Connection) -> Result<Session> {
+        let session = self.read_session_unchecked(db)?;
+        if !session.values.contains_key(ACCESS_TOKEN_KEY) {
             return Err(AppError::UnsupportedCursor(
                 "access token is missing".into(),
             ));
         }
-        Ok(Session { values, raw_export: None })
+        Ok(session)
     }
 
     fn write_session(&self, db: &mut Connection, session: &Session) -> Result<()> {
-        if !session.values.contains_key(ACCESS_TOKEN_KEY) {
-            return Err(AppError::SecretMissing);
-        }
         let transaction = db.transaction()?;
         for key in CURSOR_KEYS {
             if let Some(value) = session.values.get(key) {
@@ -905,8 +906,11 @@ impl ApplicationAdapter for CursorAdapter {
     }
 
     fn apply(&self, session: &Session) -> Result<()> {
+        if !session.values.contains_key(ACCESS_TOKEN_KEY) {
+            return Err(AppError::SecretMissing);
+        }
         let mut db = self.open()?;
-        let before = self.read_session(&db)?;
+        let before = self.read_session_unchecked(&db)?;
         self.write_session(&mut db, session)?;
         let verified = self
             .read_session(&db)
@@ -989,11 +993,7 @@ impl Controller {
             .map(|value| PathBuf::from(value.trim()))
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| data_dir.join(DATABASE_NAME));
-        let created = !database_path.exists();
         let database = Self::open_database(&database_path)?;
-        if created {
-            Self::discard_legacy_storage(&data_dir);
-        }
         let mut controller = Self {
             pointer_file,
             database_path,
@@ -1040,22 +1040,6 @@ impl Controller {
             database.execute("ALTER TABLE accounts ADD COLUMN raw_export_json TEXT", [])?;
         }
         Ok(database)
-    }
-
-    fn discard_legacy_storage(data_dir: &std::path::Path) {
-        let file = data_dir.join("accounts.json");
-        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&fs::read(&file).unwrap_or_default()) {
-            for account in value.get("accounts").and_then(serde_json::Value::as_array).into_iter().flatten() {
-                let Some(id) = account.get("id").and_then(serde_json::Value::as_str) else { continue; };
-                let kind = match account.get("application").and_then(serde_json::Value::as_str).map(str::to_ascii_lowercase).as_deref() {
-                    Some("cursor") => "Cursor", Some("codex") => "Codex", _ => continue,
-                };
-                if let Ok(entry) = keyring::Entry::new(LEGACY_SECRET_SERVICE, &format!("{kind}:{id}")) {
-                    let _ = entry.delete_credential();
-                }
-            }
-        }
-        let _ = fs::remove_file(file);
     }
 
     fn kind_value(kind: ApplicationKind) -> &'static str {
@@ -1849,7 +1833,7 @@ pub fn run() {
             force_restart_cursor
         ])
         .run(tauri::generate_context!())
-        .expect("error while running cc-login");
+        .expect("error while running storm-dock");
 }
 
 #[cfg(test)]
@@ -1861,7 +1845,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = env::temp_dir().join(format!("cc-login-test-{nonce}.vscdb"));
+        let path = env::temp_dir().join(format!("storm-dock-test-{nonce}.vscdb"));
         let _ = fs::remove_file(&path);
         let db = Connection::open(&path).unwrap();
         db.execute(
@@ -2024,7 +2008,7 @@ mod tests {
 
     #[test]
     fn account_summaries_do_not_include_session_values() {
-        let data_dir = env::temp_dir().join(format!("cc-login-summary-{}", now()));
+        let data_dir = env::temp_dir().join(format!("storm-dock-summary-{}", now()));
         let mut controller = Controller::new(data_dir.clone()).unwrap();
         let session = Session { values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "secret-token".into())]), raw_export: None };
         controller.save_imported_session(ApplicationKind::Cursor, Some("Test".into()), session, ImportType::Token).unwrap();
@@ -2057,7 +2041,7 @@ mod tests {
 
     #[test]
     fn account_order_is_preserved() {
-        let data_dir = env::temp_dir().join(format!("cc-login-order-{}", now()));
+        let data_dir = env::temp_dir().join(format!("storm-dock-order-{}", now()));
         let mut controller = Controller::new(data_dir.clone()).unwrap();
         let first = controller.save_imported_session(ApplicationKind::Cursor, Some("First".into()), Session { values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "first-token".into())]), raw_export: None }, ImportType::Token).unwrap();
         let second = controller.save_imported_session(ApplicationKind::Cursor, Some("Second".into()), Session { values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "second-token".into())]), raw_export: None }, ImportType::Token).unwrap();
@@ -2074,8 +2058,8 @@ mod tests {
 
     #[test]
     fn database_move_preserves_accounts_and_sessions() {
-        let source = env::temp_dir().join(format!("cc-login-source-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-        let destination = env::temp_dir().join(format!("cc-login-destination-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        let source = env::temp_dir().join(format!("storm-dock-source-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        let destination = env::temp_dir().join(format!("storm-dock-destination-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
         fs::create_dir_all(&destination).unwrap();
         let mut controller = Controller::new(source.clone()).unwrap();
         let account = controller.save_imported_session(ApplicationKind::Cursor, Some("Test".into()), Session { values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "secret-token".into())]), raw_export: None }, ImportType::Token).unwrap();
@@ -2087,20 +2071,8 @@ mod tests {
     }
 
     #[test]
-    fn new_database_discards_legacy_accounts_file() {
-        let data_dir = env::temp_dir().join(format!("cc-login-legacy-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-        fs::create_dir_all(&data_dir).unwrap();
-        fs::write(data_dir.join("accounts.json"), r#"{"accounts":[]}"#).unwrap();
-        let controller = Controller::new(data_dir.clone()).unwrap();
-        assert!(data_dir.join(DATABASE_NAME).exists());
-        assert!(!data_dir.join("accounts.json").exists());
-        drop(controller);
-        let _ = fs::remove_dir_all(data_dir);
-    }
-
-    #[test]
     fn export_preserves_cursor_raw_record_without_frontend_serialization() {
-        let data_dir = env::temp_dir().join(format!("cc-login-export-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+        let data_dir = env::temp_dir().join(format!("storm-dock-export-{}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
         let mut controller = Controller::new(data_dir.clone()).unwrap();
         controller.cursor = CursorAdapter { database: None };
         let token = "a".repeat(40);
@@ -2143,7 +2115,7 @@ mod tests {
 
     #[test]
     fn database_migration_creates_raw_export_from_saved_session() {
-        let data_dir = env::temp_dir().join(format!("cc-login-raw-migration-{}", now()));
+        let data_dir = env::temp_dir().join(format!("storm-dock-raw-migration-{}", now()));
         let mut controller = Controller::new(data_dir.clone()).unwrap();
         let account = controller.save_imported_session(ApplicationKind::Cursor, None, Session { values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "a".repeat(40)), (EMAIL_KEY.into(), "me@example.com".into())]), raw_export: None }, ImportType::Token).unwrap();
         controller.database.execute("UPDATE accounts SET usage_raw_json=?1 WHERE id=?2", params![r#"{"membershipType":"enterprise","billingCycleEnd":"2026-08-27T00:00:00.000Z"}"#, account.id]).unwrap();
@@ -2206,6 +2178,35 @@ mod tests {
                 .get(ACCESS_TOKEN_KEY)
                 .map(String::as_str),
             Some("original-token")
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn cursor_adapter_switches_when_current_session_is_signed_out() {
+        let path = test_cursor_db();
+        let db = Connection::open(&path).unwrap();
+        db.execute("DELETE FROM ItemTable WHERE key=?1", [ACCESS_TOKEN_KEY])
+            .unwrap();
+        drop(db);
+        let adapter = CursorAdapter {
+            database: Some(path.clone()),
+        };
+        let replacement = Session {
+            values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "replacement-token".into())]),
+            raw_export: None,
+        };
+
+        adapter.apply(&replacement).unwrap();
+
+        assert_eq!(
+            adapter
+                .import_current()
+                .unwrap()
+                .values
+                .get(ACCESS_TOKEN_KEY)
+                .map(String::as_str),
+            Some("replacement-token")
         );
         let _ = fs::remove_file(path);
     }

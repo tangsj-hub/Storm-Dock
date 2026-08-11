@@ -1,11 +1,11 @@
 [package]
-name = "cc-login"
+name = "storm-dock"
 version = "0.1.0"
 description = "Local account switching for supported AI applications"
 edition = "2021"
 
 [lib]
-name = "cc_login_lib"
+name = "storm_dock_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]
@@ -21,4 +21,3 @@ tauri = { version = "2.11", features = ["tray-icon", "image-png"] }
 thiserror = "2"
 time = "0.3"
 tauri-plugin-dialog = "2.7.2"
-keyring = "3.6"

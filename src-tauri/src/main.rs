@@ -1,3 +1,3 @@
 fn main() {
-    cc_login_lib::run();
+    storm_dock_lib::run();
 }

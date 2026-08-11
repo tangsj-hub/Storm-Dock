@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
-import { Tooltip } from "../../components/Tooltip";
 import i18n from "../../i18n";
 import { getDatabasePath, moveDatabase } from "../../lib/api";
 import "../../styles/global.css";
@@ -45,7 +44,7 @@ function SettingsPage() {
   };
 
   return <Toast.Provider><main className={styles.shell}>
-    <header className={styles.header}><Tooltip content={t("back")}><a aria-label={t("back")} className={styles.back} href="/">←</a></Tooltip><div><p>{t("appName")}</p><h1>{t("settingsTitle")}</h1></div></header>
+    <header className={styles.header}><a aria-label={t("back")} className={styles.back} href="/">←</a><div><p>{t("appName")}</p><h1>{t("settingsTitle")}</h1></div></header>
     <section className={styles.workspace}>
       <div className={styles.settingRow}><div className={styles.settingCopy}><span className={styles.icon}><Languages aria-hidden="true" size={20} /></span><div><h2>{t("language")}</h2><p>{t("languageDescription")}</p></div></div>
         <DropdownMenu.Root><DropdownMenu.Trigger className={styles.languageTrigger}><span>{t(current.key)}</span><ChevronDown aria-hidden="true" size={16} /></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" className={styles.menu} sideOffset={6}>

@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
-import { Tooltip } from "../../components/Tooltip";
 import "../../i18n";
 import { listApplications } from "../../lib/api";
 import type { ApplicationStatus } from "../../lib/types";
@@ -43,7 +42,7 @@ function AddPage() {
   });
 
   return <Toast.Provider><main className={styles.shell}>
-    <header className={styles.header}><Tooltip content={t("back")}><a aria-label={t("back")} className={styles.back} href="/"><ArrowLeft aria-hidden="true" size={20} /></a></Tooltip><div><p>{t("accounts")}</p><h1>{t("addAccountTitle")}</h1></div></header>
+    <header className={styles.header}><a aria-label={t("back")} className={styles.back} href="/"><ArrowLeft aria-hidden="true" size={20} /></a><div><p>{t("accounts")}</p><h1>{t("addAccountTitle")}</h1></div></header>
     <section className={styles.workspace}>
       <Tabs.Root className={styles.addPage} onValueChange={(value) => setMethod(value as AddMethod)} value={method}>
         <Tabs.List className={styles.tabs} aria-label={t("addAccountTitle")}>

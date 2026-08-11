@@ -5,7 +5,7 @@ import { CSS } from "@dnd-kit/utilities";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Progress from "@radix-ui/react-progress";
 import * as Tabs from "@radix-ui/react-tabs";
-import { Check, ChartNoAxesCombined, Download, FileOutput, GripVertical, KeyRound, LogIn, Plus, RefreshCw, Settings, ShieldCheck, Trash2 } from "lucide-react";
+import { Check, ChartNoAxesCombined, Download, FileOutput, GripVertical, KeyRound, LogIn, Plus, RefreshCw, Settings, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { ExportDialog } from "../../components/ExportDialog";
 import { Tooltip } from "../../components/Tooltip";
+import logo from "../../assets/logo.svg";
 import codexIcon from "../../assets/codex.svg";
 import cursorIcon from "../../assets/cursor.svg";
 import "../../i18n";
@@ -200,7 +201,7 @@ function AccountsPage() {
 
   return <Toast.Provider><main className={styles.shell}>
     <header className={styles.header}>
-      <div className={styles.brand}><ShieldCheck aria-hidden="true" size={19} /><span>{t("appName")}</span><Tooltip content={t("settings")}><a aria-label={t("settings")} className={styles.settingsButton} href="/settings.html"><Settings aria-hidden="true" size={16} /></a></Tooltip></div>
+      <div className={styles.brand}><img alt="" src={logo} /><span>{t("appName")}</span><Tooltip content={t("settings")}><a aria-label={t("settings")} className={styles.settingsButton} href="/settings.html"><Settings aria-hidden="true" size={16} /></a></Tooltip></div>
       <Tabs.Root className={styles.switcher} onValueChange={(value) => setSelected(value as ApplicationKind)} value={selected}><Tabs.List aria-label={t("applications")}>
         {(["cursor", "codex"] as const).map((kind) => <Tabs.Trigger className={styles.appTab} key={kind} value={kind}><img alt="" src={kind === "cursor" ? cursorIcon : codexIcon} />{applications.find((app) => app.kind === kind)?.label ?? t(kind)}</Tabs.Trigger>)}
       </Tabs.List></Tabs.Root>

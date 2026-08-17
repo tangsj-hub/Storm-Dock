@@ -1,11 +1,18 @@
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use base64::{
+    engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
+    Engine,
+};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
     path::PathBuf,
-    sync::Mutex,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Mutex,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
@@ -14,7 +21,7 @@ use tauri::{
     AppHandle, Emitter, Manager, State,
 };
 use thiserror::Error;
-use time::{Date, Duration as TimeDuration, OffsetDateTime};
+use time::{format_description::well_known::Rfc3339, Date, Duration as TimeDuration, OffsetDateTime};
 
 const DATABASE_NAME: &str = "storm-dock.db";
 const DATABASE_PATH_FILE: &str = "database-path.txt";
@@ -32,6 +39,12 @@ const EMAIL_KEY: &str = "cursorAuth/cachedEmail";
 const MEMBERSHIP_TYPE_KEY: &str = "cursorAuth/stripeMembershipType";
 const CURSOR_SUBSCRIPTION_URL: &str = "https://api2.cursor.sh/auth/full_stripe_profile";
 const CURSOR_DASHBOARD_URL: &str = "https://cursor.com/api";
+const USAGE_EVENTS_PAGE_SIZE: u32 = 100;
+const USAGE_EVENTS_MAX_PAGES: u32 = 5;
+const CURSOR_OAUTH_LOGIN_URL: &str = "https://cursor.com/loginDeepControl";
+const CURSOR_OAUTH_POLL_URL: &str = "https://api2.cursor.sh/auth/poll";
+const CURSOR_OAUTH_POLL_ATTEMPTS: u32 = 150;
+const CURSOR_OAUTH_MAX_ERRORS: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,6 +123,8 @@ struct CursorUsageDetails {
     models: Vec<ModelUsageSummary>,
     weekly: Vec<WeeklyUsageSummary>,
     weekly_available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    weekly_error: Option<String>,
     checked_at: u64,
 }
 
@@ -208,13 +223,18 @@ fn matching_account_index(
     })
 }
 
-fn unix_timestamp(value: &serde_json::Value) -> Option<u64> {
-    let value = value.as_u64()?;
-    Some(if value > 10_000_000_000 {
-        value / 1_000
-    } else {
-        value
-    })
+fn parse_timestamp(value: &serde_json::Value) -> Option<u64> {
+    if let Some(number) = value.as_u64().or_else(|| value.as_f64().map(|number| number as u64)) {
+        return Some(if number > 10_000_000_000 {
+            number / 1_000
+        } else {
+            number
+        });
+    }
+    let text = value.as_str()?.trim();
+    OffsetDateTime::parse(text, &Rfc3339)
+        .ok()
+        .map(|time| time.unix_timestamp() as u64)
 }
 
 fn utc_days_remaining(expires_at: u64, current_time: u64) -> i64 {
@@ -239,6 +259,8 @@ fn subscription_from_response(value: &serde_json::Value) -> SubscriptionSummary 
         expires_at: find(
             value,
             &[
+                "billingCycleEnd",
+                "billing_cycle_end",
                 "currentPeriodEnd",
                 "current_period_end",
                 "expiresAt",
@@ -246,12 +268,28 @@ fn subscription_from_response(value: &serde_json::Value) -> SubscriptionSummary 
                 "subscriptionEnd",
             ],
         )
-        .and_then(unix_timestamp),
+        .and_then(parse_timestamp),
         checked_at: Some(now()),
     }
 }
 
-fn fetch_cursor_subscription(session: &Session) -> Result<SubscriptionSummary> {
+fn merge_subscription(
+    primary: Option<SubscriptionSummary>,
+    fallback: Option<SubscriptionSummary>,
+) -> Option<SubscriptionSummary> {
+    match (primary, fallback) {
+        (None, None) => None,
+        (Some(primary), None) => Some(primary),
+        (None, Some(fallback)) => Some(fallback),
+        (Some(primary), Some(fallback)) => Some(SubscriptionSummary {
+            plan: primary.plan.or(fallback.plan),
+            expires_at: primary.expires_at.or(fallback.expires_at),
+            checked_at: primary.checked_at.or(fallback.checked_at),
+        }),
+    }
+}
+
+fn fetch_stripe_profile(session: &Session) -> Result<serde_json::Value> {
     let token = session
         .values
         .get(ACCESS_TOKEN_KEY)
@@ -274,10 +312,87 @@ fn fetch_cursor_subscription(session: &Session) -> Result<SubscriptionSummary> {
         .map_err(|error| {
             AppError::Message(format!("could not refresh Cursor subscription: {error}"))
         })?;
-    let value = response.json().map_err(|error| {
+    response.json().map_err(|error| {
         AppError::Message(format!("could not read Cursor subscription: {error}"))
+    })
+}
+
+fn fetch_cursor_subscription(session: &Session) -> Result<SubscriptionSummary> {
+    let usage = dashboard_cookie(session)
+        .ok()
+        .and_then(|cookie| dashboard_request(&cookie, "/usage-summary", None).ok());
+    let stripe = fetch_stripe_profile(session);
+    merge_subscription(
+        usage.as_ref().map(subscription_from_response),
+        stripe.as_ref().ok().map(subscription_from_response),
+    )
+    .ok_or_else(|| {
+        stripe.err().unwrap_or_else(|| {
+            AppError::Message("could not refresh Cursor subscription".into())
+        })
+    })
+}
+
+fn jwt_claims(token: &str) -> Option<serde_json::Value> {
+    let payload = token.split('.').nth(1)?;
+    let payload = payload.replace('+', "-").replace('/', "_");
+    let bytes = URL_SAFE_NO_PAD.decode(&payload).ok().or_else(|| {
+        let mut padded = payload;
+        while padded.len() % 4 != 0 {
+            padded.push('=');
+        }
+        URL_SAFE.decode(padded).ok()
     })?;
-    Ok(subscription_from_response(&value))
+    serde_json::from_slice(&bytes).ok()
+}
+
+fn jwt_claim_text(claims: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| claims.get(*key).and_then(serde_json::Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn session_user_id(session: &Session) -> Option<String> {
+    if let Some(token) = session.values.get(ACCESS_TOKEN_KEY) {
+        if let Some(claims) = jwt_claims(token) {
+            if let Some(sub) = jwt_claim_text(&claims, &["sub"]) {
+                if let Some(user_id) = sub.rsplit('|').next().filter(|id| !id.is_empty()) {
+                    return Some(user_id.to_owned());
+                }
+            }
+        }
+    }
+    session
+        .values
+        .get("glass.lastSignedInAuthId")
+        .and_then(|value| value.rsplit('|').next())
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+}
+
+fn session_display_label(session: &Session) -> Option<String> {
+    if let Some(email) = session
+        .values
+        .get(EMAIL_KEY)
+        .map(String::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(email.to_owned());
+    }
+    if let Some(profile) = session
+        .values
+        .get("cursorAuth/cachedScopedProfile")
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+    {
+        if let Some(name) = json_text(&profile, &["displayName", "name"]) {
+            return Some(name);
+        }
+    }
+    session_user_id(session)
 }
 
 fn dashboard_cookie(session: &Session) -> Result<String> {
@@ -285,37 +400,17 @@ fn dashboard_cookie(session: &Session) -> Result<String> {
         .values
         .get(ACCESS_TOKEN_KEY)
         .ok_or(AppError::SecretMissing)?;
-    let payload = token.split('.').nth(1).ok_or_else(|| {
+    let user_id = session_user_id(session).ok_or_else(|| {
         AppError::Message("此账户不是可用于 Cursor 用量查询的 JWT，请重新导入账户。".into())
     })?;
-    let payload = URL_SAFE_NO_PAD
-        .decode(payload)
-        .map_err(|_| AppError::Message("此账户的 Cursor JWT 无法解析，请重新导入账户。".into()))?;
-    let claims: serde_json::Value = serde_json::from_slice(&payload)
-        .map_err(|_| AppError::Message("此账户的 Cursor JWT 无法解析，请重新导入账户。".into()))?;
-    let sub = claims
-        .get("sub")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| {
-            AppError::Message("此账户的 Cursor JWT 缺少用户标识，请重新导入账户。".into())
-        })?;
-    let user_id = sub
-        .rsplit('|')
-        .next()
-        .filter(|id| !id.is_empty())
-        .ok_or_else(|| {
-            AppError::Message("此账户的 Cursor JWT 用户标识无效，请重新导入账户。".into())
-        })?;
-    let exp = claims
-        .get("exp")
-        .and_then(serde_json::Value::as_i64)
-        .ok_or_else(|| {
-            AppError::Message("此账户的 Cursor JWT 缺少有效期，请重新导入账户。".into())
-        })?;
-    if exp <= now() as i64 + 60 {
-        return Err(AppError::Message(
-            "Cursor 登录已过期，请在 Cursor 中重新登录后重新导入账户。".into(),
-        ));
+    if let Some(claims) = jwt_claims(token) {
+        if let Some(exp) = claims.get("exp").and_then(serde_json::Value::as_i64) {
+            if exp <= now() as i64 + 60 {
+                return Err(AppError::Message(
+                    "Cursor 登录已过期，请在 Cursor 中重新登录后重新导入账户。".into(),
+                ));
+            }
+        }
     }
     Ok(format!("WorkosCursorSessionToken={user_id}%3A%3A{token}"))
 }
@@ -326,47 +421,261 @@ fn dashboard_request(
     body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value> {
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(20))
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.url().host_str() == Some("cursor.com") && attempt.previous().len() < 5 {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .build()
         .map_err(|error| AppError::Message(format!("无法创建 Cursor 用量请求: {error}")))?;
     let url = format!("{CURSOR_DASHBOARD_URL}{path}");
-    let mut request = match body {
-        Some(body) => client
-            .post(url)
-            .header("Origin", "https://cursor.com")
-            .json(&body),
+    let mut request = match &body {
+        Some(body) => client.post(url).json(body),
         None => client.get(url),
     }
     .header("Cookie", cookie)
-    .header("User-Agent", "Storm Dock");
-    if path.contains("get-filtered-usage-events") || path.contains("dashboard/") {
-        request = request.header("Origin", "https://cursor.com");
+    .header("User-Agent", "Mozilla/5.0")
+    .header("Accept", "*/*");
+    if body.is_some() || path.contains("dashboard/") {
+        request = request
+            .header("Origin", "https://cursor.com")
+            .header("Referer", "https://cursor.com/dashboard?tab=usage")
+            .header("Sec-Fetch-Site", "same-origin")
+            .header("Sec-Fetch-Mode", "cors")
+            .header("Sec-Fetch-Dest", "empty");
     }
     let response = request
         .send()
         .map_err(|error| AppError::Message(format!("Cursor 用量查询失败: {error}")))?;
-    match response.status().as_u16() {
-        401 | 403 => {
+    let status = response.status().as_u16();
+    let bytes = response
+        .bytes()
+        .map_err(|error| AppError::Message(format!("无法读取 Cursor 用量数据: {error}")))?;
+    if status == 204 || bytes.is_empty() {
+        return Err(AppError::Message(
+            "Cursor 登录已失效，请在 Cursor 中重新登录后重新导入账户。".into(),
+        ));
+    }
+    let parsed = serde_json::from_slice::<serde_json::Value>(&bytes).ok();
+    let api_error = parsed.as_ref().and_then(|value| {
+        value
+            .get("error")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    });
+    match status {
+        401 => {
+            return Err(AppError::Message(
+                "Cursor 登录已失效，请在 Cursor 中重新登录后重新导入账户。".into(),
+            ))
+        }
+        403 if body.is_none() => {
             return Err(AppError::Message(
                 "Cursor 登录已失效，请在 Cursor 中重新登录后重新导入账户。".into(),
             ))
         }
         status if !(200..300).contains(&status) => {
             return Err(AppError::Message(format!(
-                "Cursor 用量查询失败（HTTP {status}）。"
+                "Cursor 用量查询失败（{}）。",
+                api_error.unwrap_or_else(|| format!("HTTP {status}"))
             )))
         }
         _ => {}
     }
-    response
-        .json()
-        .map_err(|error| AppError::Message(format!("无法读取 Cursor 用量数据: {error}")))
+    if let Some(error) = api_error {
+        return Err(AppError::Message(format!("Cursor 用量查询失败（{error}）。")));
+    }
+    parsed.ok_or_else(|| AppError::Message("无法读取 Cursor 用量数据。".into()))
 }
 
 fn number_at(value: &serde_json::Value, path: &[&str]) -> Option<f64> {
     path.iter()
         .try_fold(value, |value, key| value.get(*key))
-        .and_then(serde_json::Value::as_f64)
+        .and_then(json_number)
+}
+
+fn json_number(value: &serde_json::Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_u64().map(|number| number as f64))
+        .or_else(|| value.as_i64().map(|number| number as f64))
+        .or_else(|| value.as_str().and_then(|text| text.parse().ok()))
+        .filter(|number| number.is_finite())
+}
+
+fn json_i64(value: &serde_json::Value) -> Option<i64> {
+    json_number(value).and_then(|number| {
+        (number.fract() == 0.0 && (i64::MIN as f64..=i64::MAX as f64).contains(&number))
+            .then_some(number as i64)
+    })
+}
+
+fn normalized_email(value: &str) -> Option<String> {
+    let email = value.trim().to_ascii_lowercase();
+    (!email.is_empty()).then_some(email)
+}
+
+fn first_team_id(teams: &serde_json::Value) -> Option<i64> {
+    teams
+        .get("teams")
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| teams.as_array())
+        .into_iter()
+        .flatten()
+        .find_map(|team| team.get("id").or_else(|| team.get("teamId")).and_then(json_i64))
+}
+
+fn team_member_user_id(spend: &serde_json::Value, emails: &[String]) -> Option<i64> {
+    let wanted: Vec<String> = emails.iter().filter_map(|email| normalized_email(email)).collect();
+    if wanted.is_empty() {
+        return None;
+    }
+    spend
+        .get("teamMemberSpend")
+        .or_else(|| spend.pointer("/data/teamMemberSpend"))
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .find_map(|member| {
+            let email = ["email", "userEmail", "cursorEmail"]
+                .iter()
+                .find_map(|key| member.get(*key).and_then(serde_json::Value::as_str))
+                .and_then(normalized_email)?;
+            if !wanted.iter().any(|value| value == &email) {
+                return None;
+            }
+            member
+                .get("userId")
+                .or_else(|| member.get("id"))
+                .and_then(json_i64)
+        })
+}
+
+fn event_date(event: &serde_json::Value) -> Option<Date> {
+    let ms = event.get("timestamp").and_then(|value| {
+        value
+            .as_str()
+            .and_then(|text| text.parse::<i128>().ok())
+            .or_else(|| json_number(value).map(|number| number as i128))
+    })?;
+    OffsetDateTime::from_unix_timestamp_nanos(ms * 1_000_000)
+        .ok()
+        .map(|time| time.date())
+}
+
+fn events_range_ms() -> (String, String) {
+    let end = OffsetDateTime::now_utc();
+    let start = end - TimeDuration::days(7);
+    (
+        (start.unix_timestamp_nanos() / 1_000_000).to_string(),
+        (end.unix_timestamp_nanos() / 1_000_000).to_string(),
+    )
+}
+
+fn auth_numeric_id(me: &serde_json::Value) -> Option<i64> {
+    ["id", "userId", "user_id"]
+        .iter()
+        .find_map(|key| me.get(*key).and_then(json_i64))
+}
+
+fn usage_events_from_response(value: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
+    let item = ["usageEventsDisplay", "usageEvents", "events"]
+        .iter()
+        .find_map(|key| value.get(*key))
+        .or_else(|| value.pointer("/data/usageEventsDisplay"));
+    match item {
+        None | Some(serde_json::Value::Null) => Some(Vec::new()),
+        Some(serde_json::Value::Array(items)) => Some(items.clone()),
+        _ => None,
+    }
+}
+
+fn usage_events_body(team_id: Option<i64>, user_id: Option<i64>, page: u32, dated: bool) -> serde_json::Value {
+    let mut body = serde_json::Map::new();
+    body.insert("page".into(), serde_json::Value::from(page));
+    body.insert("pageSize".into(), serde_json::Value::from(USAGE_EVENTS_PAGE_SIZE));
+    if let Some(team_id) = team_id {
+        body.insert("teamId".into(), serde_json::Value::from(team_id));
+    }
+    if let Some(user_id) = user_id {
+        body.insert("userId".into(), serde_json::Value::from(user_id));
+    }
+    if dated {
+        let (start, end) = events_range_ms();
+        body.insert("startDate".into(), serde_json::Value::String(start));
+        body.insert("endDate".into(), serde_json::Value::String(end));
+    }
+    serde_json::Value::Object(body)
+}
+
+fn collect_usage_event_pages(
+    cookie: &str,
+    team_id: Option<i64>,
+    user_id: Option<i64>,
+    dated: bool,
+) -> Result<Vec<serde_json::Value>> {
+    let cutoff = OffsetDateTime::now_utc().date() - TimeDuration::days(6);
+    let mut collected = Vec::new();
+    for page in 1..=USAGE_EVENTS_MAX_PAGES {
+        let response = dashboard_request(
+            cookie,
+            "/dashboard/get-filtered-usage-events",
+            Some(usage_events_body(team_id, user_id, page, dated)),
+        )?;
+        let Some(events) = usage_events_from_response(&response) else {
+            break;
+        };
+        if events.is_empty() {
+            break;
+        }
+        let oldest = events.iter().filter_map(event_date).min();
+        let page_len = events.len();
+        collected.extend(events);
+        if oldest.is_some_and(|date| date < cutoff) || page_len < USAGE_EVENTS_PAGE_SIZE as usize {
+            break;
+        }
+    }
+    Ok(collected)
+}
+
+fn collect_usage_events(
+    cookie: &str,
+    team_id: Option<i64>,
+    user_id: Option<i64>,
+) -> Result<serde_json::Value> {
+    // Personal accounts: CursorMeter sends only teamId 0 / page / pageSize.
+    // Dated bodies are used by the dashboard, but free plans often reply without
+    // usageEventsDisplay; treat that as empty and retry the undated shape.
+    let personal = team_id == Some(0) && user_id.is_none();
+    let shapes = if personal {
+        vec![(Some(0), None, false), (None, None, false)]
+    } else {
+        vec![(team_id, user_id, false), (team_id, user_id, true)]
+    };
+    let mut collected = Vec::new();
+    let mut last_error = None;
+    for (next_team_id, next_user_id, dated) in shapes {
+        match collect_usage_event_pages(cookie, next_team_id, next_user_id, dated) {
+            Ok(events) => {
+                collected = events;
+                if !collected.is_empty() {
+                    break;
+                }
+            }
+            Err(error) => last_error = Some(error),
+        }
+    }
+    if collected.is_empty() {
+        if let Some(error) = last_error {
+            return Err(error);
+        }
+    }
+    Ok(serde_json::json!({ "usageEventsDisplay": collected }))
 }
 
 fn text_at(value: &serde_json::Value, path: &[&str]) -> Option<String> {
@@ -374,6 +683,59 @@ fn text_at(value: &serde_json::Value, path: &[&str]) -> Option<String> {
         .try_fold(value, |value, key| value.get(*key))
         .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
+}
+
+fn json_model_name(value: &serde_json::Value) -> Option<String> {
+    if let Some(name) = value.as_str().map(str::trim).filter(|name| !name.is_empty()) {
+        return Some(name.to_owned());
+    }
+    ["name", "model", "modelName", "displayName"]
+        .iter()
+        .find_map(|key| {
+            value
+                .get(*key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+        })
+}
+
+fn event_model_name(event: &serde_json::Value) -> Option<String> {
+    ["model", "modelName", "model_name"]
+        .iter()
+        .find_map(|key| event.get(*key).and_then(json_model_name))
+}
+
+fn event_request_weight(event: &serde_json::Value) -> f64 {
+    event.get("requestsCosts").and_then(json_number).map(|value| value.max(0.0)).unwrap_or(0.0)
+}
+
+fn sort_models(models: &mut [ModelUsageSummary]) {
+    models.sort_by(|left, right| {
+        right
+            .requests
+            .cmp(&left.requests)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+}
+
+fn models_from_events(events: &serde_json::Value) -> Vec<ModelUsageSummary> {
+    let mut by_model: BTreeMap<String, f64> = BTreeMap::new();
+    for event in events.get("usageEventsDisplay").and_then(serde_json::Value::as_array).into_iter().flatten() {
+        let Some(name) = event_model_name(event) else { continue; };
+        *by_model.entry(name).or_default() += event_request_weight(event);
+    }
+    let mut models: Vec<_> = by_model
+        .into_iter()
+        .filter(|(_, requests)| *requests > 0.0)
+        .map(|(name, requests)| ModelUsageSummary {
+            name,
+            requests: requests.round() as u64,
+        })
+        .collect();
+    sort_models(&mut models);
+    models
 }
 
 fn usage_metric(kind: &str, used: f64, limit: Option<f64>) -> UsageMetric {
@@ -397,27 +759,14 @@ fn weekly_usage(events: &serde_json::Value) -> Option<Vec<WeeklyUsageSummary>> {
         .collect();
     let mut values: BTreeMap<Date, (f64, f64, bool)> = BTreeMap::new();
     for event in events.get("usageEventsDisplay")?.as_array()? {
-        let ms = event.get("timestamp")?.as_str()?.parse::<i128>().ok()?;
-        let date = OffsetDateTime::from_unix_timestamp_nanos(ms * 1_000_000)
-            .ok()?
-            .date();
+        let Some(date) = event_date(event) else { continue; };
         if !days.contains(&date) {
             continue;
         }
         let item = values.entry(date).or_default();
-        item.0 += event
-            .get("requestsCosts")
-            .and_then(serde_json::Value::as_f64)
-            .filter(|value| value.is_finite())
-            .unwrap_or(0.0);
-        if event.get("kind").and_then(serde_json::Value::as_str)
-            == Some("USAGE_EVENT_KIND_USAGE_BASED")
-        {
-            item.1 += event
-                .get("chargedCents")
-                .and_then(serde_json::Value::as_f64)
-                .filter(|value| value.is_finite())
-                .unwrap_or(0.0);
+        item.0 += event.get("requestsCosts").and_then(json_number).unwrap_or(0.0);
+        if event.get("kind").and_then(serde_json::Value::as_str) == Some("USAGE_EVENT_KIND_USAGE_BASED") {
+            item.1 += event.get("chargedCents").and_then(json_number).unwrap_or(0.0);
             item.2 = true;
         }
     }
@@ -461,14 +810,14 @@ fn update_export_usage(record: &mut serde_json::Value, raw: serde_json::Value, c
         if let Some(value) = number(&["outputTokens", "output_tokens", "outputTokenCount"]) {
             output_total = Some(output_total.unwrap_or(0.0) + value);
         }
-        let Some(name) = ["modelName", "model_name", "model"].iter().find_map(|key| event.get(*key).and_then(serde_json::Value::as_str)) else { continue; };
-        let model = by_model.entry(name.into()).or_insert_with(|| {
+        let Some(name) = event_model_name(event) else { continue; };
+        let model = by_model.entry(name.clone()).or_insert_with(|| {
             let mut model = serde_json::Map::new();
-            model.insert("model_name".into(), serde_json::Value::String(name.into()));
+            model.insert("model_name".into(), serde_json::Value::String(name));
             model
         });
-        let requests = model.get("num_requests").and_then(serde_json::Value::as_u64).unwrap_or(0) + event.get("numRequests").and_then(serde_json::Value::as_u64).unwrap_or(1);
-        model.insert("num_requests".into(), serde_json::Value::from(requests));
+        let requests = model.get("num_requests").and_then(json_number).unwrap_or(0.0) + event_request_weight(event);
+        model.insert("num_requests".into(), serde_json::Value::from(requests.round() as u64));
         for (target, keys) in [("input_tokens", &["inputTokens", "input_tokens", "inputTokenCount"][..]), ("output_tokens", &["outputTokens", "output_tokens", "outputTokenCount"][..]), ("cost_usd", &["costUsd", "cost_usd", "costUSD"][..])] {
             if let Some(value) = number(keys) {
                 let total = model.get(target).and_then(serde_json::Value::as_f64).unwrap_or(0.0) + value;
@@ -498,10 +847,13 @@ fn cursor_usage_from_snapshot(account: &Account, raw: &serde_json::Value) -> Opt
         usage_metric("requests", 0.0, None)
     };
     let on_demand = number_at(summary, &["individualUsage", "onDemand", "used"]).or_else(|| number_at(summary, &["teamUsage", "onDemand", "used"])).map(|used| usage_metric("currency", used, number_at(summary, &["individualUsage", "onDemand", "limit"]).or_else(|| number_at(summary, &["teamUsage", "onDemand", "limit"]))));
-    let mut models: Vec<_> = raw.get("used_models").and_then(serde_json::Value::as_array).into_iter().flatten().filter_map(|model| Some(ModelUsageSummary { name: model.get("model_name")?.as_str()?.into(), requests: model.get("num_requests")?.as_u64()? })).collect();
-    models.sort_by(|left, right| right.requests.cmp(&left.requests).then_with(|| left.name.cmp(&right.name)));
+    let mut models: Vec<_> = raw.get("used_models").and_then(serde_json::Value::as_array).into_iter().flatten().filter_map(|model| {
+        let requests = model.get("num_requests").and_then(json_number).filter(|value| *value > 0.0)?;
+        Some(ModelUsageSummary { name: model.get("model_name")?.as_str()?.into(), requests: requests.round() as u64 })
+    }).collect();
+    sort_models(&mut models);
     Some(CursorUsageDetails {
-        account_id: account.id.clone(), label: account.label.clone(), email: account.email.clone(), name: None, membership_type: text_at(summary, &["membershipType"]), primary, reset_at: text_at(summary, &["billingCycleEnd"]), on_demand, models, weekly_available: false, weekly: vec![], checked_at: account.raw_export.get("usage_updated_at").and_then(serde_json::Value::as_u64).unwrap_or(account.updated_at),
+        account_id: account.id.clone(), label: account.label.clone(), email: account.email.clone(), name: None, membership_type: text_at(summary, &["membershipType"]), primary, reset_at: text_at(summary, &["billingCycleEnd"]), on_demand, models, weekly_available: false, weekly: vec![], weekly_error: None, checked_at: account.raw_export.get("usage_updated_at").and_then(serde_json::Value::as_u64).unwrap_or(account.updated_at),
     })
 }
 
@@ -520,7 +872,7 @@ fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsa
         .and_then(serde_json::Value::as_str)
         .is_some_and(|value| value.eq_ignore_ascii_case("enterprise"));
     let teams = enterprise.then(|| dashboard_request(&cookie, "/dashboard/teams", Some(serde_json::json!({}))).ok()).flatten();
-    let team_id = teams.as_ref().and_then(|teams| teams.get("teams")?.as_array()?.first()?.get("id")?.as_i64());
+    let team_id = teams.as_ref().and_then(first_team_id);
     let hard_limit = team_id.and_then(|team_id| dashboard_request(&cookie, "/dashboard/get-hard-limit", Some(serde_json::json!({ "teamId": team_id }))).ok());
     let enterprise_limit = hard_limit.as_ref().and_then(|limit| number_at(limit, &["perUserMonthlyLimitDollars"])).map(|dollars| dollars * 100.0);
     let primary =
@@ -540,7 +892,7 @@ fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsa
                 .as_object()
                 .into_iter()
                 .flat_map(|map| map.values())
-                .filter_map(|item| item.get("numRequests").and_then(serde_json::Value::as_u64))
+                .filter_map(|item| item.get("numRequests").and_then(json_number).map(|value| value.round() as u64))
                 .sum::<u64>();
             usage_metric("requests", requests as f64, None)
         };
@@ -549,39 +901,20 @@ fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsa
     let on_demand_limit = number_at(&summary, &["individualUsage", "onDemand", "limit"])
         .or_else(|| number_at(&summary, &["teamUsage", "onDemand", "limit"]));
     let on_demand = on_demand_used.map(|used| usage_metric("currency", used, on_demand_limit));
-    let mut models: Vec<_> = usage
-        .as_object()
-        .into_iter()
-        .flat_map(|map| map.iter())
-        .filter_map(|(name, item)| {
-            let requests = item
-                .get("numRequestsTotal")
-                .or_else(|| item.get("numRequests"))
-                .and_then(serde_json::Value::as_u64)?;
-            Some(ModelUsageSummary {
-                name: name.clone(),
-                requests,
-            })
-        })
-        .collect();
-    models.sort_by(|left, right| {
-        right
-            .requests
-            .cmp(&left.requests)
-            .then_with(|| left.name.cmp(&right.name))
-    });
 
     let team_spend = team_id.and_then(|team_id| dashboard_request(&cookie, "/dashboard/get-team-spend", Some(serde_json::json!({ "teamId": team_id }))).ok());
-    let member_id = team_spend.as_ref().and_then(|spend| {
-        let email = email.as_deref()?;
-        spend.get("teamMemberSpend")?.as_array()?.iter().find(|member| member.get("email").and_then(serde_json::Value::as_str).is_some_and(|value| value.eq_ignore_ascii_case(email)))?.get("userId")?.as_i64()
-    });
-    let usage_events = dashboard_request(
-        &cookie,
-        "/dashboard/get-filtered-usage-events",
-        Some(if enterprise { serde_json::json!({ "teamId": team_id.unwrap_or_default(), "userId": member_id, "page": 1, "pageSize": 500 }) } else { serde_json::json!({ "teamId": 0, "page": 1, "pageSize": 500 }) }),
-    ).ok();
+    let member_emails: Vec<String> = [email.clone(), account.email.clone()].into_iter().flatten().collect();
+    let member_id = team_spend
+        .as_ref()
+        .and_then(|spend| team_member_user_id(spend, &member_emails))
+        .or_else(|| auth_numeric_id(&me));
+    let events_team_id = if enterprise { team_id } else { Some(0) };
+    let events_user_id = if enterprise { member_id } else { None };
+    let events_result = collect_usage_events(&cookie, events_team_id, events_user_id);
+    let weekly_error = events_result.as_ref().err().map(|error| error.to_string());
+    let usage_events = events_result.ok();
     let weekly = usage_events.as_ref().and_then(weekly_usage);
+    let models = models_from_events(usage_events.as_ref().unwrap_or(&serde_json::Value::Null));
     let details = CursorUsageDetails {
         account_id: account.id.clone(),
         label: account.label.clone(),
@@ -594,6 +927,7 @@ fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsa
         models,
         weekly_available: weekly.is_some(),
         weekly: weekly.unwrap_or_default(),
+        weekly_error,
         checked_at: now(),
     };
     let mut raw = serde_json::Map::new();
@@ -623,6 +957,10 @@ enum AppError {
     InvalidImport,
     #[error("this application is not supported yet")]
     ComingSoon,
+    #[error("登录已取消")]
+    LoginCancelled,
+    #[error("Cursor 官方登录超时，请重试")]
+    LoginTimeout,
     #[error("unsupported Cursor data: {0}")]
     UnsupportedCursor(String),
     #[error("Cursor is not installed or has not been started")]
@@ -648,17 +986,88 @@ struct Session {
     raw_export: Option<serde_json::Value>,
 }
 
+fn is_cursor_user_id(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix("user_") else {
+        return false;
+    };
+    rest.len() >= 6 && rest.chars().all(|character| character.is_ascii_alphanumeric())
+}
+
+fn parse_cursor_session_token(raw: &str) -> Option<(String, String)> {
+    let raw = raw
+        .strip_prefix("WorkosCursorSessionToken=")
+        .unwrap_or(raw)
+        .trim();
+    let decoded = raw.replace("%3A%3A", "::");
+    let (user_id, token) = decoded.split_once("::")?;
+    let user_id = user_id.trim();
+    let token = token.trim();
+    if is_cursor_user_id(user_id) && token.len() >= 40 {
+        Some((user_id.to_owned(), token.to_owned()))
+    } else {
+        None
+    }
+}
+
+fn split_cursor_credential(raw: &str) -> Result<(Option<String>, String)> {
+    if let Some((user_id, token)) = parse_cursor_session_token(raw) {
+        return Ok((Some(user_id), token));
+    }
+    let token = raw.trim();
+    if token.len() < 40 {
+        return Err(AppError::InvalidToken);
+    }
+    Ok((None, token.to_owned()))
+}
+
+fn apply_jwt_profile(values: &mut BTreeMap<String, String>, token: &str) {
+    let Some(claims) = jwt_claims(token) else {
+        return;
+    };
+    if !values.contains_key(EMAIL_KEY) {
+        if let Some(email) = ["email", "email_address", "preferred_username"]
+            .iter()
+            .find_map(|key| jwt_claim_text(&claims, &[key]))
+            .filter(|value| value.contains('@'))
+        {
+            values.insert(EMAIL_KEY.into(), email.clone());
+            values.insert(
+                "cursorAuth/cachedScopedProfile".into(),
+                serde_json::json!({ "displayName": email }).to_string(),
+            );
+        }
+    }
+    if !values.contains_key("glass.lastSignedInAuthId") {
+        if let Some(sub) = jwt_claim_text(&claims, &["sub"]) {
+            values.insert("glass.lastSignedInAuthId".into(), sub);
+        }
+    }
+}
+
+fn session_from_access_token(token: &str, user_id: Option<String>) -> Session {
+    let mut values = BTreeMap::from([(ACCESS_TOKEN_KEY.into(), token.to_owned())]);
+    apply_jwt_profile(&mut values, token);
+    if !values.contains_key("glass.lastSignedInAuthId") {
+        if let Some(user_id) = user_id.filter(|value| !value.is_empty()) {
+            values.insert("glass.lastSignedInAuthId".into(), user_id);
+        }
+    }
+    Session {
+        values,
+        raw_export: None,
+    }
+}
+
 impl Session {
     fn from_import(raw: &str) -> Result<Self> {
-        let raw = raw.trim();
-        if raw.len() < 40 {
+        let raw = raw.trim().trim_matches(['"', '\'']).trim();
+        let raw = raw.strip_prefix("Bearer ").unwrap_or(raw).trim();
+        if raw.is_empty() {
             return Err(AppError::InvalidToken);
         }
         if !raw.starts_with('{') && !raw.starts_with('[') {
-            return Ok(Self {
-                values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), raw.into())]),
-                raw_export: None,
-            });
+            let (user_id, token) = split_cursor_credential(raw)?;
+            return Ok(session_from_access_token(&token, user_id));
         }
 
         let value: serde_json::Value = serde_json::from_str(raw)?;
@@ -674,16 +1083,24 @@ impl Session {
                 .find_map(|key| object.get(*key).and_then(serde_json::Value::as_str))
                 .map(str::to_owned)
         };
-        let access_token = text(&["access_token", "accessToken", ACCESS_TOKEN_KEY])
-            .filter(|value| value.len() >= 40)
-            .ok_or(AppError::InvalidImport)?;
-        let mut values = BTreeMap::from([(ACCESS_TOKEN_KEY.into(), access_token)]);
+        let credential = text(&[
+            "access_token",
+            "accessToken",
+            ACCESS_TOKEN_KEY,
+            "sessionToken",
+            "session_token",
+            "WorkosCursorSessionToken",
+            "token",
+        ])
+        .ok_or(AppError::InvalidImport)?;
+        let (user_id, access_token) = split_cursor_credential(&credential)?;
+        let mut session = session_from_access_token(&access_token, user_id);
         if let Some(refresh) = text(&["refresh_token", "refreshToken", "cursorAuth/refreshToken"]) {
-            values.insert("cursorAuth/refreshToken".into(), refresh);
+            session.values.insert("cursorAuth/refreshToken".into(), refresh);
         }
         if let Some(email) = text(&["email", "cursorAuth/cachedEmail"]) {
-            values.insert(EMAIL_KEY.into(), email.clone());
-            values.insert(
+            session.values.insert(EMAIL_KEY.into(), email.clone());
+            session.values.insert(
                 "cursorAuth/cachedScopedProfile".into(),
                 serde_json::json!({ "displayName": email }).to_string(),
             );
@@ -698,11 +1115,12 @@ impl Session {
                 ("stripeMembershipType", "cursorAuth/stripeMembershipType"),
             ] {
                 if let Some(value) = cache.get(source).and_then(serde_json::Value::as_str) {
-                    values.insert(target.into(), value.into());
+                    session.values.insert(target.into(), value.into());
                 }
             }
         }
-        Ok(Self { values, raw_export: Some(value) })
+        session.raw_export = Some(value);
+        Ok(session)
     }
 }
 
@@ -1175,11 +1593,14 @@ impl Controller {
             .get(EMAIL_KEY)
             .cloned()
             .filter(|value| !value.is_empty());
+        let display_label = session_display_label(&session);
         if let Some(email) = email.as_deref() {
             if let Some(index) = matching_account_index(&self.all_accounts()?, kind, email) {
                 let mut account = self.all_accounts()?[index].clone();
                 if let Some(label) = label.filter(|value| !value.trim().is_empty()) {
                     account.label = label;
+                } else if let Some(display_label) = display_label.clone() {
+                    account.label = display_label;
                 }
                 account.email = Some(email.to_owned());
                 account.import_type = import_type;
@@ -1203,7 +1624,7 @@ impl Controller {
         );
         let label = label
             .filter(|value| !value.trim().is_empty())
-            .or_else(|| email.clone())
+            .or(display_label)
             .unwrap_or_else(|| format!("{} Account", kind.display_name()));
         let account = Account {
             id: id.clone(),
@@ -1230,6 +1651,7 @@ impl Controller {
         self.save_imported_session(kind, label, session, ImportType::Native)
     }
 
+    #[cfg(test)]
     fn import_payload(
         &mut self,
         kind: ApplicationKind,
@@ -1277,6 +1699,16 @@ impl Controller {
         if account.application != ApplicationKind::Cursor {
             return Err(AppError::ComingSoon);
         }
+        let json: Option<String> = self.database.query_row(
+            "SELECT usage_json FROM accounts WHERE id=?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        if let Some(json) = json {
+            if let Ok(details) = serde_json::from_str::<CursorUsageDetails>(&json) {
+                return Ok(Some(details));
+            }
+        }
         let raw = account.raw_export.get("cursor_usage_raw").cloned();
         Ok(raw.and_then(|raw| cursor_usage_from_snapshot(&account, &raw)))
     }
@@ -1284,7 +1716,15 @@ impl Controller {
     fn save_cursor_usage(&mut self, id: &str, usage: CursorUsageDetails, raw: serde_json::Value) -> Result<()> {
         let mut account = self.account(id)?;
         update_export_usage(&mut account.raw_export, raw, usage.checked_at);
-        self.database.execute("UPDATE accounts SET raw_export_json=?1, updated_at=?2 WHERE id=?3", params![serde_json::to_string(&account.raw_export)?, now() as i64, id])?;
+        self.database.execute(
+            "UPDATE accounts SET usage_json=?1, raw_export_json=?2, updated_at=?3 WHERE id=?4",
+            params![
+                serde_json::to_string(&usage)?,
+                serde_json::to_string(&account.raw_export)?,
+                now() as i64,
+                id
+            ],
+        )?;
         Ok(())
     }
 
@@ -1452,6 +1892,322 @@ fn now() -> u64 {
 
 struct AppState(Mutex<Controller>);
 
+#[derive(Default)]
+struct OauthLoginState {
+    generation: AtomicU64,
+    login_url: Mutex<Option<String>>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OfficialLoginStatus {
+    stage: &'static str,
+    login_url: Option<String>,
+}
+
+struct CursorOauthHandshake {
+    uuid: String,
+    verifier: String,
+    login_url: String,
+}
+
+impl OauthLoginState {
+    fn begin(&self) -> u64 {
+        self.generation.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    fn is_active(&self, id: u64) -> bool {
+        self.generation.load(Ordering::SeqCst) == id
+    }
+
+    fn set_url(&self, id: u64, url: String) -> Result<()> {
+        if !self.is_active(id) {
+            return Err(AppError::LoginCancelled);
+        }
+        *self
+            .login_url
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(url);
+        Ok(())
+    }
+
+    fn url(&self) -> Option<String> {
+        self.login_url
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
+    }
+
+    fn cancel(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        *self
+            .login_url
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = None;
+    }
+
+    fn finish(&self, id: u64) {
+        if self.is_active(id) {
+            *self
+                .login_url
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = None;
+        }
+    }
+}
+
+impl CursorOauthHandshake {
+    fn generate() -> Self {
+        let mut random = [0u8; 32];
+        random[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+        random[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
+        Self::from_parts(uuid::Uuid::new_v4().to_string(), URL_SAFE_NO_PAD.encode(random))
+    }
+
+    fn from_parts(uuid: String, verifier: String) -> Self {
+        let challenge = pkce_challenge(&verifier);
+        let login_url = format!(
+            "{CURSOR_OAUTH_LOGIN_URL}?challenge={challenge}&uuid={uuid}&mode=login&redirectTarget=cli"
+        );
+        Self {
+            uuid,
+            verifier,
+            login_url,
+        }
+    }
+}
+
+fn pkce_challenge(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
+fn emit_official_login_status(app: &AppHandle, stage: &'static str, login_url: Option<String>) {
+    let _ = app.emit(
+        "official-login-status",
+        OfficialLoginStatus { stage, login_url },
+    );
+}
+
+fn open_browser(url: &str) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    let status = std::process::Command::new("open").arg(url).status();
+    #[cfg(target_os = "windows")]
+    let status = std::process::Command::new("rundll32")
+        .args(["url.dll,FileProtocolHandler", url])
+        .status();
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let status: std::io::Result<std::process::ExitStatus> =
+        Err(std::io::Error::other("unsupported OS"));
+    match status {
+        Ok(status) if status.success() => Ok(()),
+        _ => Err(AppError::Message("无法打开浏览器，请手动打开登录链接。".into())),
+    }
+}
+
+fn poll_cursor_oauth(
+    handshake: &CursorOauthHandshake,
+    login_id: u64,
+    app: &AppHandle,
+) -> Result<serde_json::Value> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| AppError::Message(format!("无法创建 Cursor 登录请求: {error}")))?;
+    let mut delay = Duration::from_secs(1);
+    let mut consecutive_errors = 0;
+    for _ in 0..CURSOR_OAUTH_POLL_ATTEMPTS {
+        if !app.state::<OauthLoginState>().is_active(login_id) {
+            return Err(AppError::LoginCancelled);
+        }
+        match poll_cursor_oauth_once(&client, handshake) {
+            Ok(Some(value)) => return Ok(value),
+            Ok(None) => {
+                consecutive_errors = 0;
+            }
+            Err(AppError::LoginCancelled) => return Err(AppError::LoginCancelled),
+            Err(_) => {
+                consecutive_errors += 1;
+                if consecutive_errors >= CURSOR_OAUTH_MAX_ERRORS {
+                    return Err(AppError::Message(
+                        "Cursor 官方登录轮询连续失败，请检查网络后重试。".into(),
+                    ));
+                }
+            }
+        }
+        std::thread::sleep(delay);
+        delay = delay.mul_f32(1.2).min(Duration::from_secs(10));
+    }
+    Err(AppError::LoginTimeout)
+}
+
+fn poll_cursor_oauth_once(
+    client: &reqwest::blocking::Client,
+    handshake: &CursorOauthHandshake,
+) -> Result<Option<serde_json::Value>> {
+    if let Ok(post) = client
+        .post(CURSOR_OAUTH_POLL_URL)
+        .header("User-Agent", "Storm Dock")
+        .json(&serde_json::json!({
+            "uuid": handshake.uuid,
+            "verifier": handshake.verifier,
+        }))
+        .send()
+    {
+        if post.status().is_success() {
+            return read_oauth_poll_response(post);
+        }
+    }
+    let get = client
+        .get(CURSOR_OAUTH_POLL_URL)
+        .query(&[
+            ("uuid", handshake.uuid.as_str()),
+            ("verifier", handshake.verifier.as_str()),
+        ])
+        .header("User-Agent", "Storm Dock")
+        .send()
+        .map_err(|error| AppError::Message(format!("Cursor 登录轮询失败: {error}")))?;
+    if get.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    read_oauth_poll_response(get)
+}
+
+fn read_oauth_poll_response(
+    response: reqwest::blocking::Response,
+) -> Result<Option<serde_json::Value>> {
+    let status = response.status();
+    if status == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    let value: serde_json::Value = response
+        .json()
+        .map_err(|error| AppError::Message(format!("Cursor 登录响应无效: {error}")))?;
+    if !status.is_success() {
+        return Err(AppError::Message(format!(
+            "Cursor 登录轮询失败 (HTTP {status})"
+        )));
+    }
+    Ok(Some(value))
+}
+
+fn json_text(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| value.get(*key).and_then(serde_json::Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+fn session_from_oauth_poll(value: &serde_json::Value) -> Result<Session> {
+    let access_token = json_text(value, &["accessToken", "access_token"])
+        .filter(|token| token.len() >= 40)
+        .ok_or(AppError::InvalidImport)?;
+    let mut values = BTreeMap::from([(ACCESS_TOKEN_KEY.into(), access_token.clone())]);
+    if let Some(refresh) = json_text(value, &["refreshToken", "refresh_token", "cursorAuth/refreshToken"]) {
+        values.insert("cursorAuth/refreshToken".into(), refresh);
+    }
+    if let Some(auth_id) = json_text(value, &["authId", "auth_id"]) {
+        values.insert("glass.lastSignedInAuthId".into(), auth_id);
+    }
+    if let Some(email) = json_text(value, &["email", "cachedEmail", EMAIL_KEY]) {
+        values.insert(EMAIL_KEY.into(), email.clone());
+        values.insert(
+            "cursorAuth/cachedScopedProfile".into(),
+            serde_json::json!({ "displayName": email }).to_string(),
+        );
+    }
+    if let Some(claims) = jwt_claims(&access_token) {
+        if !values.contains_key(EMAIL_KEY) {
+            if let Some(email) = claims.get("email").and_then(serde_json::Value::as_str).filter(|email| !email.is_empty()) {
+                values.insert(EMAIL_KEY.into(), email.into());
+                values.insert(
+                    "cursorAuth/cachedScopedProfile".into(),
+                    serde_json::json!({ "displayName": email }).to_string(),
+                );
+            }
+        }
+        if !values.contains_key("glass.lastSignedInAuthId") {
+            if let Some(sub) = claims.get("sub").and_then(serde_json::Value::as_str).filter(|sub| !sub.is_empty()) {
+                values.insert("glass.lastSignedInAuthId".into(), sub.into());
+            }
+        }
+    }
+    Ok(Session {
+        values,
+        raw_export: None,
+    })
+}
+
+fn enrich_cursor_session(session: &mut Session) -> Option<SubscriptionSummary> {
+    if let Ok(cookie) = dashboard_cookie(session) {
+        if let Ok(me) = dashboard_request(&cookie, "/auth/me", None) {
+            if let Some(email) = json_text(&me, &["email"]) {
+                session.values.insert(EMAIL_KEY.into(), email.clone());
+                session.values.insert(
+                    "cursorAuth/cachedScopedProfile".into(),
+                    serde_json::json!({ "displayName": email }).to_string(),
+                );
+            } else if !session.values.contains_key("cursorAuth/cachedScopedProfile") {
+                if let Some(name) = json_text(&me, &["name", "displayName"]) {
+                    session.values.insert(
+                        "cursorAuth/cachedScopedProfile".into(),
+                        serde_json::json!({ "displayName": name }).to_string(),
+                    );
+                }
+            }
+        }
+    }
+    let summary = fetch_cursor_subscription(session).ok();
+    if let Some(plan) = summary.as_ref().and_then(|item| item.plan.clone()) {
+        session.values.insert(MEMBERSHIP_TYPE_KEY.into(), plan);
+    }
+    summary
+}
+
+fn complete_cursor_oauth(
+    label: Option<String>,
+    login_id: u64,
+    app: AppHandle,
+) -> Result<Account> {
+    let handshake = CursorOauthHandshake::generate();
+    let oauth = app.state::<OauthLoginState>();
+    oauth.set_url(login_id, handshake.login_url.clone())?;
+    emit_official_login_status(&app, "started", Some(handshake.login_url.clone()));
+    let _ = open_browser(&handshake.login_url);
+    emit_official_login_status(&app, "waiting", Some(handshake.login_url.clone()));
+    let tokens = poll_cursor_oauth(&handshake, login_id, &app)?;
+    if !oauth.is_active(login_id) {
+        return Err(AppError::LoginCancelled);
+    }
+    emit_official_login_status(&app, "importing", None);
+    let mut session = session_from_oauth_poll(&tokens)?;
+    let subscription = enrich_cursor_session(&mut session);
+    if !oauth.is_active(login_id) {
+        return Err(AppError::LoginCancelled);
+    }
+    let state = app.state::<AppState>();
+    let mut controller = state
+        .0
+        .lock()
+        .map_err(|_| AppError::Message("账户存储不可用".into()))?;
+    let account = controller.save_imported_session(
+        ApplicationKind::Cursor,
+        label,
+        session,
+        ImportType::OAuth,
+    )?;
+    let account_id = account.id.clone();
+    if let Some(summary) = subscription {
+        let _ = controller.save_subscription(&account_id, summary);
+    }
+    let account = controller.account(&account_id).unwrap_or(account);
+    drop(controller);
+    refresh_tray(&app);
+    let _ = app.emit("accounts-changed", ());
+    oauth.finish(login_id);
+    Ok(account)
+}
+
 #[tauri::command]
 fn list_applications(
     state: State<'_, AppState>,
@@ -1551,7 +2307,7 @@ fn refresh_account_subscription(
 }
 
 #[tauri::command]
-fn get_cursor_usage(
+async fn get_cursor_usage(
     id: String,
     state: State<'_, AppState>,
 ) -> std::result::Result<CursorUsageDetails, String> {
@@ -1561,7 +2317,10 @@ fn get_cursor_usage(
         .map_err(|_| "账户存储不可用".to_string())?
         .cursor_usage_session(&id)
         .map_err(error_text)?;
-    let (usage, raw) = fetch_cursor_usage(&account, &session).map_err(error_text)?;
+    let (usage, raw) = tauri::async_runtime::spawn_blocking(move || fetch_cursor_usage(&account, &session))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(error_text)?;
     state
         .0
         .lock()
@@ -1627,25 +2386,58 @@ fn import_token_or_json(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> std::result::Result<Account, String> {
-    let account = state
+    if kind != ApplicationKind::Cursor {
+        return Err(AppError::ComingSoon.to_string());
+    }
+    let mut session = Session::from_import(&payload).map_err(error_text)?;
+    let subscription = enrich_cursor_session(&mut session);
+    let import_type = import_type(&session);
+    let mut controller = state
         .0
         .lock()
-        .map_err(|_| "账户存储不可用".to_string())?
-        .import_payload(kind, label, &payload)
+        .map_err(|_| "账户存储不可用".to_string())?;
+    let account = controller
+        .save_imported_session(kind, label, session, import_type)
         .map_err(error_text)?;
+    let account_id = account.id.clone();
+    if let Some(summary) = subscription {
+        let _ = controller.save_subscription(&account_id, summary);
+    }
+    let account = controller.account(&account_id).unwrap_or(account);
+    drop(controller);
     refresh_tray(&app);
     let _ = app.emit("accounts-changed", ());
     Ok(account)
 }
 
 #[tauri::command]
-fn start_official_login(kind: ApplicationKind) -> std::result::Result<String, String> {
+async fn start_official_login(
+    kind: ApplicationKind,
+    label: Option<String>,
+    app: AppHandle,
+) -> std::result::Result<Account, String> {
     if kind != ApplicationKind::Cursor {
         return Err(AppError::ComingSoon.to_string());
     }
-    launch_cursor()
-        .map(|_| "已启动 Cursor。请在 Cursor 中完成官方登录，然后回到这里导入当前账户。".into())
+    let login_id = app.state::<OauthLoginState>().begin();
+    let worker = app.clone();
+    tauri::async_runtime::spawn_blocking(move || complete_cursor_oauth(label, login_id, worker))
+        .await
+        .map_err(|error| error.to_string())?
         .map_err(error_text)
+}
+
+#[tauri::command]
+fn cancel_official_login(state: State<'_, OauthLoginState>) {
+    state.cancel();
+}
+
+#[tauri::command]
+fn open_official_login_url(state: State<'_, OauthLoginState>) -> std::result::Result<(), String> {
+    let url = state
+        .url()
+        .ok_or_else(|| "没有进行中的官方登录。".to_string())?;
+    open_browser(&url).map_err(error_text)
 }
 
 #[tauri::command]
@@ -1781,6 +2573,7 @@ pub fn run() {
                 .app_data_dir()
                 .map_err(|error| AppError::Message(error.to_string()))?;
             app.manage(AppState(Mutex::new(Controller::new(data_dir)?)));
+            app.manage(OauthLoginState::default());
             let menu = build_tray_menu(app.handle())?;
             let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
             TrayIconBuilder::with_id("main")
@@ -1828,6 +2621,8 @@ pub fn run() {
             import_current_account,
             import_token_or_json,
             start_official_login,
+            cancel_official_login,
+            open_official_login_url,
             delete_account,
             switch_account,
             force_restart_cursor
@@ -1841,11 +2636,7 @@ mod tests {
     use super::*;
 
     fn test_cursor_db() -> PathBuf {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = env::temp_dir().join(format!("storm-dock-test-{nonce}.vscdb"));
+        let path = env::temp_dir().join(format!("storm-dock-test-{}.vscdb", uuid::Uuid::new_v4()));
         let _ = fs::remove_file(&path);
         let db = Connection::open(&path).unwrap();
         db.execute(
@@ -1908,6 +2699,121 @@ mod tests {
     }
 
     #[test]
+    fn imports_user_prefixed_session_tokens() {
+        let claims = URL_SAFE_NO_PAD.encode(
+            r#"{"sub":"auth0|user_01ABCDEFGHJKMNPQRSTVWXYZ","email":"me@example.com","exp":4102444800}"#,
+        );
+        let jwt = format!("header.{claims}.signature-padding-for-length");
+        let user_id = "user_01ABCDEFGHJKMNPQRSTVWXYZ";
+        let session = Session::from_import(&format!("{user_id}::{jwt}")).unwrap();
+        assert_eq!(session.values.get(ACCESS_TOKEN_KEY), Some(&jwt));
+        assert_eq!(
+            session.values.get("glass.lastSignedInAuthId").map(String::as_str),
+            Some("auth0|user_01ABCDEFGHJKMNPQRSTVWXYZ")
+        );
+        assert_eq!(session.values.get(EMAIL_KEY).map(String::as_str), Some("me@example.com"));
+        assert_eq!(import_type(&session), ImportType::Jwt);
+
+        let encoded = Session::from_import(&format!(
+            "WorkosCursorSessionToken={user_id}%3A%3A{jwt}"
+        ))
+        .unwrap();
+        assert_eq!(encoded.values.get(ACCESS_TOKEN_KEY), Some(&jwt));
+
+        let token = "a".repeat(40);
+        let session_token = Session::from_import(&format!("{user_id}::{token}")).unwrap();
+        assert_eq!(session_token.values.get(ACCESS_TOKEN_KEY), Some(&token));
+        assert_eq!(
+            session_token.values.get("glass.lastSignedInAuthId").map(String::as_str),
+            Some(user_id)
+        );
+        assert_eq!(import_type(&session_token), ImportType::Token);
+
+        let json = Session::from_import(&format!(r#"{{"sessionToken":"{user_id}::{token}"}}"#)).unwrap();
+        assert_eq!(json.values.get(ACCESS_TOKEN_KEY), Some(&token));
+        assert!(Session::from_import(user_id).is_err());
+    }
+
+    #[test]
+    fn jwt_claims_accept_padded_payloads() {
+        let mut payload = URL_SAFE_NO_PAD.encode(r#"{"email":"me@example.com","sub":"user_01ABCDEFGHJKMNPQRSTVWXYZ"}"#);
+        while payload.len() % 4 != 0 {
+            payload.push('=');
+        }
+        assert!(payload.contains('='));
+        let claims = jwt_claims(&format!("header.{payload}.signature")).unwrap();
+        assert_eq!(claims["email"], "me@example.com");
+    }
+
+    #[test]
+    fn token_import_labels_account_from_email_or_user_id() {
+        let data_dir = env::temp_dir().join(format!("storm-dock-token-label-{}", uuid::Uuid::new_v4()));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        let user_id = "user_01ABCDEFGHJKMNPQRSTVWXYZ";
+        let token = "a".repeat(40);
+        let account = controller
+            .import_payload(ApplicationKind::Cursor, None, &format!("{user_id}::{token}"))
+            .unwrap();
+        assert_eq!(account.label, user_id);
+        assert_eq!(account.email, None);
+
+        let claims = URL_SAFE_NO_PAD.encode(
+            r#"{"sub":"auth0|user_01ABCDEFGHJKMNPQRSTVWXYZ","email":"me@example.com","exp":4102444800}"#,
+        );
+        let jwt = format!("header.{claims}.signature-padding-for-length");
+        let account = controller
+            .import_payload(ApplicationKind::Cursor, None, &format!("{user_id}::{jwt}"))
+            .unwrap();
+        assert_eq!(account.label, "me@example.com");
+        assert_eq!(account.email.as_deref(), Some("me@example.com"));
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn dashboard_cookie_can_use_session_user_id_without_jwt_claims() {
+        let token = "a".repeat(40);
+        let session = session_from_access_token(&token, Some("user_01ABCDEFGHJKMNPQRSTVWXYZ".into()));
+        assert_eq!(
+            dashboard_cookie(&session).unwrap(),
+            format!("WorkosCursorSessionToken=user_01ABCDEFGHJKMNPQRSTVWXYZ%3A%3A{token}")
+        );
+    }
+
+    #[test]
+    fn cursor_oauth_uses_s256_pkce_and_official_login_url() {
+        let challenge = pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk");
+        assert_eq!(challenge, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+        let handshake = CursorOauthHandshake::from_parts(
+            "11111111-1111-4111-8111-111111111111".into(),
+            "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".into(),
+        );
+        assert!(handshake.login_url.starts_with("https://cursor.com/loginDeepControl?"));
+        assert!(handshake.login_url.contains("challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
+        assert!(handshake.login_url.contains("uuid=11111111-1111-4111-8111-111111111111"));
+        assert!(handshake.login_url.contains("mode=login"));
+        assert!(handshake.login_url.contains("redirectTarget=cli"));
+        assert!(!handshake.login_url.contains("verifier"));
+        assert!(!handshake.login_url.contains("dBjftJeZ4CVP"));
+    }
+
+    #[test]
+    fn oauth_poll_response_builds_a_cursor_session() {
+        let claims = URL_SAFE_NO_PAD.encode(r#"{"sub":"auth0|user_123","email":"me@example.com","exp":4102444800}"#);
+        let token = format!("header.{claims}.signature-padding-for-length");
+        let session = session_from_oauth_poll(&serde_json::json!({
+            "accessToken": token,
+            "refreshToken": "refresh-token-value",
+            "authId": "auth0|user_123"
+        }))
+        .unwrap();
+        assert_eq!(session.values.get(ACCESS_TOKEN_KEY), Some(&token));
+        assert_eq!(session.values.get("cursorAuth/refreshToken"), Some(&"refresh-token-value".into()));
+        assert_eq!(session.values.get("glass.lastSignedInAuthId"), Some(&"auth0|user_123".into()));
+        assert_eq!(session.values.get(EMAIL_KEY), Some(&"me@example.com".into()));
+        assert_eq!(import_type(&session), ImportType::OAuth);
+    }
+
+    #[test]
     fn dashboard_cookie_requires_a_live_cursor_jwt() {
         let claims = URL_SAFE_NO_PAD.encode(r#"{"sub":"auth0|user_123","exp":4102444800}"#);
         let session = Session {
@@ -1929,6 +2835,19 @@ mod tests {
     }
 
     #[test]
+    fn weekly_usage_reads_numeric_timestamps() {
+        let now_ms = OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
+        let events = serde_json::json!({ "usageEventsDisplay": [
+            { "timestamp": now_ms, "requestsCosts": "1.5", "model": "composer-2.5-fast" }
+        ]});
+        let weekly = weekly_usage(&events).unwrap();
+        assert_eq!(weekly.last().unwrap().requests, 1.5);
+        let models = models_from_events(&events);
+        assert_eq!(models[0].name, "composer-2.5-fast");
+        assert_eq!(models[0].requests, 2);
+    }
+
+    #[test]
     fn weekly_usage_returns_fixed_seven_day_window() {
         let now_ms = OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000;
         let events = serde_json::json!({ "usageEventsDisplay": [
@@ -1939,6 +2858,109 @@ mod tests {
         assert_eq!(weekly.last().unwrap().requests, 2.5);
         assert!(weekly.last().unwrap().is_on_demand);
         assert_eq!(weekly.last().unwrap().on_demand_cents, 10.0);
+    }
+
+    #[test]
+    fn models_from_events_sum_weighted_request_costs() {
+        let events = serde_json::json!({ "usageEventsDisplay": [
+            { "model": "composer-2.5-fast", "requestsCosts": 2.4 },
+            { "modelName": "composer-2.5-fast", "requestsCosts": 1.6 },
+            { "model": "gpt-5.5-medium", "requestsCosts": 8 },
+            { "model": "ignored", "requestsCosts": 0 }
+        ]});
+        let models = models_from_events(&events);
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].name, "gpt-5.5-medium");
+        assert_eq!(models[0].requests, 8);
+        assert_eq!(models[1].name, "composer-2.5-fast");
+        assert_eq!(models[1].requests, 4);
+    }
+
+    #[test]
+    fn models_from_events_read_dashboard_model_name_field() {
+        let events = serde_json::json!({ "usageEventsDisplay": [
+            { "modelName": "cursor-model", "requestsCosts": 3.2 }
+        ]});
+        let models = models_from_events(&events);
+        assert_eq!(models[0].name, "cursor-model");
+        assert_eq!(models[0].requests, 3);
+    }
+
+    #[test]
+    fn models_from_events_read_nested_model_object() {
+        let events = serde_json::json!({ "usageEventsDisplay": [
+            { "model": { "name": "composer-2.5-fast" }, "requestsCosts": 4 }
+        ]});
+        let models = models_from_events(&events);
+        assert_eq!(models[0].name, "composer-2.5-fast");
+        assert_eq!(models[0].requests, 4);
+    }
+
+    #[test]
+    fn usage_events_body_omits_null_user_id() {
+        let personal = usage_events_body(Some(0), None, 1, false);
+        assert_eq!(personal["teamId"], 0);
+        assert_eq!(personal["page"], 1);
+        assert_eq!(personal["pageSize"], 100);
+        assert!(personal.get("userId").is_none());
+        assert!(personal.get("startDate").is_none());
+        let enterprise = usage_events_body(Some(77), Some(42), 2, true);
+        assert_eq!(enterprise["teamId"], 77);
+        assert_eq!(enterprise["userId"], 42);
+        assert_eq!(enterprise["page"], 2);
+        assert!(enterprise.get("startDate").and_then(serde_json::Value::as_str).is_some());
+        assert!(enterprise.get("endDate").and_then(serde_json::Value::as_str).is_some());
+        let unscoped = usage_events_body(None, Some(9), 1, false);
+        assert!(unscoped.get("teamId").is_none());
+        assert_eq!(unscoped["userId"], 9);
+    }
+
+    #[test]
+    fn usage_events_from_response_treats_missing_or_null_as_empty() {
+        assert_eq!(usage_events_from_response(&serde_json::json!({ "totalUsageEventsCount": 0 })), Some(vec![]));
+        assert_eq!(usage_events_from_response(&serde_json::json!({ "usageEventsDisplay": null })), Some(vec![]));
+        assert_eq!(
+            usage_events_from_response(&serde_json::json!({ "usageEvents": [{ "model": "composer-2.5-fast" }] }))
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn auth_numeric_id_reads_dashboard_me_id() {
+        assert_eq!(auth_numeric_id(&serde_json::json!({ "id": "232352588", "email": "a@b.c" })), Some(232_352_588));
+        assert_eq!(auth_numeric_id(&serde_json::json!({ "userId": 42 })), Some(42));
+    }
+
+    #[test]
+    fn first_team_id_reads_string_and_numeric_ids() {
+        assert_eq!(
+            first_team_id(&serde_json::json!({ "teams": [{ "id": "13403082", "name": "acme" }] })),
+            Some(13_403_082)
+        );
+        assert_eq!(
+            first_team_id(&serde_json::json!({ "teams": [{ "teamId": 9 }] })),
+            Some(9)
+        );
+    }
+
+    #[test]
+    fn team_member_user_id_trims_email_and_accepts_string_ids() {
+        let spend = serde_json::json!({
+            "teamMemberSpend": [
+                { "userId": "232352588", "email": " User@Example.com " },
+                { "id": 1, "email": "other@example.com" }
+            ]
+        });
+        assert_eq!(
+            team_member_user_id(&spend, &["user@example.com".into()]),
+            Some(232_352_588)
+        );
+        assert_eq!(
+            team_member_user_id(&spend, &[" missing@example.com ".into()]),
+            None
+        );
     }
 
     #[test]
@@ -1963,6 +2985,26 @@ mod tests {
             subscription_from_response(&serde_json::json!({ "membershipType": "free" }));
         assert_eq!(live_shape.plan.as_deref(), Some("free"));
         assert_eq!(live_shape.expires_at, None);
+
+        let usage_summary = subscription_from_response(&serde_json::json!({
+            "membershipType": "pro",
+            "billingCycleEnd": "2026-08-27T00:00:00.000Z"
+        }));
+        assert_eq!(usage_summary.plan.as_deref(), Some("pro"));
+        assert_eq!(
+            usage_summary.expires_at,
+            Some(
+                OffsetDateTime::parse("2026-08-27T00:00:00.000Z", &Rfc3339)
+                    .unwrap()
+                    .unix_timestamp() as u64
+            )
+        );
+        let merged = merge_subscription(Some(usage_summary), Some(summary));
+        assert_eq!(merged.unwrap().expires_at, Some(
+            OffsetDateTime::parse("2026-08-27T00:00:00.000Z", &Rfc3339)
+                .unwrap()
+                .unix_timestamp() as u64
+        ));
     }
 
     #[test]
@@ -2031,6 +3073,7 @@ mod tests {
             models: vec![],
             weekly: vec![],
             weekly_available: false,
+            weekly_error: None,
             checked_at: 1,
         };
         let json = serde_json::to_string(&snapshot).unwrap();
@@ -2098,9 +3141,9 @@ mod tests {
             "usage_summary": { "membershipType": "enterprise", "billingCycleEnd": "2026-08-27T00:00:00.000Z" },
             "usage": { "fallback": { "numRequests": 2 } },
             "usage_events": { "usageEventsDisplay": [{
-                "modelName": "cursor-model", "inputTokens": 12, "outputTokens": 5, "costUsd": 1.25
+                "model": "cursor-model", "requestsCosts": 1, "inputTokens": 12, "outputTokens": 5, "costUsd": 1.25
             }, {
-                "modelName": "cursor-model", "inputTokens": 3, "outputTokens": 7, "costUsd": 0.75
+                "model": "cursor-model", "requestsCosts": 1, "inputTokens": 3, "outputTokens": 7, "costUsd": 0.75
             }] }
         }), 42);
         assert_eq!(record["cursor_usage_raw"]["membershipType"], "enterprise");

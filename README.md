@@ -6,7 +6,7 @@ Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个
 
 | 平台 | 状态 | 能力 |
 | --- | --- | --- |
-| Cursor | 已支持 | 官方登录接力、导入当前登录账户、Access Token / JSON 导入、账号排序与切换 |
+| Cursor | 已支持 | 官方 OAuth 登录、导入当前登录账户、Access Token / JSON 导入、账号排序与切换 |
 | Codex 桌面端 | 开发中 | 当前不会读取、写入或导入 Codex 登录数据 |
 
 支持 macOS 和 Windows。Cursor 切换会更新该应用的本地登录状态；若 Cursor 正在运行，Storm Dock 会要求确认后才强制重启，避免未保存内容丢失。
@@ -18,7 +18,7 @@ Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个
 - 同步目录只支持设备间串行写入：切换设备前关闭另一台设备上的 Storm Dock 并等待同步完成。
 - 切换 Cursor 前会备份当前会话；写入后会验证结果，验证失败即尝试恢复原会话。
 - 只处理已识别的 Cursor 本地数据结构；未知结构会被拒绝。
-- “官方登录”只启动 Cursor 完成其官方授权流程，Storm Dock 不接收 OAuth 回调或网页登录凭证。
+- “官方登录”打开 Cursor 官方授权页，使用与 Cursor CLI 相同的 OAuth / PKCE 流程轮询获取会话后导入账户。Storm Dock 不会把 verifier 放进登录链接。
 
 ## 技术栈
 

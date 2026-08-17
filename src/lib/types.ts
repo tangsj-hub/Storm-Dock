@@ -29,5 +29,6 @@ export type CursorUsageDetails = {
   models: { name: string; requests: number }[];
   weekly: { date: string; requests: number; onDemandCents: number; isOnDemand: boolean }[];
   weeklyAvailable: boolean;
+  weeklyError?: string;
   checkedAt: number;
 };

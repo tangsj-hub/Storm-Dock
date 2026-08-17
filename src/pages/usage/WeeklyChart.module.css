@@ -1,0 +1,12 @@
+.chart { align-items: stretch; display: grid; gap: 6px; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.day { background: transparent; border: 0; border-radius: 8px; color: inherit; display: grid; gap: 8px; grid-template-rows: 16px minmax(128px, 1fr) auto; min-width: 0; padding: 4px 2px 2px; }
+.day:hover { background: #f5f7fa; }
+.value { color: #5f6b77; font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 650; letter-spacing: .01em; min-height: 16px; opacity: 0; text-align: center; }
+.day:hover .value, .valueToday { opacity: 1; }
+.plot { align-items: end; display: flex; justify-content: center; min-height: 128px; position: relative; }
+.plot::before { background: #e6ebf1; bottom: 0; content: ""; height: 1px; left: 12%; position: absolute; right: 12%; }
+.bar { border-radius: 6px 6px 2px 2px; display: block; position: relative; transition: height .35s ease; width: 54%; z-index: 1; }
+.zeroBar { border-radius: 999px; height: 3px; }
+.todayBar { box-shadow: inset 0 0 0 1.5px #fff; }
+.label { color: #8a949e; font-size: 11px; font-weight: 550; letter-spacing: .02em; text-align: center; }
+.today { color: #20242c; font-weight: 680; }

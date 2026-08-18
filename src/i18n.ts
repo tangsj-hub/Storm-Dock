@@ -19,7 +19,7 @@ const resources = {
     switchProgress: "账号切换进度", cursorLaunched: "账号已切换，Cursor 已启动。", cursorRestarted: "账号已切换，Cursor 已重新启动。", restartRequired: "账号已切换。需要重启 Cursor 才生效。",
     restartDialogTitle: "Cursor 正在运行", restartDialogDescription: "当前 Cursor 仍在使用旧登录状态。确认后将强制结束并重新启动 Cursor。", restartDialogWarning: "强制终止会丢失 Cursor 中未保存的内容。", cancelCountdown: "取消 ({{seconds}})", forceRestart: "强制终止并启动",
     switchStages: { loading: "读取账户凭证", applying: "写入并验证 Cursor 会话", persisting: "保存账户状态", launching: "启动 Cursor", terminating: "正在结束 Cursor", restartRequired: "等待重启确认", complete: "切换完成", error: "切换失败" },
-    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "本机" }, subscriptionPlans: { pro: "Pro", free: "Free" }, subscriptionDays: "{{count}}day", subscriptionUnknownExpiry: "--", subscriptionExpired: "已过期"
+    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "本机" }, subscriptionPlans: { pro: "Pro", free: "Free" }, subscriptionDays: "{{count}}day", subscriptionToday: "今天", subscriptionUnknownExpiry: "--", subscriptionExpired: "已过期"
   }},
   en: { translation: {
     appName: "Storm Dock", settings: "Settings", applications: "Applications", refresh: "Refresh local state", refreshing: "Refreshing local state and subscription details...", refreshed: "Local state refreshed.", subscriptionsRefreshed: "Local state and subscription details refreshed.", subscriptionsRefreshIncomplete: "{{count}} accounts could not refresh. Re-import accounts with missing credentials.", addAccount: "Add account",
@@ -38,7 +38,7 @@ const resources = {
     switchProgress: "Account switch progress", cursorLaunched: "Account switched and Cursor started.", cursorRestarted: "Account switched and Cursor restarted.", restartRequired: "Account switched. Restart Cursor for the change to take effect.",
     restartDialogTitle: "Cursor is running", restartDialogDescription: "Cursor is still using the previous sign-in state. Confirm to force quit and restart it.", restartDialogWarning: "Force quitting may lose unsaved work in Cursor.", cancelCountdown: "Cancel ({{seconds}})", forceRestart: "Force quit and start",
     switchStages: { loading: "Reading account credentials", applying: "Writing and verifying the Cursor session", persisting: "Saving account state", launching: "Starting Cursor", terminating: "Quitting Cursor", restartRequired: "Waiting for restart confirmation", complete: "Switch complete", error: "Switch failed" },
-    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "Native" }, subscriptionPlans: { pro: "Pro", free: "Free" }, subscriptionDays_one: "{{count}} day", subscriptionDays_other: "{{count}} days", subscriptionUnknownExpiry: "--", subscriptionExpired: "Expired"
+    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "Native" }, subscriptionPlans: { pro: "Pro", free: "Free" }, subscriptionDays_one: "{{count}} day", subscriptionDays_other: "{{count}} days", subscriptionToday: "today", subscriptionUnknownExpiry: "--", subscriptionExpired: "Expired"
   }}
 };
 

@@ -12,7 +12,7 @@ export type Account = {
   label: string;
   email?: string;
   importType: "oauth" | "token" | "jwt" | "native";
-  subscription: { plan?: string; expiresAt?: number; checkedAt?: number };
+  subscription: { plan?: string; expiresAt?: number; billingCycleEnd?: string; checkedAt?: number };
   daysRemaining?: number;
   isCurrent: boolean;
 };

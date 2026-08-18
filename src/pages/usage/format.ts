@@ -44,12 +44,11 @@ export function hourEndMs(value: string) {
 
 export function daysUntil(iso?: string) {
   if (!iso) return;
-  const reset = new Date(iso);
-  if (Number.isNaN(reset.getTime())) return;
-  const target = new Date(reset.getFullYear(), reset.getMonth(), reset.getDate()).getTime();
-  const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  return Math.round((target - start) / 86_400_000);
+  const reset = new Date(iso).getTime();
+  if (Number.isNaN(reset)) return;
+  const now = Date.now();
+  if (reset <= now) return -1;
+  return Math.floor((reset - now) / 86_400_000);
 }
 
 export function isOverLimit(value: { used: number; limit?: number | null; percent: number }) {

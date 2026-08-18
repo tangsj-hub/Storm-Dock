@@ -40,7 +40,9 @@ function subscriptionLabel(account: Account, t: (key: string, options?: Record<s
   if (!account.subscription.expiresAt) return `${name} ${t("subscriptionUnknownExpiry")}`;
   const days = account.daysRemaining;
   if (days === undefined) return `${name} ${t("subscriptionUnknownExpiry")}`;
-  return days > 0 ? `${name} ${t("subscriptionDays", { count: days })}` : `${name} ${t("subscriptionExpired")}`;
+  if (days > 0) return `${name} ${t("subscriptionDays", { count: days })}`;
+  if (days === 0) return `${name} ${t("subscriptionToday")}`;
+  return `${name} ${t("subscriptionExpired")}`;
 }
 
 function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress }: { account: Account; busy: boolean; onExport: (account: Account) => void; onRemove: (account: Account) => void; onSwitch: (account: Account) => void; progress?: SwitchProgress }) {

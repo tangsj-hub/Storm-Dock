@@ -17,6 +17,10 @@ export type Account = {
   isCurrent: boolean;
 };
 
+export function canSwitchToDesktop(account: Account) {
+  return account.importType !== "token" && account.importType !== "jwt";
+}
+
 export type CursorUsageDetails = {
   accountId: string;
   label: string;
@@ -30,5 +34,17 @@ export type CursorUsageDetails = {
   weekly: { date: string; requests: number; onDemandCents: number; isOnDemand: boolean }[];
   weeklyAvailable: boolean;
   weeklyError?: string;
+  events?: UsageEvent[];
   checkedAt: number;
+};
+
+export type UsageEvent = {
+  timestamp: number;
+  model?: string;
+  requests: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  costUsd?: number;
+  chargedCents?: number;
+  onDemand: boolean;
 };

@@ -35,7 +35,9 @@ const CURSOR_KEYS: [&str; 7] = [
     "glass.lastSignedInAuthId",
 ];
 const ACCESS_TOKEN_KEY: &str = "cursorAuth/accessToken";
+const REFRESH_TOKEN_KEY: &str = "cursorAuth/refreshToken";
 const EMAIL_KEY: &str = "cursorAuth/cachedEmail";
+const AUTH_ID_KEY: &str = "glass.lastSignedInAuthId";
 const MEMBERSHIP_TYPE_KEY: &str = "cursorAuth/stripeMembershipType";
 const CURSOR_SUBSCRIPTION_URL: &str = "https://api2.cursor.sh/auth/full_stripe_profile";
 const CURSOR_DASHBOARD_URL: &str = "https://cursor.com/api";
@@ -125,7 +127,27 @@ struct CursorUsageDetails {
     weekly_available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     weekly_error: Option<String>,
+    #[serde(default)]
+    events: Vec<UsageEvent>,
     checked_at: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UsageEvent {
+    timestamp: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    requests: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    input_tokens: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    output_tokens: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cost_usd: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    charged_cents: Option<f64>,
+    on_demand: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -163,7 +185,7 @@ struct SwitchProgress {
     status: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SwitchOutcome {
     restart_required: bool,
@@ -184,8 +206,14 @@ impl Default for ImportType {
     }
 }
 
+impl ImportType {
+    fn supports_desktop_switch(&self) -> bool {
+        matches!(self, Self::OAuth | Self::Native)
+    }
+}
+
 fn import_type(session: &Session) -> ImportType {
-    if session.values.contains_key("cursorAuth/refreshToken") {
+    if session.values.contains_key(REFRESH_TOKEN_KEY) {
         ImportType::OAuth
     } else if session
         .values
@@ -556,13 +584,20 @@ fn team_member_user_id(spend: &serde_json::Value, emails: &[String]) -> Option<i
         })
 }
 
+fn event_timestamp_ms(event: &serde_json::Value) -> Option<u64> {
+    let value = event.get("timestamp")?;
+    let number = json_i64(value)
+        .map(|number| number as u64)
+        .or_else(|| value.as_str()?.parse::<u64>().ok())?;
+    Some(if number > 10_000_000_000 {
+        number
+    } else {
+        number * 1000
+    })
+}
+
 fn event_date(event: &serde_json::Value) -> Option<Date> {
-    let ms = event.get("timestamp").and_then(|value| {
-        value
-            .as_str()
-            .and_then(|text| text.parse::<i128>().ok())
-            .or_else(|| json_number(value).map(|number| number as i128))
-    })?;
+    let ms = event_timestamp_ms(event)? as i128;
     OffsetDateTime::from_unix_timestamp_nanos(ms * 1_000_000)
         .ok()
         .map(|time| time.date())
@@ -711,6 +746,39 @@ fn event_request_weight(event: &serde_json::Value) -> f64 {
     event.get("requestsCosts").and_then(json_number).map(|value| value.max(0.0)).unwrap_or(0.0)
 }
 
+fn event_number(event: &serde_json::Value, keys: &[&str]) -> Option<f64> {
+    keys.iter()
+        .find_map(|key| event.get(*key).and_then(json_number))
+        .filter(|value| value.is_finite())
+}
+
+fn usage_event_from_value(event: &serde_json::Value) -> Option<UsageEvent> {
+    Some(UsageEvent {
+        timestamp: event_timestamp_ms(event)?,
+        model: event_model_name(event),
+        requests: event_request_weight(event),
+        input_tokens: event_number(event, &["inputTokens", "input_tokens", "inputTokenCount"]),
+        output_tokens: event_number(event, &["outputTokens", "output_tokens", "outputTokenCount"]),
+        cost_usd: event_number(event, &["costUsd", "cost_usd", "costUSD"]),
+        charged_cents: event_number(event, &["chargedCents", "charged_cents"]),
+        on_demand: event.get("kind").and_then(serde_json::Value::as_str)
+            == Some("USAGE_EVENT_KIND_USAGE_BASED"),
+    })
+}
+
+fn usage_event_rows(events: &serde_json::Value) -> Vec<UsageEvent> {
+    let mut rows: Vec<_> = events
+        .get("usageEventsDisplay")
+        .or_else(|| events.get("usageEvents"))
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(usage_event_from_value)
+        .collect();
+    rows.sort_by(|left, right| right.timestamp.cmp(&left.timestamp));
+    rows
+}
+
 fn sort_models(models: &mut [ModelUsageSummary]) {
     models.sort_by(|left, right| {
         right
@@ -786,6 +854,133 @@ fn weekly_usage(events: &serde_json::Value) -> Option<Vec<WeeklyUsageSummary>> {
     )
 }
 
+fn percent_from_message(text: Option<&str>) -> Option<f64> {
+    let text = text?;
+    let end = text.find('%')?;
+    let head = &text[..end];
+    let start = head
+        .rfind(|character: char| !(character.is_ascii_digit() || character == '.'))
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    head.get(start..)?.parse().ok().filter(|value: &f64| value.is_finite())
+}
+
+fn percent_metric(percent: f64) -> UsageMetric {
+    UsageMetric {
+        kind: "percent".into(),
+        used: percent,
+        limit: None,
+        percent,
+    }
+}
+
+fn with_percent(mut metric: UsageMetric, percent: Option<f64>) -> UsageMetric {
+    if let Some(percent) = percent {
+        metric.percent = percent;
+    }
+    metric
+}
+
+fn plan_breakdown_total(summary: &serde_json::Value) -> Option<f64> {
+    number_at(summary, &["individualUsage", "plan", "breakdown", "total"]).filter(|value| *value > 0.0)
+}
+
+fn per_user_limit_cents(summary: &serde_json::Value, hard_limit: Option<&serde_json::Value>) -> Option<f64> {
+    hard_limit
+        .and_then(|value| number_at(value, &["perUserMonthlyLimitDollars"]))
+        .or_else(|| number_at(summary, &["hard_limit", "perUserMonthlyLimitDollars"]))
+        .or_else(|| number_at(summary, &["perUserMonthlyLimitDollars"]))
+        .filter(|value| *value > 0.0)
+        .map(|value| value * 100.0)
+}
+
+fn inferred_cursor_limit_cents(summary: &serde_json::Value) -> Option<f64> {
+    let total = plan_breakdown_total(summary)?;
+    let percent = number_at(summary, &["individualUsage", "plan", "totalPercentUsed"])?;
+    if percent <= 0.0 {
+        return None;
+    }
+    if percent < 99.5 {
+        return Some((total / (percent / 100.0)).round());
+    }
+    // The API caps totalPercentUsed at 100 even when spend slightly exceeds the
+    // seat cap, so total / 100% would echo the used amount ($181.72 / $181.72).
+    let snapped = (total / 1000.0).floor() * 1000.0;
+    (snapped > 0.0 && total - snapped < 1000.0).then_some(snapped)
+}
+
+fn on_demand_metric(summary: &serde_json::Value) -> Option<UsageMetric> {
+    let used = number_at(summary, &["individualUsage", "onDemand", "used"])
+        .or_else(|| number_at(summary, &["teamUsage", "onDemand", "used"]))?;
+    let limit = number_at(summary, &["individualUsage", "onDemand", "limit"])
+        .or_else(|| number_at(summary, &["teamUsage", "onDemand", "limit"]))
+        .filter(|limit| *limit > 0.0);
+    Some(usage_metric("currency", used, limit))
+}
+
+fn is_team_scoped(summary: &serde_json::Value) -> bool {
+    let membership = text_at(summary, &["membershipType"]).unwrap_or_default();
+    let limit_type = text_at(summary, &["limitType"]).unwrap_or_default();
+    ["enterprise", "team", "teams", "business"]
+        .iter()
+        .any(|name| membership.eq_ignore_ascii_case(name))
+        || limit_type.eq_ignore_ascii_case("team")
+}
+
+fn usage_pools(summary: &serde_json::Value, hard_limit: Option<&serde_json::Value>) -> (UsageMetric, Option<UsageMetric>) {
+    let plan_used = number_at(summary, &["individualUsage", "plan", "used"]);
+    let plan_limit = number_at(summary, &["individualUsage", "plan", "limit"]).filter(|limit| *limit > 0.0);
+    let overall_used = number_at(summary, &["individualUsage", "overall", "used"]);
+    let total_percent = number_at(summary, &["individualUsage", "plan", "totalPercentUsed"])
+        .or_else(|| percent_from_message(text_at(summary, &["autoModelSelectedDisplayMessage"]).as_deref()));
+    let auto_percent = number_at(summary, &["individualUsage", "plan", "autoPercentUsed"])
+        .or_else(|| percent_from_message(text_at(summary, &["autoModelSelectedDisplayMessage"]).as_deref()));
+    let api_percent = number_at(summary, &["individualUsage", "plan", "apiPercentUsed"])
+        .or_else(|| percent_from_message(text_at(summary, &["namedModelSelectedDisplayMessage"]).as_deref()));
+    let seat_limit = per_user_limit_cents(summary, hard_limit)
+        .or_else(|| number_at(summary, &["individualUsage", "overall", "limit"]).filter(|limit| *limit > 0.0))
+        .or_else(|| {
+            let inferred = inferred_cursor_limit_cents(summary)?;
+            match plan_limit {
+                Some(plan) if inferred > plan + 1.0 => Some(inferred),
+                _ => None,
+            }
+        });
+    let cursor_used = plan_breakdown_total(summary)
+        .or(overall_used)
+        .or_else(|| match (seat_limit, total_percent) {
+            (Some(limit), Some(percent)) => Some(limit * percent / 100.0),
+            _ => None,
+        })
+        .or(plan_used);
+    let two_pool = auto_percent.is_some() || api_percent.is_some() || matches!((seat_limit, plan_limit), (Some(seat), Some(plan)) if seat > plan + 1.0);
+    let primary = if let Some(limit) = seat_limit {
+        usage_metric("currency", cursor_used.unwrap_or(0.0), Some(limit))
+    } else if two_pool {
+        percent_metric(auto_percent.or(total_percent).unwrap_or(0.0))
+    } else if let (Some(used), Some(limit)) = (plan_used, plan_limit) {
+        usage_metric("currency", used, Some(limit))
+    } else if let Some(used) = overall_used {
+        usage_metric("currency", used, None)
+    } else if let Some(percent) = total_percent {
+        percent_metric(percent)
+    } else {
+        usage_metric("requests", 0.0, None)
+    };
+    let on_demand = if two_pool {
+        if let (Some(used), Some(limit)) = (plan_used, plan_limit) {
+            Some(with_percent(usage_metric("currency", used, Some(limit)), api_percent))
+        } else if let Some(percent) = api_percent {
+            Some(percent_metric(percent))
+        } else {
+            on_demand_metric(summary)
+        }
+    } else {
+        on_demand_metric(summary)
+    };
+    (primary, on_demand)
+}
+
 fn update_export_usage(record: &mut serde_json::Value, raw: serde_json::Value, checked_at: u64) {
     let Some(record) = record.as_object_mut() else { return; };
     let mut compatibility = raw.get("usage_summary").cloned().unwrap_or_else(|| raw.clone());
@@ -828,32 +1023,22 @@ fn update_export_usage(record: &mut serde_json::Value, raw: serde_json::Value, c
     if let Some(value) = input_total { usage_raw.insert("total_input_tokens".into(), serde_json::Value::from(value)); }
     if let Some(value) = output_total { usage_raw.insert("total_output_tokens".into(), serde_json::Value::from(value)); }
     if !by_model.is_empty() { usage_raw.insert("used_models".into(), serde_json::Value::Array(by_model.into_values().map(serde_json::Value::Object).collect())); }
+    if let Some(value) = raw.get("hard_limit") {
+        usage_raw.insert("hard_limit".into(), value.clone());
+    }
     record.insert("cursor_usage_raw".into(), compatibility);
 }
 
 fn cursor_usage_from_snapshot(account: &Account, raw: &serde_json::Value) -> Option<CursorUsageDetails> {
     let summary = raw;
-    let plan_used = number_at(summary, &["individualUsage", "plan", "used"]);
-    let plan_limit = number_at(summary, &["individualUsage", "plan", "limit"]);
-    let overall_used = number_at(summary, &["individualUsage", "overall", "used"]);
-    let percent = number_at(summary, &["individualUsage", "plan", "totalPercentUsed"]);
-    let primary = if let (Some(used), Some(limit)) = (plan_used, plan_limit.filter(|limit| *limit > 0.0)) {
-        usage_metric("currency", used, Some(limit))
-    } else if let Some(used) = overall_used {
-        usage_metric("currency", used, None)
-    } else if let Some(percent) = percent {
-        UsageMetric { kind: "percent".into(), used: percent, limit: None, percent }
-    } else {
-        usage_metric("requests", 0.0, None)
-    };
-    let on_demand = number_at(summary, &["individualUsage", "onDemand", "used"]).or_else(|| number_at(summary, &["teamUsage", "onDemand", "used"])).map(|used| usage_metric("currency", used, number_at(summary, &["individualUsage", "onDemand", "limit"]).or_else(|| number_at(summary, &["teamUsage", "onDemand", "limit"]))));
+    let (primary, on_demand) = usage_pools(summary, summary.get("hard_limit"));
     let mut models: Vec<_> = raw.get("used_models").and_then(serde_json::Value::as_array).into_iter().flatten().filter_map(|model| {
         let requests = model.get("num_requests").and_then(json_number).filter(|value| *value > 0.0)?;
         Some(ModelUsageSummary { name: model.get("model_name")?.as_str()?.into(), requests: requests.round() as u64 })
     }).collect();
     sort_models(&mut models);
     Some(CursorUsageDetails {
-        account_id: account.id.clone(), label: account.label.clone(), email: account.email.clone(), name: None, membership_type: text_at(summary, &["membershipType"]), primary, reset_at: text_at(summary, &["billingCycleEnd"]), on_demand, models, weekly_available: false, weekly: vec![], weekly_error: None, checked_at: account.raw_export.get("usage_updated_at").and_then(serde_json::Value::as_u64).unwrap_or(account.updated_at),
+        account_id: account.id.clone(), label: account.label.clone(), email: account.email.clone(), name: None, membership_type: text_at(summary, &["membershipType"]), primary, reset_at: text_at(summary, &["billingCycleEnd"]), on_demand, models, weekly_available: false, weekly: vec![], weekly_error: None, events: usage_event_rows(raw), checked_at: account.raw_export.get("usage_updated_at").and_then(serde_json::Value::as_u64).unwrap_or(account.updated_at),
     })
 }
 
@@ -863,44 +1048,24 @@ fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsa
     let summary = dashboard_request(&cookie, "/usage-summary", None)?;
     let usage = dashboard_request(&cookie, "/usage", None)?;
     let email = text_at(&me, &["email"]);
-    let plan_used = number_at(&summary, &["individualUsage", "plan", "used"]);
-    let plan_limit = number_at(&summary, &["individualUsage", "plan", "limit"]);
-    let overall_used = number_at(&summary, &["individualUsage", "overall", "used"]);
-    let percent = number_at(&summary, &["individualUsage", "plan", "totalPercentUsed"]);
     let enterprise = summary
         .get("membershipType")
         .and_then(serde_json::Value::as_str)
         .is_some_and(|value| value.eq_ignore_ascii_case("enterprise"));
-    let teams = enterprise.then(|| dashboard_request(&cookie, "/dashboard/teams", Some(serde_json::json!({}))).ok()).flatten();
+    let team_scoped = is_team_scoped(&summary);
+    let teams = team_scoped.then(|| dashboard_request(&cookie, "/dashboard/teams", Some(serde_json::json!({}))).ok()).flatten();
     let team_id = teams.as_ref().and_then(first_team_id);
     let hard_limit = team_id.and_then(|team_id| dashboard_request(&cookie, "/dashboard/get-hard-limit", Some(serde_json::json!({ "teamId": team_id }))).ok());
-    let enterprise_limit = hard_limit.as_ref().and_then(|limit| number_at(limit, &["perUserMonthlyLimitDollars"])).map(|dollars| dollars * 100.0);
-    let primary =
-        if let (Some(used), Some(limit)) = (plan_used, plan_limit.filter(|limit| *limit > 0.0)) {
-            usage_metric("currency", used, Some(limit))
-        } else if let Some(used) = overall_used {
-            usage_metric("currency", used, enterprise_limit)
-        } else if let Some(percent) = percent {
-            UsageMetric {
-                kind: "percent".into(),
-                used: percent,
-                limit: None,
-                percent,
-            }
-        } else {
-            let requests = usage
-                .as_object()
-                .into_iter()
-                .flat_map(|map| map.values())
-                .filter_map(|item| item.get("numRequests").and_then(json_number).map(|value| value.round() as u64))
-                .sum::<u64>();
-            usage_metric("requests", requests as f64, None)
-        };
-    let on_demand_used = number_at(&summary, &["individualUsage", "onDemand", "used"])
-        .or_else(|| number_at(&summary, &["teamUsage", "onDemand", "used"]));
-    let on_demand_limit = number_at(&summary, &["individualUsage", "onDemand", "limit"])
-        .or_else(|| number_at(&summary, &["teamUsage", "onDemand", "limit"]));
-    let on_demand = on_demand_used.map(|used| usage_metric("currency", used, on_demand_limit));
+    let (mut primary, on_demand) = usage_pools(&summary, hard_limit.as_ref());
+    if primary.kind == "requests" {
+        let requests = usage
+            .as_object()
+            .into_iter()
+            .flat_map(|map| map.values())
+            .filter_map(|item| item.get("numRequests").and_then(json_number).map(|value| value.round() as u64))
+            .sum::<u64>();
+        primary = usage_metric("requests", requests as f64, None);
+    }
 
     let team_spend = team_id.and_then(|team_id| dashboard_request(&cookie, "/dashboard/get-team-spend", Some(serde_json::json!({ "teamId": team_id }))).ok());
     let member_emails: Vec<String> = [email.clone(), account.email.clone()].into_iter().flatten().collect();
@@ -915,6 +1080,10 @@ fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsa
     let usage_events = events_result.ok();
     let weekly = usage_events.as_ref().and_then(weekly_usage);
     let models = models_from_events(usage_events.as_ref().unwrap_or(&serde_json::Value::Null));
+    let events = usage_events
+        .as_ref()
+        .map(usage_event_rows)
+        .unwrap_or_default();
     let details = CursorUsageDetails {
         account_id: account.id.clone(),
         label: account.label.clone(),
@@ -928,6 +1097,7 @@ fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsa
         weekly_available: weekly.is_some(),
         weekly: weekly.unwrap_or_default(),
         weekly_error,
+        events,
         checked_at: now(),
     };
     let mut raw = serde_json::Map::new();
@@ -935,7 +1105,7 @@ fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsa
     raw.insert("usage_summary".into(), summary);
     raw.insert("usage".into(), usage);
     raw.insert("usage_events".into(), usage_events.unwrap_or(serde_json::Value::Null));
-    if enterprise {
+    if team_scoped {
         raw.insert("teams".into(), teams.unwrap_or(serde_json::Value::Null));
         raw.insert("hard_limit".into(), hard_limit.unwrap_or(serde_json::Value::Null));
         raw.insert("team_spend".into(), team_spend.unwrap_or(serde_json::Value::Null));
@@ -1037,9 +1207,9 @@ fn apply_jwt_profile(values: &mut BTreeMap<String, String>, token: &str) {
             );
         }
     }
-    if !values.contains_key("glass.lastSignedInAuthId") {
+    if !values.contains_key(AUTH_ID_KEY) {
         if let Some(sub) = jwt_claim_text(&claims, &["sub"]) {
-            values.insert("glass.lastSignedInAuthId".into(), sub);
+            values.insert(AUTH_ID_KEY.into(), sub);
         }
     }
 }
@@ -1047,9 +1217,9 @@ fn apply_jwt_profile(values: &mut BTreeMap<String, String>, token: &str) {
 fn session_from_access_token(token: &str, user_id: Option<String>) -> Session {
     let mut values = BTreeMap::from([(ACCESS_TOKEN_KEY.into(), token.to_owned())]);
     apply_jwt_profile(&mut values, token);
-    if !values.contains_key("glass.lastSignedInAuthId") {
+    if !values.contains_key(AUTH_ID_KEY) {
         if let Some(user_id) = user_id.filter(|value| !value.is_empty()) {
-            values.insert("glass.lastSignedInAuthId".into(), user_id);
+            values.insert(AUTH_ID_KEY.into(), user_id);
         }
     }
     Session {
@@ -1705,7 +1875,14 @@ impl Controller {
             |row| row.get(0),
         )?;
         if let Some(json) = json {
-            if let Ok(details) = serde_json::from_str::<CursorUsageDetails>(&json) {
+            if let Ok(mut details) = serde_json::from_str::<CursorUsageDetails>(&json) {
+                if let Some(raw) = account.raw_export.get("cursor_usage_raw") {
+                    let (primary, on_demand) = usage_pools(raw, raw.get("hard_limit"));
+                    if !(primary.kind == "requests" && details.primary.kind != "requests") {
+                        details.primary = primary;
+                        details.on_demand = on_demand;
+                    }
+                }
                 return Ok(Some(details));
             }
         }
@@ -1743,6 +1920,11 @@ impl Controller {
     {
         progress("loading", 15);
         let account = self.account(id)?;
+        if !account.import_type.supports_desktop_switch() {
+            return Err(AppError::Message(
+                "Token / JWT 账户只能查询用量，不能切换登录 Cursor 桌面端。".into(),
+            ));
+        }
         let session = self.load_session(&account.id)?;
         let running = self.adapter(account.application).is_running();
         progress("applying", 45);
@@ -2533,6 +2715,7 @@ fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     items.push(&separator);
     let switches: Vec<MenuItem<_>> = accounts
         .drain(..)
+        .filter(|account| account.import_type.supports_desktop_switch())
         .map(|account| {
             MenuItem::with_id(
                 app,
@@ -2861,6 +3044,173 @@ mod tests {
     }
 
     #[test]
+    fn usage_pools_split_team_hard_limit_from_api_plan() {
+        let summary = serde_json::json!({
+            "individualUsage": {
+                "plan": {
+                    "used": 2000,
+                    "limit": 2000,
+                    "totalPercentUsed": 38.266666666666666,
+                    "breakdown": { "included": 2000, "bonus": 4888, "total": 6888 }
+                },
+                "onDemand": { "used": 0, "limit": null }
+            }
+        });
+        let hard_limit = serde_json::json!({ "perUserMonthlyLimitDollars": 180 });
+        let (primary, on_demand) = usage_pools(&summary, Some(&hard_limit));
+        assert_eq!(primary.kind, "currency");
+        assert_eq!(primary.used, 6888.0);
+        assert_eq!(primary.limit, Some(18000.0));
+        assert!((primary.percent - 38.2666).abs() < 0.01);
+        let on_demand = on_demand.expect("other models");
+        assert_eq!(on_demand.used, 2000.0);
+        assert_eq!(on_demand.limit, Some(2000.0));
+        assert_eq!(on_demand.percent, 100.0);
+    }
+
+    #[test]
+    fn usage_pools_infer_hard_limit_from_breakdown_percent() {
+        let summary = serde_json::json!({
+            "individualUsage": {
+                "plan": {
+                    "used": 2000,
+                    "limit": 2000,
+                    "totalPercentUsed": 32.04444444444445,
+                    "breakdown": { "included": 2000, "bonus": 3768, "total": 5768 }
+                }
+            }
+        });
+        let (primary, on_demand) = usage_pools(&summary, None);
+        assert_eq!(primary.used, 5768.0);
+        assert_eq!(primary.limit, Some(18000.0));
+        let on_demand = on_demand.expect("other models");
+        assert_eq!(on_demand.used, 2000.0);
+        assert_eq!(on_demand.limit, Some(2000.0));
+    }
+
+    #[test]
+    fn usage_pools_do_not_echo_overage_as_limit_when_percent_is_capped() {
+        let summary = serde_json::json!({
+            "individualUsage": {
+                "plan": {
+                    "used": 2000,
+                    "limit": 2000,
+                    "totalPercentUsed": 100.0,
+                    "autoPercentUsed": 100.0,
+                    "apiPercentUsed": 100.0,
+                    "breakdown": { "included": 2000, "bonus": 16172, "total": 18172 }
+                }
+            }
+        });
+        let (primary, on_demand) = usage_pools(&summary, None);
+        assert_eq!(primary.used, 18172.0);
+        assert_eq!(primary.limit, Some(18000.0));
+        assert!((primary.percent - 100.955).abs() < 0.01);
+        let on_demand = on_demand.expect("other models");
+        assert_eq!(on_demand.used, 2000.0);
+        assert_eq!(on_demand.limit, Some(2000.0));
+    }
+
+    #[test]
+    fn usage_pools_pro_uses_auto_percent_and_plan_as_other_models() {
+        let summary = serde_json::json!({
+            "membershipType": "pro",
+            "individualUsage": {
+                "plan": {
+                    "used": 1234,
+                    "limit": 2000,
+                    "autoPercentUsed": 12.5,
+                    "apiPercentUsed": 61.7,
+                    "totalPercentUsed": 40.0
+                }
+            }
+        });
+        let (primary, on_demand) = usage_pools(&summary, None);
+        assert_eq!(primary.kind, "percent");
+        assert_eq!(primary.percent, 12.5);
+        let on_demand = on_demand.expect("other models");
+        assert_eq!(on_demand.used, 1234.0);
+        assert_eq!(on_demand.limit, Some(2000.0));
+        assert_eq!(on_demand.percent, 61.7);
+    }
+
+    #[test]
+    fn usage_pools_ultra_keeps_included_api_pool_as_other_models() {
+        let summary = serde_json::json!({
+            "membershipType": "ultra",
+            "autoModelSelectedDisplayMessage": "You've used 2% of your included total usage",
+            "namedModelSelectedDisplayMessage": "You've used 86% of your included API usage",
+            "individualUsage": {
+                "plan": {
+                    "used": 34400,
+                    "limit": 40000,
+                    "autoPercentUsed": 2.0,
+                    "apiPercentUsed": 86.0,
+                    "totalPercentUsed": 86.0
+                }
+            }
+        });
+        let (primary, on_demand) = usage_pools(&summary, None);
+        assert_eq!(primary.kind, "percent");
+        assert_eq!(primary.percent, 2.0);
+        let on_demand = on_demand.expect("other models");
+        assert_eq!(on_demand.used, 34400.0);
+        assert_eq!(on_demand.limit, Some(40000.0));
+        assert_eq!(on_demand.percent, 86.0);
+    }
+
+    #[test]
+    fn usage_pools_free_uses_auto_and_api_percent() {
+        let summary = serde_json::json!({
+            "membershipType": "free",
+            "individualUsage": {
+                "plan": {
+                    "used": 0,
+                    "limit": 0,
+                    "autoPercentUsed": 100.0,
+                    "apiPercentUsed": 0.0,
+                    "totalPercentUsed": 61.5,
+                    "breakdown": { "total": 123 }
+                }
+            }
+        });
+        let (primary, on_demand) = usage_pools(&summary, None);
+        assert_eq!(primary.kind, "percent");
+        assert_eq!(primary.percent, 100.0);
+        let on_demand = on_demand.expect("other models");
+        assert_eq!(on_demand.kind, "percent");
+        assert_eq!(on_demand.percent, 0.0);
+    }
+
+    #[test]
+    fn usage_pools_keep_personal_plan_when_no_larger_cap() {
+        let summary = serde_json::json!({
+            "individualUsage": {
+                "plan": { "used": 1200, "limit": 2000, "totalPercentUsed": 60.0, "breakdown": { "total": 1200 } },
+                "onDemand": { "used": 400, "limit": 4000 }
+            }
+        });
+        let (primary, on_demand) = usage_pools(&summary, None);
+        assert_eq!(primary.used, 1200.0);
+        assert_eq!(primary.limit, Some(2000.0));
+        let on_demand = on_demand.expect("on demand");
+        assert_eq!(on_demand.used, 400.0);
+        assert_eq!(on_demand.limit, Some(4000.0));
+    }
+
+    #[test]
+    fn usage_pools_token_enterprise_uses_overall_and_hard_limit() {
+        let summary = serde_json::json!({
+            "individualUsage": { "overall": { "used": 17, "limit": null } }
+        });
+        let hard_limit = serde_json::json!({ "perUserMonthlyLimitDollars": 100 });
+        let (primary, on_demand) = usage_pools(&summary, Some(&hard_limit));
+        assert_eq!(primary.used, 17.0);
+        assert_eq!(primary.limit, Some(10000.0));
+        assert!(on_demand.is_none());
+    }
+
+    #[test]
     fn models_from_events_sum_weighted_request_costs() {
         let events = serde_json::json!({ "usageEventsDisplay": [
             { "model": "composer-2.5-fast", "requestsCosts": 2.4 },
@@ -2894,6 +3244,37 @@ mod tests {
         let models = models_from_events(&events);
         assert_eq!(models[0].name, "composer-2.5-fast");
         assert_eq!(models[0].requests, 4);
+    }
+
+    #[test]
+    fn usage_event_rows_map_dashboard_fields_newest_first() {
+        let events = serde_json::json!({ "usageEventsDisplay": [
+            {
+                "timestamp": 1_700_000_000_000u64,
+                "model": "composer-2.5-fast",
+                "requestsCosts": 1.5,
+                "inputTokens": 12,
+                "outputTokens": 4,
+                "costUsd": 0.2
+            },
+            {
+                "timestamp": "1700000001000",
+                "modelName": "gpt-5.5-medium",
+                "requestsCosts": 3,
+                "chargedCents": 25,
+                "kind": "USAGE_EVENT_KIND_USAGE_BASED"
+            }
+        ]});
+        let rows = usage_event_rows(&events);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].timestamp, 1_700_000_001_000);
+        assert_eq!(rows[0].model.as_deref(), Some("gpt-5.5-medium"));
+        assert!(rows[0].on_demand);
+        assert_eq!(rows[0].charged_cents, Some(25.0));
+        assert_eq!(rows[1].model.as_deref(), Some("composer-2.5-fast"));
+        assert_eq!(rows[1].input_tokens, Some(12.0));
+        assert_eq!(rows[1].output_tokens, Some(4.0));
+        assert!(!rows[1].on_demand);
     }
 
     #[test]
@@ -3074,6 +3455,7 @@ mod tests {
             weekly: vec![],
             weekly_available: false,
             weekly_error: None,
+            events: vec![],
             checked_at: 1,
         };
         let json = serde_json::to_string(&snapshot).unwrap();
@@ -3252,5 +3634,42 @@ mod tests {
             Some("replacement-token")
         );
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn token_and_jwt_accounts_cannot_switch_desktop() {
+        let data_dir = env::temp_dir().join(format!("storm-dock-token-switch-{}", uuid::Uuid::new_v4()));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        let token = controller
+            .save_imported_session(
+                ApplicationKind::Cursor,
+                Some("Token".into()),
+                Session {
+                    values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "a".repeat(40))]),
+                    raw_export: None,
+                },
+                ImportType::Token,
+            )
+            .unwrap();
+        let jwt = controller
+            .save_imported_session(
+                ApplicationKind::Cursor,
+                Some("Jwt".into()),
+                Session {
+                    values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "a.b.c".into())]),
+                    raw_export: None,
+                },
+                ImportType::Jwt,
+            )
+            .unwrap();
+
+        for account in [&token, &jwt] {
+            let error = controller.switch_account(&account.id, |_, _| {}).unwrap_err();
+            assert!(
+                error.to_string().contains("只能查询用量"),
+                "{error}"
+            );
+        }
+        let _ = fs::remove_dir_all(data_dir);
     }
 }

@@ -19,7 +19,7 @@ import codexIcon from "../../assets/codex.svg";
 import cursorIcon from "../../assets/cursor.svg";
 import "../../i18n";
 import { listAccounts, listApplications } from "../../lib/api";
-import { type Account, type ApplicationKind, type ApplicationStatus } from "../../lib/types";
+import { canSwitchToDesktop, type Account, type ApplicationKind, type ApplicationStatus } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "./page.module.css";
 
@@ -50,8 +50,8 @@ function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress
     <GripVertical className={styles.dragHandle} aria-label={t("drag", { account: account.label })} size={24} {...attributes} {...listeners} />
     <div className={styles.accountCopy}><strong>{account.label}</strong>{subscriptionLabel(account, t) && <span>{subscriptionLabel(account, t)}</span>}</div>
     <div className={styles.accountActions}>
-      {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button>}
-      {progress?.status === "error" && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
+      {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : canSwitchToDesktop(account) ? <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button> : null}
+      {progress?.status === "error" && canSwitchToDesktop(account) && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
       <Tooltip content={t("usage")}><a aria-label={t("viewUsage", { account: account.label })} className={styles.iconButton} href={`/usage.html?accountId=${encodeURIComponent(account.id)}`}><ChartNoAxesCombined aria-hidden="true" size={18} /></a></Tooltip>
       <Tooltip content={t("export")}><button aria-label={t("exportAccount", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onExport(account)} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>
       <Tooltip content={t("delete")}><button aria-label={t("remove", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onRemove(account)} type="button"><Trash2 aria-hidden="true" size={19} /></button></Tooltip>
@@ -116,6 +116,7 @@ function AccountsPage() {
     window.setTimeout(clearSwitch, 500);
   };
   const switchTo = async (account: Account) => {
+    if (!canSwitchToDesktop(account)) return;
     const operationId = crypto.randomUUID();
     activeOperationId.current = operationId;
     setBusy(true);

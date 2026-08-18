@@ -30,22 +30,12 @@
 .identity strong { font-size: 14px; font-weight: 680; }
 .badge { background: #f1f3f6; border: 1px solid #e0e5eb; border-radius: 3px; color: #66717d; font-size: 10px; font-weight: 650; line-height: 17px; padding: 0 6px; }
 .email { color: #788491; font-size: 12px; margin-left: auto; }
-.meter { display: grid; gap: 8px; padding-top: 16px; }
-.meterRow, .progressRow, .meta, .secondary { align-items: center; display: flex; gap: 8px; }
-.meterRow, .secondary { justify-content: space-between; }
-.secondary { padding-top: 12px; }
-.secondary span, .meterRow span { color: #687482; font-size: 13px; }
-.secondary strong, .meterRow strong { color: #20242c; font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 650; }
+.usageLines { display: grid; gap: 8px; padding-top: 16px; }
+.usageLine { color: #20242c; font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 650; margin: 0; }
 .overLimit { color: #c43f3f; }
-.progressRoot { background: #e4eaf1; border-radius: 999px; flex: 1; height: 6px; overflow: hidden; }
-.progressIndicator { display: block; height: 100%; transition: transform .2s ease; width: 100%; }
-.ok { background: #3b9a55; }
-.warn { background: #d9a21b; }
-.crit { background: #d4524c; }
-.progressRow small { color: #687482; font-size: 11px; font-variant-numeric: tabular-nums; min-width: 32px; text-align: right; }
 .charts { border-top: 1px solid #edf0f3; display: grid; gap: 36px; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); margin-top: 18px; padding-top: 20px; }
 .charts h2 { color: #788491; font-size: 11px; font-weight: 650; letter-spacing: .04em; margin: 0 0 14px; text-transform: uppercase; }
-.meta { border-top: 1px solid #edf0f3; color: #788491; font-size: 11px; justify-content: space-between; margin-top: 18px; padding-top: 14px; }
+.meta { align-items: center; border-top: 1px solid #edf0f3; color: #788491; display: flex; font-size: 11px; gap: 8px; justify-content: space-between; margin-top: 18px; padding-top: 14px; }
 .justUpdated { animation: flash 1.4s ease; color: #1f60c6; }
 .reset { background: transparent; border: 0; color: inherit; font: inherit; padding: 0; }
 .reset:hover { color: #45505d; }

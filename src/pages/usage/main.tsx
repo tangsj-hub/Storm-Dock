@@ -1,4 +1,3 @@
-import * as Progress from "@radix-ui/react-progress";
 import { ArrowLeft, ChartNoAxesCombined, FileOutput, LoaderCircle, RefreshCw } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
@@ -11,8 +10,8 @@ import { Tooltip } from "../../components/Tooltip";
 import "../../i18n";
 import type { CursorUsageDetails } from "../../lib/types";
 import "../../styles/global.css";
-import { daysUntil, isOverLimit, metric } from "./format";
-import { planHeat } from "./heat";
+import { daysUntil, hasLimit, isOverLimit, metric, spendCents } from "./format";
+import { EventLedger } from "./EventLedger";
 import { ModelBars } from "./ModelBars";
 import { WeeklyChart } from "./WeeklyChart";
 import styles from "./page.module.css";
@@ -22,17 +21,19 @@ function membershipLabel(type?: string) {
   return type.charAt(0).toUpperCase() + type.slice(1);
 }
 
-function UsageMeter({ label, value }: { label: string; value: CursorUsageDetails["primary"] }) {
-  const percent = Math.min(Math.max(value.percent, 0), 100);
-  return <div className={styles.meter}>
-    <div className={styles.meterRow}><span>{label}</span><strong>{metric(value)}</strong></div>
-    <div className={styles.progressRow}>
-      <Progress.Root aria-label={label} className={styles.progressRoot} value={percent}>
-        <Progress.Indicator className={`${styles.progressIndicator} ${styles[planHeat(value.percent)]}`} style={{ transform: `translateX(-${100 - percent}%)` }} />
-      </Progress.Root>
-      <small>{Math.round(value.percent)}%</small>
-    </div>
-  </div>;
+function usageUsedCopy(
+  label: string,
+  value: CursorUsageDetails["primary"] | NonNullable<CursorUsageDetails["onDemand"]>,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  const amount = metric(value);
+  if (value.kind === "currency" && hasLimit(value)) {
+    return t("usageUsedWithLimit", { label, amount, percent: Math.round(Math.max(value.percent, 0)) });
+  }
+  if (value.kind === "currency" || value.kind === "percent") {
+    return t("usageUsed", { label, amount });
+  }
+  return `${label} ${amount}`;
 }
 
 function resetCopy(resetAt: string | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
@@ -110,12 +111,15 @@ function UsagePage() {
         {membership && <span className={styles.badge}>{membership}</span>}
         {data.email && <span className={styles.email}>{data.email}</span>}
       </div>
-      <UsageMeter label={t("usagePrimary")} value={data.primary} />
-      {data.onDemand && <div className={styles.secondary}><span>{t("usageOnDemand")}</span><strong className={isOverLimit(data.onDemand) ? styles.overLimit : undefined}>{metric(data.onDemand)}</strong></div>}
-      <div className={styles.charts}>
-        <section><h2>{t("usageWeekly")}</h2>{data.weeklyAvailable ? <WeeklyChart days={data.weekly} unitsLabel={t("usageUnits")} /> : <p className={styles.muted}>{data.weeklyError ?? t("usageWeeklyUnavailable")}</p>}</section>
-        <section><h2>{t("usageModels")}</h2>{data.models.length ? <ModelBars models={data.models} /> : <p className={styles.muted}>{t("usageNoModels")}</p>}</section>
+      <div className={styles.usageLines}>
+        <p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(t("usagePrimary"), data.primary, t)}</p>
+        {data.onDemand && <p className={isOverLimit(data.onDemand) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(t("usageOnDemand"), data.onDemand, t)}</p>}
       </div>
+      <div className={styles.charts}>
+        <section><h2>{t("usageWeekly")}</h2>{data.weeklyAvailable ? <WeeklyChart days={data.weekly} events={data.events ?? []} /> : <p className={styles.muted}>{data.weeklyError ?? t("usageWeeklyUnavailable")}</p>}</section>
+        <section><h2>{t("usageModels")}</h2>{(data.events ?? []).some((event) => spendCents(event) !== undefined) ? <ModelBars events={data.events ?? []} models={data.models} /> : <p className={styles.muted}>{t("usageNoModels")}</p>}</section>
+      </div>
+      <EventLedger events={data.events ?? []} unavailable={data.weeklyError} />
       <div className={styles.meta}>
         {resetAt ? <Tooltip content={resetAt}><button className={styles.reset} type="button">{resetCopy(data.resetAt, t)}</button></Tooltip> : <span>{t("usageUnknown")}</span>}
         <span className={justUpdated ? styles.justUpdated : undefined}>{t("usageCheckedAt", { time: checkedAt })}</span>

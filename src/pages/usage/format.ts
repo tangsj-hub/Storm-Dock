@@ -11,14 +11,35 @@ export function displayModel(name: string) {
     .join(" ");
 }
 
+export function hasLimit(value: { limit?: number | null }) {
+  return value.limit != null && value.limit > 0;
+}
+
 export function metric(value: CursorUsageDetails["primary"] | NonNullable<CursorUsageDetails["onDemand"]>) {
-  if (value.kind === "currency") return value.limit === undefined ? money(value.used) : `${money(value.used)} / ${money(value.limit)}`;
+  if (value.kind === "currency") {
+    const limit = value.limit;
+    return hasLimit(value) && limit != null ? `${money(value.used)} / ${money(limit)}` : money(value.used);
+  }
   if (value.kind === "percent") return `${Math.round(value.percent)}%`;
   return number.format(value.used);
 }
 
 export function localDateKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+export function localHourKey(date = new Date()) {
+  return `${localDateKey(date)}T${String(date.getHours()).padStart(2, "0")}:00`;
+}
+
+export function hourStartMs(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.setMinutes(0, 0, 0);
+}
+
+export function hourEndMs(value: string) {
+  const start = hourStartMs(value);
+  return start === undefined ? undefined : start + 3_599_999;
 }
 
 export function daysUntil(iso?: string) {
@@ -31,6 +52,17 @@ export function daysUntil(iso?: string) {
   return Math.round((target - start) / 86_400_000);
 }
 
-export function isOverLimit(value: { used: number; limit?: number; percent: number }) {
-  return value.limit !== undefined && value.used > value.limit;
+export function isOverLimit(value: { used: number; limit?: number | null; percent: number }) {
+  const limit = value.limit;
+  return hasLimit(value) && limit != null && value.used > limit;
+}
+
+export function formatTokens(input?: number, output?: number) {
+  if (input === undefined && output === undefined) return;
+  return `${number.format(input ?? 0)} / ${number.format(output ?? 0)}`;
+}
+
+export function spendCents(event: { chargedCents?: number; costUsd?: number }) {
+  if (event.chargedCents !== undefined) return event.chargedCents;
+  if (event.costUsd !== undefined) return event.costUsd * 100;
 }

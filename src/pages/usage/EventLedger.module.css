@@ -1,0 +1,22 @@
+.ledger { border-top: 1px solid #edf0f3; display: grid; gap: 14px; margin-top: 18px; padding-top: 20px; }
+.ledger h2 { color: #788491; font-size: 11px; font-weight: 650; letter-spacing: .04em; margin: 0; text-transform: uppercase; }
+.toolbar { align-items: end; display: flex; flex-wrap: wrap; gap: 12px 16px; justify-content: space-between; }
+.filters { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.presets { display: flex; gap: 4px; }
+.preset, .presetActive { background: #fff; border: 1px solid #d5dce4; border-radius: 4px; color: #52606d; font-size: 12px; font-weight: 650; line-height: 26px; padding: 0 8px; }
+.preset:hover { border-color: #b8c5d4; color: #20242c; }
+.presetActive { background: #eef4ff; border-color: #8bb6f5; color: #2464c3; }
+.filters label { align-items: center; color: #66717d; display: inline-flex; font-size: 11px; font-weight: 650; gap: 6px; }
+.stats { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 0; }
+.stats div { background: #f7f9fb; border: 1px solid #e7edf3; border-radius: 5px; padding: 10px 12px; }
+.stats dt { color: #788491; font-size: 11px; font-weight: 650; }
+.stats dd { color: #20242c; font-size: 18px; font-variant-numeric: tabular-nums; font-weight: 720; margin: 4px 0 0; }
+.tableWrap { border: 1px solid #e4eaf1; border-radius: 5px; max-height: 360px; overflow: auto; }
+.table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.table th, .table td { padding: 8px 10px; text-align: left; white-space: nowrap; }
+.table th { background: #f7f9fb; color: #66717d; font-size: 11px; font-weight: 650; position: sticky; top: 0; z-index: 1; }
+.table td { border-top: 1px solid #eef2f6; color: #2a3139; font-variant-numeric: tabular-nums; }
+.table td:nth-child(2) { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.table tbody tr:hover td { background: #f7faff; }
+.empty { color: #66717d; font-size: 13px; margin: 0; }
+@media (max-width: 860px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .toolbar { align-items: start; flex-direction: column; } }

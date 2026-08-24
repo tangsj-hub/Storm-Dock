@@ -7,7 +7,7 @@
 .workspace { align-content: start; display: grid; flex: 1; gap: 12px; margin: 38px auto 0; max-width: var(--page-content-width); min-height: 0; overflow-y: auto; width: 100%; }
 .settingRow { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: flex; justify-content: space-between; min-height: 86px; padding: 18px 20px; }
 .settingCopy { align-items: center; display: flex; gap: 13px; }
-.icon { align-items: center; background: #e9f1ff; border-radius: 5px; color: #286fdd; display: inline-flex; height: 38px; justify-content: center; width: 38px; }
+.icon { align-items: center; background: #fff0e8; border-radius: 5px; color: #c9573d; display: inline-flex; height: 38px; justify-content: center; width: 38px; }
 .settingCopy h2 { font-size: 14px; font-weight: 680; margin-bottom: 5px; }
 .settingCopy p { color: #697482; font-size: 13px; }
 .languageTrigger { align-items: center; background: #fff; border: 1px solid #ccd5df; border-radius: 5px; color: #374151; display: inline-flex; font-size: 13px; font-weight: 600; gap: 22px; justify-content: space-between; min-height: 34px; min-width: 160px; padding: 0 10px 0 12px; }

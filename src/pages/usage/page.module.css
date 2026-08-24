@@ -6,10 +6,10 @@
 .back { background: transparent; border: 1px solid transparent; color: #68717d; height: 34px; width: 34px; }
 .back:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
 .actions { align-items: center; display: flex; gap: 8px; margin-left: auto; }
-.refresh { background: #286fdd; border: 1px solid #286fdd; color: #fff; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; transition: background .15s ease, border-color .15s ease, transform .12s ease; }
-.refresh:hover { background: #1f60c6; border-color: #1f60c6; }
+.refresh { background: #e76f51; border: 1px solid #e76f51; color: #fff; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; transition: background .15s ease, border-color .15s ease, transform .12s ease; }
+.refresh:hover { background: #c9573d; border-color: #c9573d; }
 .refresh:active { background: #1a54ad; transform: scale(.98); }
-.refreshBusy { background: #1f60c6; border-color: #1f60c6; }
+.refreshBusy { background: #c9573d; border-color: #c9573d; }
 .refreshBusy:active { transform: none; }
 .export { background: transparent; border: 1px solid transparent; color: #68717d; height: 34px; width: 34px; }
 .export:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }

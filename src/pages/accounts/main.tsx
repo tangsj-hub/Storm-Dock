@@ -50,7 +50,7 @@ function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
   return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical className={styles.dragHandle} aria-label={t("drag", { account: account.label })} size={24} {...attributes} {...listeners} />
-    <div className={styles.accountCopy}><strong>{account.label}</strong>{(() => { const subscription = subscriptionLabel(account, t); return subscription && <span className={styles.subscription}><span className={`${styles.planBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name}</span><span className={styles.expiry}>{subscription.expiry}</span></span>; })()}{account.status === "invalid" && <span className={styles.invalidBadge}>{t("tokenInvalid", { defaultValue: "Token已失效" })}</span>}</div>
+    <div className={styles.accountCopy}><strong>{account.label}</strong>{(() => { const subscription = subscriptionLabel(account, t); return subscription && <span className={styles.subscription}><span className={`${styles.planBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name}</span><span className={styles.expiry}>{subscription.expiry}</span></span>; })()}{account.status === "invalid" && <span className={styles.invalidBadge}>{t("tokenInvalid", { defaultValue: "Token已失效" })}</span>}{account.status === "missing" && <span className={styles.missingBadge}>{t("credentialMissing", { defaultValue: "凭证缺失" })}</span>}</div>
     <div className={styles.accountActions}>
       {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : canSwitchToDesktop(account) ? <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button> : null}
       {progress?.status === "error" && canSwitchToDesktop(account) && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
@@ -101,6 +101,13 @@ function AccountsPage() {
     }).then((stop) => { unlisten = stop; });
     return () => unlisten();
   }, []);
+  useEffect(() => {
+    let unlisten: () => void = () => {};
+    void listen<{ completed: number; total: number }>("account-refresh-progress", ({ payload }) => {
+      setNotice(t("refreshProgress", payload));
+    }).then((stop) => { unlisten = stop; });
+    return () => unlisten();
+  }, [t]);
 
   const act = async (work: () => Promise<void>) => {
     setBusy(true);
@@ -181,11 +188,15 @@ function AccountsPage() {
     setRefreshing(true);
     setRefreshFailed(false);
     setNotice(t("refreshing"));
-    let failed = 0;
-    if (isCursor) for (const account of accounts) {
-      try { await invoke("refresh_account_subscription", { id: account.id }); } catch { failed += 1; }
-    }
-    try { await load(); setNotice(t(failed ? "subscriptionsRefreshIncomplete" : accounts.length && isCursor ? "subscriptionsRefreshed" : "refreshed", { count: failed })); } catch (error) { setRefreshFailed(true); showError(error); } finally { setBusy(false); setRefreshing(false); }
+    try {
+      const result = isCursor ? await invoke<{ total: number; failed: number; invalid: number; missing: number }>("refresh_all_cursor_accounts") : { total: 0, failed: 0, invalid: 0, missing: 0 };
+      const failed = result.failed;
+      await load();
+      const other = failed - result.invalid - result.missing;
+      const reasons = [result.invalid && t("refreshTokenInvalid", { count: result.invalid }), result.missing && t("refreshCredentialMissing", { count: result.missing }), other && t("refreshOtherFailed", { count: other })].filter(Boolean).join("，");
+      setNotice(failed ? t("subscriptionsRefreshIncomplete", { reasons }) : t(accounts.length && isCursor ? "subscriptionsRefreshed" : "refreshed"));
+    } catch (error) { setRefreshFailed(true); showError(error); }
+    finally { setBusy(false); setRefreshing(false); }
   };
   const reorder = async (activeId: string, targetId?: string) => {
     (document.activeElement as HTMLElement | null)?.blur();

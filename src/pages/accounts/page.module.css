@@ -13,8 +13,8 @@
 .iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
 .iconButton:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
 .spinning { animation: spin .8s linear infinite; }
-.addButton { align-items: center; background: #286fdd; border: 1px solid #286fdd; border-radius: 5px; color: #fff; display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; }
-.addButton:hover { background: #1f60c6; }
+.addButton { align-items: center; background: #e76f51; border: 1px solid #e76f51; border-radius: 5px; color: #fff; display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; }
+.addButton:hover { background: #c9573d; }
 .addButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }
 .workspace { flex: 1; margin: 30px auto 0; max-width: var(--page-content-width); min-height: 0; overflow-y: auto; width: 100%; }
 .accountList { display: grid; gap: 8px; }
@@ -34,9 +34,10 @@
 .accountCopy .planDefault { color: #66717d; }
 .accountCopy .expiry { background: transparent; border: 0; color: #66717d; margin: 0 0 0 4px; padding: 0; }
 .accountCopy .invalidBadge { background: #fff0f0; border-color: #efb4b4; color: #c43f3f; margin-left: 5px; }
+.accountCopy .missingBadge { background: #fff7e6; border-color: #f2d9a7; color: #805d1a; margin-left: 5px; }
 .accountActions { align-items: center; display: flex; gap: 7px; }
 .currentBadge, .activate { align-items: center; border-radius: 4px; display: inline-flex; font-size: 12px; font-weight: 600; gap: 5px; justify-content: center; min-height: 30px; padding: 0 9px; }
-.currentBadge { background: #e6f0ff; color: #2464c3; }
+.currentBadge { background: #fff0e8; color: #c9573d; }
 .activate { background: #fff; border: 1px solid #cdd6e0; color: #2c5d9b; }
 .progress { display: grid; gap: 5px; min-width: 170px; }
 .progress > span { color: #52606d; font-size: 11px; font-weight: 600; }

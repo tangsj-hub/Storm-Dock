@@ -67,6 +67,7 @@ pub fn run() {
             commands::export_cursor_accounts,
             commands::get_cursor_export_record,
             commands::refresh_account_subscription,
+            commands::refresh_all_cursor_accounts,
             commands::get_cursor_usage,
             commands::get_saved_cursor_usage,
             commands::reorder_accounts,

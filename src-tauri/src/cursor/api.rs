@@ -62,7 +62,7 @@ pub(crate) fn fetch_stripe_profile(session: &Session) -> Result<serde_json::Valu
         .get(ACCESS_TOKEN_KEY)
         .ok_or(AppError::SecretMissing)?;
     let response = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(5))
         .build()
         .map_err(|error| {
             AppError::Message(format!(
@@ -74,11 +74,15 @@ pub(crate) fn fetch_stripe_profile(session: &Session) -> Result<serde_json::Valu
         .send()
         .map_err(|error| {
             AppError::Message(format!("could not refresh Cursor subscription: {error}"))
-        })?
-        .error_for_status()
-        .map_err(|error| {
-            AppError::Message(format!("could not refresh Cursor subscription: {error}"))
         })?;
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err(AppError::Message(
+            "Cursor 登录已失效，请在 Cursor 中重新登录后重新导入账号。".into(),
+        ));
+    }
+    let response = response.error_for_status().map_err(|error| {
+        AppError::Message(format!("could not refresh Cursor subscription: {error}"))
+    })?;
     response.json().map_err(|error| {
         AppError::Message(format!("could not read Cursor subscription: {error}"))
     })
@@ -98,6 +102,10 @@ pub(crate) fn fetch_cursor_subscription(session: &Session) -> Result<Subscriptio
             AppError::Message("could not refresh Cursor subscription".into())
         })
     })
+}
+
+pub(crate) fn fetch_cursor_subscription_fast(session: &Session) -> Result<SubscriptionSummary> {
+    fetch_stripe_profile(session).map(|profile| subscription_from_response(&profile))
 }
 
 pub(crate) fn dashboard_cookie(session: &Session) -> Result<String> {
@@ -126,7 +134,7 @@ pub(crate) fn dashboard_request(
     body: Option<serde_json::Value>,
 ) -> Result<serde_json::Value> {
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.url().host_str() == Some("cursor.com") && attempt.previous().len() < 5 {
                 attempt.follow()

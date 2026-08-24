@@ -1,8 +1,8 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::{mpsc, Arc, Mutex as StdMutex}, thread};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::apps::{launch_cursor, terminate_cursor, wait_for_cursor_stop};
-use crate::cursor::api::fetch_cursor_subscription;
+use crate::cursor::api::{fetch_cursor_subscription, fetch_cursor_subscription_fast};
 use crate::cursor::oauth::{
     complete_cursor_oauth, enrich_cursor_session, open_browser, OauthLoginState,
 };
@@ -142,9 +142,84 @@ pub(crate) fn refresh_account_subscription(
     Ok(())
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RefreshAccountsResult {
+    pub total: usize,
+    pub failed: usize,
+    pub invalid: usize,
+    pub missing: usize,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RefreshAccountsProgress { completed: usize, total: usize }
+
+#[tauri::command]
+pub(crate) async fn refresh_all_cursor_accounts(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> std::result::Result<RefreshAccountsResult, String> {
+    let (sessions, missing_credentials) = {
+        let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+        let mut sessions = Vec::new();
+        let mut missing = Vec::new();
+        for account in controller.accounts(ApplicationKind::Cursor) {
+            match controller.subscription_session(&account.id) {
+                Ok(session) => sessions.push((account.id, session)),
+                Err(_) => missing.push(account.id),
+            }
+        }
+        (sessions, missing)
+    };
+    let total = sessions.len() + missing_credentials.len();
+    let progress_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let session_count = sessions.len();
+        let (job_sender, job_receiver) = mpsc::channel();
+        let (result_sender, result_receiver) = mpsc::channel();
+        for session in sessions { let _ = job_sender.send(session); }
+        drop(job_sender);
+        let job_receiver = Arc::new(StdMutex::new(job_receiver));
+        let workers = usize::min(3, session_count);
+        let jobs = (0..workers).map(|_| {
+            let jobs = Arc::clone(&job_receiver);
+            let results = result_sender.clone();
+            thread::spawn(move || loop {
+                let Some((id, session)) = jobs.lock().ok().and_then(|receiver| receiver.recv().ok()) else { break; };
+                let _ = results.send((id, fetch_cursor_subscription_fast(&session)));
+            })
+        }).collect::<Vec<_>>();
+        drop(result_sender);
+        let mut updates = Vec::new();
+        let mut failures = Vec::new();
+        for completed in 1..=session_count {
+            match result_receiver.recv() {
+                Ok((id, Ok(summary))) => updates.push((id, summary)),
+                Ok((id, Err(error))) => failures.push((id, error.to_string())),
+                Err(_) => { failures.push((String::new(), "刷新线程异常退出".into())); break; }
+            }
+            let _ = progress_app.emit("account-refresh-progress", RefreshAccountsProgress { completed, total });
+        }
+        for job in jobs { let _ = job.join(); }
+        (updates, failures)
+    }).await.map_err(|error| error.to_string())?;
+    let (updates, failures) = result;
+    let invalid = failures.iter().filter(|(_, message)| message.contains("失效") || message.contains("过期")).count();
+    let missing = missing_credentials.len();
+    let failed = failures.len() + missing;
+    let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+    for id in missing_credentials { let _ = controller.mark_credential_missing(&id); }
+    for (id, message) in failures { if !id.is_empty() && (message.contains("失效") || message.contains("过期")) { let _ = controller.mark_token_invalid(&id); } }
+    for (id, summary) in updates { controller.save_subscription(&id, summary).map_err(error_text)?; }
+    let _ = app.emit("accounts-changed", ());
+    Ok(RefreshAccountsResult { total, failed, invalid, missing })
+}
+
 #[tauri::command]
 pub(crate) async fn get_cursor_usage(
     id: String,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> std::result::Result<CursorUsageDetails, String> {
     let (account, session) = state
@@ -153,10 +228,20 @@ pub(crate) async fn get_cursor_usage(
         .map_err(|_| "账户存储不可用".to_string())?
         .cursor_usage_session(&id)
         .map_err(error_text)?;
-    let (usage, raw) = tauri::async_runtime::spawn_blocking(move || fetch_cursor_usage(&account, &session))
+    let usage_result = tauri::async_runtime::spawn_blocking(move || fetch_cursor_usage(&account, &session))
         .await
-        .map_err(|error| error.to_string())?
-        .map_err(error_text)?;
+        .map_err(|error| error.to_string())?;
+    let (usage, raw) = match usage_result {
+        Ok(value) => value,
+        Err(error) => {
+            let message = error.to_string();
+            if message.contains("失效") || message.contains("过期") {
+                if let Ok(mut controller) = state.0.lock() { let _ = controller.mark_token_invalid(&id); }
+                let _ = app.emit("accounts-changed", ());
+            }
+            return Err(error_text(error));
+        }
+    };
     state
         .0
         .lock()

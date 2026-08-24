@@ -8,7 +8,7 @@
 .addPage { align-content: start; display: grid; gap: 18px; min-height: 0; }
 .tabs { border-bottom: 1px solid #dfe4ea; display: flex; gap: 20px; }
 .tab { align-items: center; background: transparent; border: 0; border-bottom: 2px solid transparent; color: #727d89; display: inline-flex; font-size: 13px; font-weight: 600; gap: 7px; margin-bottom: -1px; padding: 9px 2px; }
-.tab[data-state="active"] { border-color: #286fdd; color: #1f60c6; }
+.tab[data-state="active"] { border-color: #e76f51; color: #c9573d; }
 .content { background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; }
 .panel { display: grid; gap: 24px; padding: 28px; }
 .heading { align-items: flex-start; display: flex; gap: 13px; }
@@ -28,8 +28,8 @@
 .panel label { color: #45505d; display: grid; font-size: 13px; font-weight: 600; gap: 8px; }
 .panel textarea { border: 1px solid #cbd4de; border-radius: 5px; color: #20242c; line-height: 1.45; min-height: 150px; padding: 10px; resize: vertical; }
 .primary, .secondary { align-items: center; border: 1px solid transparent; border-radius: 5px; display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; justify-content: center; min-height: 34px; padding: 0 12px; text-decoration: none; width: fit-content; }
-.primary { background: #286fdd; border-color: #286fdd; color: #fff; }
-.primary:hover:not(:disabled) { background: #1f60c6; }
+.primary { background: #e76f51; border-color: #e76f51; color: #fff; }
+.primary:hover:not(:disabled) { background: #c9573d; }
 .secondary { background: #fff; border-color: #d0d7e0; color: #374151; }
 .actions { display: flex; gap: 8px; justify-content: flex-end; }
 .toastViewport { bottom: 24px; display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }

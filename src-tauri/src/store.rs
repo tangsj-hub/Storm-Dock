@@ -340,6 +340,11 @@ impl Controller {
         Ok(())
     }
 
+    pub(crate) fn mark_credential_missing(&mut self, id: &str) -> Result<()> {
+        self.database.execute("UPDATE accounts SET token_status='missing', updated_at=?1 WHERE id=?2", params![now() as i64, id])?;
+        Ok(())
+    }
+
     pub(crate) fn saved_cursor_usage(&self, id: &str) -> Result<Option<CursorUsageDetails>> {
         let account = self.account(id)?;
         if account.application != ApplicationKind::Cursor {

@@ -92,7 +92,7 @@ function UsagePage() {
     <main className={styles.shell}>
     <header className={styles.header}>
       <a aria-label={t("back")} className={styles.back} href="/"><ArrowLeft aria-hidden="true" size={20} /></a>
-      <div><p>{data?.label ?? t("cursor")}</p><h1>{t("usageTitle")}</h1></div>
+      <h1>{t("usageTitle")}</h1>
       <div className={styles.actions}>
         <Tooltip content={t("export")}><button aria-label={t("export")} className={styles.export} disabled={busy} onClick={() => void openExport()} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>
         <button aria-busy={busy} aria-label={busy ? t("usageLoading") : t("usageRefresh")} className={`${styles.refresh} ${busy ? styles.refreshBusy : ""}`} onClick={() => void refresh()} type="button">

@@ -37,12 +37,12 @@ function subscriptionLabel(account: Account, t: (key: string, options?: Record<s
   const plan = account.subscription.plan;
   if (!plan) return undefined;
   const name = t(`subscriptionPlans.${plan.toLowerCase()}`, { defaultValue: plan });
-  if (!account.subscription.expiresAt) return `${name} ${t("subscriptionUnknownExpiry")}`;
+  if (!account.subscription.expiresAt) return { name, expiry: t("subscriptionUnknownExpiry"), plan: plan.toLowerCase() };
   const days = account.daysRemaining;
-  if (days === undefined) return `${name} ${t("subscriptionUnknownExpiry")}`;
-  if (days > 0) return `${name} ${t("subscriptionDays", { count: days })}`;
-  if (days === 0) return `${name} ${t("subscriptionToday")}`;
-  return `${name} ${t("subscriptionExpired")}`;
+  if (days === undefined) return { name, expiry: t("subscriptionUnknownExpiry"), plan: plan.toLowerCase() };
+  if (days > 0) return { name, expiry: t("subscriptionDays", { count: days }), plan: plan.toLowerCase() };
+  if (days === 0) return { name, expiry: t("subscriptionToday"), plan: plan.toLowerCase() };
+  return { name, expiry: t("subscriptionExpired"), plan: plan.toLowerCase() };
 }
 
 function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress }: { account: Account; busy: boolean; onExport: (account: Account) => void; onRemove: (account: Account) => void; onSwitch: (account: Account) => void; progress?: SwitchProgress }) {
@@ -50,7 +50,7 @@ function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
   return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical className={styles.dragHandle} aria-label={t("drag", { account: account.label })} size={24} {...attributes} {...listeners} />
-    <div className={styles.accountCopy}><strong>{account.label}</strong>{subscriptionLabel(account, t) && <span>{subscriptionLabel(account, t)}</span>}</div>
+    <div className={styles.accountCopy}><strong>{account.label}</strong>{(() => { const subscription = subscriptionLabel(account, t); return subscription && <span className={styles.subscription}><span className={`${styles.planBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name}</span><span className={styles.expiry}>{subscription.expiry}</span></span>; })()}{account.status === "invalid" && <span className={styles.invalidBadge}>{t("tokenInvalid", { defaultValue: "Token已失效" })}</span>}</div>
     <div className={styles.accountActions}>
       {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : canSwitchToDesktop(account) ? <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button> : null}
       {progress?.status === "error" && canSwitchToDesktop(account) && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
@@ -123,10 +123,13 @@ function AccountsPage() {
     activeOperationId.current = operationId;
     setBusy(true);
     setNotice(undefined);
-    setSwitchProgress({ operationId, accountId: account.id, stage: "loading", percent: 0, status: "running" });
     try {
       const outcome = await invoke<SwitchOutcome>("switch_account", { id: account.id, operationId });
       if (outcome.restartRequired) {
+        // The first phase only validates and prepares the switch. Do not show
+        // its progress as an active switch while waiting for confirmation.
+        setSwitchProgress(undefined);
+        setBusy(false);
         setRestartDialog({ account, operationId });
         setCountdown(10);
         return;
@@ -140,13 +143,15 @@ function AccountsPage() {
   };
   const cancelRestart = () => {
     setRestartDialog(undefined);
-    setNotice(t("restartRequired"));
+    setNotice(undefined);
     clearSwitch();
   };
   const forceRestart = async () => {
     const dialog = restartDialog;
     if (!dialog) return;
     setRestartDialog(undefined);
+    setBusy(true);
+    setSwitchProgress({ operationId: dialog.operationId, accountId: dialog.account.id, stage: "terminating", percent: 0, status: "running" });
     try {
       await invoke("force_restart_cursor", { id: dialog.account.id, operationId: dialog.operationId });
       await finishSwitch("cursorRestarted");

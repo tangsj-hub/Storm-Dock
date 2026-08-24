@@ -73,6 +73,7 @@ pub(crate) struct AccountSummary {
     pub(crate) subscription: SubscriptionSummary,
     pub(crate) days_remaining: Option<i64>,
     pub(crate) is_current: bool,
+    pub(crate) status: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

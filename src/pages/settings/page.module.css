@@ -1,10 +1,10 @@
-.shell { min-height: 100vh; padding: var(--page-shell-padding); }
-.header { align-items: center; display: flex; gap: 11px; margin: 0 auto; max-width: var(--page-content-width); }
+.shell { display: flex; flex-direction: column; height: 100vh; min-height: 0; overflow: hidden; padding: var(--page-shell-padding); }
+.header { align-items: center; display: flex; gap: 11px; margin: 0; max-width: none; }
 .header p { color: #77818d; font-size: 11px; font-weight: 650; margin-bottom: 2px; text-transform: uppercase; }
 .header h1 { font-size: 18px; font-weight: 720; }
 .back { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; font-size: 22px; height: 34px; justify-content: center; text-decoration: none; width: 34px; }
 .back:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
-.workspace { display: grid; gap: 12px; margin: 38px auto 0; max-width: var(--page-content-width); }
+.workspace { align-content: start; display: grid; flex: 1; gap: 12px; margin: 38px auto 0; max-width: var(--page-content-width); min-height: 0; overflow-y: auto; width: 100%; }
 .settingRow { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: flex; justify-content: space-between; min-height: 86px; padding: 18px 20px; }
 .settingCopy { align-items: center; display: flex; gap: 13px; }
 .icon { align-items: center; background: #e9f1ff; border-radius: 5px; color: #286fdd; display: inline-flex; height: 38px; justify-content: center; width: 38px; }

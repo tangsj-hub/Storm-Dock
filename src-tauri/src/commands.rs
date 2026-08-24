@@ -122,7 +122,16 @@ pub(crate) fn refresh_account_subscription(
         .map_err(|_| "账户存储不可用".to_string())?
         .subscription_session(&id)
         .map_err(error_text)?;
-    let summary = fetch_cursor_subscription(&session).map_err(error_text)?;
+    let summary = match fetch_cursor_subscription(&session) {
+        Ok(summary) => summary,
+        Err(error) => {
+            if error.to_string().contains("失效") || error.to_string().contains("过期") {
+                let _ = state.0.lock().ok().and_then(|mut controller| controller.mark_token_invalid(&id).ok());
+                let _ = app.emit("accounts-changed", ());
+            }
+            return Err(error_text(error));
+        }
+    };
     state
         .0
         .lock()
@@ -331,7 +340,18 @@ pub(crate) fn force_restart_cursor(
         emit_switch_progress(&app, &operation_id, &id, "error", 100, "error");
         return Err(error_text(error));
     }
-    emit_switch_progress(&app, &operation_id, &id, "launching", 75, "running");
+    emit_switch_progress(&app, &operation_id, &id, "applying", 60, "running");
+    let apply_result = app
+        .state::<AppState>()
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())
+        .and_then(|mut controller| controller.apply_account(&id).map_err(error_text));
+    if let Err(error) = apply_result {
+        emit_switch_progress(&app, &operation_id, &id, "error", 100, "error");
+        return Err(error);
+    }
+    emit_switch_progress(&app, &operation_id, &id, "launching", 80, "running");
     if let Err(error) = launch_cursor() {
         emit_switch_progress(&app, &operation_id, &id, "error", 100, "error");
         return Err(error_text(error));

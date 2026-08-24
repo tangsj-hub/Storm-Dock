@@ -96,9 +96,25 @@ impl CursorAdapter {
     }
 
     fn write_session(&self, db: &mut Connection, session: &Session) -> Result<()> {
+        // Cursor uses the scoped profile cache for the account shown in the
+        // lower-left menu. Token imports may only contain an email, so build
+        // the same minimal profile Cursor creates after a normal sign-in.
+        let mut values = session.values.clone();
+        if !values.contains_key("cursorAuth/cachedScopedProfile") {
+            if let Some(email) = values
+                .get("cursorAuth/cachedEmail")
+                .map(String::as_str)
+                .filter(|value| !value.trim().is_empty())
+            {
+                values.insert(
+                    "cursorAuth/cachedScopedProfile".into(),
+                    serde_json::json!({ "displayName": email }).to_string(),
+                );
+            }
+        }
         let transaction = db.transaction()?;
         for key in CURSOR_KEYS {
-            if let Some(value) = session.values.get(key) {
+            if let Some(value) = values.get(key) {
                 transaction.execute(
                     "INSERT OR REPLACE INTO ItemTable (key, value) VALUES (?1, ?2)",
                     params![key, value],
@@ -332,6 +348,15 @@ mod tests {
                 .get(ACCESS_TOKEN_KEY)
                 .map(String::as_str),
             Some("replacement-token")
+        );
+        assert_eq!(
+            adapter
+                .import_current()
+                .unwrap()
+                .values
+                .get("cursorAuth/cachedScopedProfile")
+                .map(String::as_str),
+            Some(r#"{"displayName":"original@example.com"}"#)
         );
         let _ = fs::remove_file(path);
     }

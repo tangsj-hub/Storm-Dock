@@ -1,6 +1,6 @@
 :root { --page-content-width: 1060px; --page-shell-padding: 56px 28px 28px; background: #f6f7f9; color: #20242c; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-synthesis: none; }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 820px; }
+body { margin: 0; min-width: 820px; overflow: hidden; }
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }

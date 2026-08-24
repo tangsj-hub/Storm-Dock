@@ -15,6 +15,7 @@ use crate::models::{
     days_remaining, matching_account_index, now, subscription_from_session, Account,
     AccountSummary, ApplicationKind, ApplicationStatus, CursorUsageDetails, ImportType, Session,
     SubscriptionSummary, SwitchOutcome, EMAIL_KEY,
+    ACCESS_TOKEN_KEY, AUTH_ID_KEY,
 };
 
 #[cfg(test)]
@@ -66,6 +67,7 @@ impl Controller {
              CREATE TABLE IF NOT EXISTS accounts (
                id TEXT PRIMARY KEY, application TEXT NOT NULL, label TEXT NOT NULL,
                email TEXT, import_type TEXT NOT NULL, subscription_json TEXT NOT NULL,
+               token_status TEXT,
                usage_json TEXT, usage_raw_json TEXT, raw_export_json TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
                last_used_at INTEGER NOT NULL, sort_order INTEGER NOT NULL
              );
@@ -87,6 +89,9 @@ impl Controller {
         }
         if !columns.iter().any(|name| name == "raw_export_json") {
             database.execute("ALTER TABLE accounts ADD COLUMN raw_export_json TEXT", [])?;
+        }
+        if !columns.iter().any(|name| name == "token_status") {
+            database.execute("ALTER TABLE accounts ADD COLUMN token_status TEXT", [])?;
         }
         Ok(database)
     }
@@ -173,21 +178,29 @@ impl Controller {
     }
 
     pub(crate) fn accounts(&self, kind: ApplicationKind) -> Vec<AccountSummary> {
-        let current: Option<String> = self.database.query_row("SELECT current_account_id FROM application_state WHERE application = ?1", params![Self::kind_value(kind)], |row| row.get(0)).ok();
+        let current_session = if kind == ApplicationKind::Cursor { self.cursor.import_current().ok() } else { None };
         self.all_accounts().unwrap_or_default().into_iter()
             .filter(|account| account.application == kind)
-            .map(|account| AccountSummary {
-                is_current: current.as_deref() == Some(&account.id),
+            .map(|account| {
+                let account_session = self.load_session(&account.id).ok();
+                let is_current = current_session.as_ref().zip(account_session.as_ref()).is_some_and(|(current, saved)| {
+                    [AUTH_ID_KEY, EMAIL_KEY, ACCESS_TOKEN_KEY].iter().any(|key| {
+                        current.values.get(*key).is_some_and(|value| !value.is_empty() && saved.values.get(*key) == Some(value))
+                    })
+                });
+                AccountSummary {
+                is_current,
                 id: account.id.clone(),
                 label: account.label.clone(),
                 email: account.email.clone(),
                 import_type: account.import_type.clone(),
                 subscription: account.subscription.clone(),
+                status: self.database.query_row("SELECT token_status FROM accounts WHERE id=?1", params![account.id], |row| row.get(0)).ok().flatten(),
                 days_remaining: account
                     .subscription
                     .reset_timestamp(&account.raw_export)
                     .map(|expires_at| days_remaining(expires_at, now())),
-            })
+            }})
             .collect()
     }
 
@@ -318,7 +331,12 @@ impl Controller {
         let mut account = self.account(id)?;
         account.subscription.merge_from(summary);
         account.updated_at = now();
-        self.database.execute("UPDATE accounts SET subscription_json=?1, updated_at=?2 WHERE id=?3", params![serde_json::to_string(&account.subscription)?, account.updated_at as i64, id])?;
+        self.database.execute("UPDATE accounts SET subscription_json=?1, token_status=NULL, updated_at=?2 WHERE id=?3", params![serde_json::to_string(&account.subscription)?, account.updated_at as i64, id])?;
+        Ok(())
+    }
+
+    pub(crate) fn mark_token_invalid(&mut self, id: &str) -> Result<()> {
+        self.database.execute("UPDATE accounts SET token_status='invalid', updated_at=?1 WHERE id=?2", params![now() as i64, id])?;
         Ok(())
     }
 
@@ -399,10 +417,16 @@ impl Controller {
         let session = self.load_session(&account.id)?;
         let running = self.adapter(account.application).is_running();
         progress("applying", 45);
-        self.adapter(account.application).apply(&session)?;
+        // A running Cursor process can flush its old in-memory state back to
+        // state.vscdb. Defer the write until after the restart in that case.
+        if !running {
+            self.adapter(account.application).apply(&session)?;
+        }
         progress("persisting", 75);
         let transaction = self.database.transaction()?;
-        transaction.execute("INSERT INTO application_state (application, current_account_id) VALUES (?1, ?2) ON CONFLICT(application) DO UPDATE SET current_account_id=excluded.current_account_id", params![Self::kind_value(account.application), account.id])?;
+        if !running {
+            transaction.execute("INSERT INTO application_state (application, current_account_id) VALUES (?1, ?2) ON CONFLICT(application) DO UPDATE SET current_account_id=excluded.current_account_id", params![Self::kind_value(account.application), account.id])?;
+        }
         transaction.execute("UPDATE accounts SET last_used_at=?1 WHERE id=?2", params![now() as i64, id])?;
         transaction.commit()?;
         Ok(SwitchOutcome {
@@ -410,8 +434,16 @@ impl Controller {
         })
     }
 
+    pub(crate) fn apply_account(&mut self, id: &str) -> Result<()> {
+        let account = self.account(id)?;
+        let session = self.load_session(id)?;
+        self.adapter(account.application).apply(&session)?;
+        self.database.execute("INSERT INTO application_state (application, current_account_id) VALUES (?1, ?2) ON CONFLICT(application) DO UPDATE SET current_account_id=excluded.current_account_id", params![Self::kind_value(account.application), account.id])?;
+        Ok(())
+    }
+
     pub(crate) fn current_label(&self) -> String {
-        self.database.query_row("SELECT a.label FROM accounts a JOIN application_state s ON a.id=s.current_account_id WHERE s.application='cursor'", [], |row| row.get::<_, String>(0)).ok()
+        self.accounts(ApplicationKind::Cursor).into_iter().find(|account| account.is_current).map(|account| account.label)
             .unwrap_or_else(|| "未选择账户".into())
     }
 

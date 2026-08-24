@@ -15,6 +15,7 @@ export type Account = {
   subscription: { plan?: string; expiresAt?: number; billingCycleEnd?: string; checkedAt?: number };
   daysRemaining?: number;
   isCurrent: boolean;
+  status?: "invalid";
 };
 
 export function canSwitchToDesktop(account: Account) {

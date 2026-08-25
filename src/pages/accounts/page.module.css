@@ -25,16 +25,15 @@
 .dragHandle { color: #9aa5b1; cursor: grab; outline: none; touch-action: none; user-select: none; }
 .dragHandle:focus-visible { color: #377ef0; }
 .accountCopy strong { display: block; font-size: 14px; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.accountCopy span { background: #f1f3f6; border: 1px solid #e0e5eb; border-radius: 3px; color: #66717d; display: inline-block; font-size: 10px; font-weight: 650; line-height: 17px; margin-top: 5px; padding: 0 5px; }
-.accountCopy .subscription { background: #f1f3f6; }
-.accountCopy .planBadge { background: transparent; border: 0; color: #66717d; margin: 0; padding: 0; }
-.accountCopy .plan-pro { color: #2464c3; }
-.accountCopy .plan-team, .accountCopy .plan-enterprise { color: #8b5a12; }
-.accountCopy .plan-free { color: #4b7a57; }
-.accountCopy .planDefault { color: #66717d; }
-.accountCopy .expiry { background: transparent; border: 0; color: #66717d; margin: 0 0 0 4px; padding: 0; }
-.accountCopy .invalidBadge { background: #fff0f0; border-color: #efb4b4; color: #c43f3f; margin-left: 5px; }
-.accountCopy .missingBadge { background: #fff7e6; border-color: #f2d9a7; color: #805d1a; margin-left: 5px; }
+.accountMeta { align-items: center; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.accountCopy .metaBadge, .accountCopy .invalidBadge, .accountCopy .missingBadge { border: 0; border-radius: 3px; display: inline-flex; font-size: 10px; font-weight: 650; line-height: 18px; margin: 0; padding: 0 6px; }
+.accountCopy .metaBadge { background: #eaf0f6; color: #526477; }
+.accountCopy .plan-pro { background: #e8f1ff; color: #2464c3; }
+.accountCopy .plan-team, .accountCopy .plan-enterprise { background: #fff3d9; color: #8b5a12; }
+.accountCopy .plan-free { background: #e7f5ec; color: #337453; }
+.accountCopy .planDefault { background: #eef1f4; color: #66717d; }
+.accountCopy .invalidBadge { background: #fff0f0; color: #c43f3f; }
+.accountCopy .missingBadge { background: #fff7e6; color: #805d1a; }
 .accountActions { align-items: center; display: flex; gap: 7px; }
 .currentBadge, .activate { align-items: center; border-radius: 4px; display: inline-flex; font-size: 12px; font-weight: 600; gap: 5px; justify-content: center; min-height: 30px; padding: 0 9px; }
 .currentBadge { background: #fff0e8; color: #c9573d; }

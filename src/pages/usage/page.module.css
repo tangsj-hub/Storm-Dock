@@ -30,7 +30,6 @@
 .identity { align-items: center; border-bottom: 1px solid #edf0f3; display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 14px; }
 .identity strong { font-size: 14px; font-weight: 680; }
 .badge { background: #f1f3f6; border: 1px solid #e0e5eb; border-radius: 3px; color: #66717d; font-size: 10px; font-weight: 650; line-height: 17px; padding: 0 6px; }
-.email { color: #788491; font-size: 12px; margin-left: auto; }
 .usageLines { display: grid; gap: 8px; padding-top: 16px; }
 .usageLine { color: #20242c; font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 650; margin: 0; }
 .overLimit { color: #c43f3f; }
@@ -41,5 +40,5 @@
 .reset { background: transparent; border: 0; color: inherit; font: inherit; padding: 0; }
 .reset:hover { color: #45505d; }
 @keyframes flash { 0% { color: #1f60c6; } 100% { color: #788491; } }
-@media (max-width: 860px) { .charts { grid-template-columns: 1fr; } .email { margin-left: 0; width: 100%; } }
+@media (max-width: 860px) { .charts { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .shell { padding: 32px 18px; } .header { align-items: flex-start; } .refresh { white-space: nowrap; } }

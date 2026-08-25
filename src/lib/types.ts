@@ -13,6 +13,7 @@ export type Account = {
   email?: string;
   importType: "oauth" | "token" | "jwt" | "native";
   subscription: { plan?: string; expiresAt?: number; billingCycleEnd?: string; checkedAt?: number };
+  usage?: { kind: "currency" | "percent" | "requests"; used: number; limit?: number; percent: number };
   daysRemaining?: number;
   isCurrent: boolean;
   status?: "invalid" | "missing";

@@ -2,15 +2,13 @@ use std::{path::PathBuf, sync::{mpsc, Arc, Mutex as StdMutex}, thread};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::apps::{launch_cursor, terminate_cursor, wait_for_cursor_stop};
-use crate::cursor::api::{fetch_cursor_subscription, fetch_cursor_subscription_fast};
-use crate::cursor::oauth::{
-    complete_cursor_oauth, enrich_cursor_session, open_browser, OauthLoginState,
-};
-use crate::cursor::usage::fetch_cursor_usage;
+use crate::cursor::api::{dashboard_cookie, dashboard_request, fetch_cursor_subscription, fetch_cursor_subscription_fast};
+use crate::cursor::oauth::{complete_cursor_oauth, open_browser, OauthLoginState};
+use crate::cursor::usage::{fetch_cursor_usage, usage_pools};
 use crate::error::AppError;
 use crate::models::{
     import_type, Account, AccountSummary, ApplicationKind, ApplicationStatus, CursorUsageDetails,
-    Session, SwitchOutcome, SwitchProgress,
+    Session, SwitchOutcome, SwitchProgress, MEMBERSHIP_TYPE_KEY,
 };
 use crate::store::AppState;
 use crate::tray::refresh_tray;
@@ -187,7 +185,15 @@ pub(crate) async fn refresh_all_cursor_accounts(
             let results = result_sender.clone();
             thread::spawn(move || loop {
                 let Some((id, session)) = jobs.lock().ok().and_then(|receiver| receiver.recv().ok()) else { break; };
-                let _ = results.send((id, fetch_cursor_subscription_fast(&session)));
+                let refreshed = fetch_cursor_subscription_fast(&session).map(|summary| {
+                    // The account list needs a compact quota value, not the full usage history.
+                    let usage = dashboard_cookie(&session)
+                        .ok()
+                        .and_then(|cookie| dashboard_request(&cookie, "/usage-summary", None).ok())
+                        .map(|response| usage_pools(&response, response.get("hard_limit")).0);
+                    (summary, usage)
+                });
+                let _ = results.send((id, refreshed));
             })
         }).collect::<Vec<_>>();
         drop(result_sender);
@@ -211,7 +217,10 @@ pub(crate) async fn refresh_all_cursor_accounts(
     let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
     for id in missing_credentials { let _ = controller.mark_credential_missing(&id); }
     for (id, message) in failures { if !id.is_empty() && (message.contains("失效") || message.contains("过期")) { let _ = controller.mark_token_invalid(&id); } }
-    for (id, summary) in updates { controller.save_subscription(&id, summary).map_err(error_text)?; }
+    for (id, (summary, usage)) in updates {
+        controller.save_subscription(&id, summary).map_err(error_text)?;
+        if let Some(usage) = usage { controller.save_cursor_usage_summary(&id, usage).map_err(error_text)?; }
+    }
     let _ = app.emit("accounts-changed", ());
     Ok(RefreshAccountsResult { total, failed, invalid, missing })
 }
@@ -300,34 +309,59 @@ pub(crate) fn import_current_account(
 }
 
 #[tauri::command]
-pub(crate) fn import_token_or_json(
+pub(crate) async fn import_token_or_json(
     kind: ApplicationKind,
     label: Option<String>,
     payload: String,
     app: AppHandle,
-    state: State<'_, AppState>,
 ) -> std::result::Result<Account, String> {
     if kind != ApplicationKind::Cursor {
         return Err(AppError::ComingSoon.to_string());
     }
-    let mut session = Session::from_import(&payload).map_err(error_text)?;
-    let subscription = enrich_cursor_session(&mut session);
-    let import_type = import_type(&session);
-    let mut controller = state
-        .0
-        .lock()
-        .map_err(|_| "账户存储不可用".to_string())?;
-    let account = controller
-        .save_imported_session(kind, label, session, import_type)
-        .map_err(error_text)?;
-    let account_id = account.id.clone();
-    if let Some(summary) = subscription {
-        let _ = controller.save_subscription(&account_id, summary);
-    }
-    let account = controller.account(&account_id).unwrap_or(account);
-    drop(controller);
+    let import_app = app.clone();
+    let (account, usage_session) = tauri::async_runtime::spawn_blocking(move || {
+        let mut session = Session::from_import(&payload).map_err(error_text)?;
+        // An exported session's membership cache can be stale (commonly
+        // "enterprise"). The background usage request is the source of truth.
+        session.values.remove(MEMBERSHIP_TYPE_KEY);
+        let import_type = import_type(&session);
+        let import_state = import_app.state::<AppState>();
+        let mut controller = import_state
+            .0
+            .lock()
+            .map_err(|_| "账户存储不可用".to_string())?;
+        let account = controller
+            .save_imported_session(kind, label, session, import_type)
+            .map_err(error_text)?;
+        let account_id = account.id.clone();
+        let account = controller.account(&account_id).unwrap_or(account);
+        let session = controller.subscription_session(&account_id).map_err(error_text)?;
+        Ok::<(Account, (Account, Session)), String>((account.clone(), (account, session)))
+    })
+    .await
+    .map_err(|error| error.to_string())??;
     refresh_tray(&app);
     let _ = app.emit("accounts-changed", ());
+    {
+        let usage_app = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let (usage_account, usage_session) = usage_session;
+            match fetch_cursor_usage(&usage_account, &usage_session) {
+                Ok((usage, raw)) => {
+                    if let Ok(mut controller) = usage_app.state::<AppState>().0.lock() {
+                        let _ = controller.save_cursor_usage(&usage_account.id, usage, raw);
+                    }
+                }
+                Err(error) if error.to_string().contains("失效") || error.to_string().contains("过期") => {
+                    if let Ok(mut controller) = usage_app.state::<AppState>().0.lock() {
+                        let _ = controller.mark_token_invalid(&usage_account.id);
+                    }
+                }
+                Err(_) => {}
+            }
+            let _ = usage_app.emit("accounts-changed", ());
+        });
+    }
     Ok(account)
 }
 

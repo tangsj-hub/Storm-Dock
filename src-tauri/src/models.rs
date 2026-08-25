@@ -71,6 +71,7 @@ pub(crate) struct AccountSummary {
     pub(crate) email: Option<String>,
     pub(crate) import_type: ImportType,
     pub(crate) subscription: SubscriptionSummary,
+    pub(crate) usage: Option<UsageMetric>,
     pub(crate) days_remaining: Option<i64>,
     pub(crate) is_current: bool,
     pub(crate) status: Option<String>,

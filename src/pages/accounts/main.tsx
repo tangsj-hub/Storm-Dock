@@ -45,12 +45,21 @@ function subscriptionLabel(account: Account, t: (key: string, options?: Record<s
   return { name, expiry: t("subscriptionExpired"), plan: plan.toLowerCase() };
 }
 
+function usageLabel(account: Account, t: (key: string, options?: Record<string, unknown>) => string) {
+  const usage = account.usage;
+  if (!usage) return account.subscription.plan?.toLowerCase() === "free" ? t("usageFree") : undefined;
+  if (usage.kind === "currency") {
+    return t("usageSpent", { amount: `$${(usage.used / 100).toFixed(2)}` });
+  }
+  return account.subscription.plan?.toLowerCase() === "free" ? t("usageFree") : undefined;
+}
+
 function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress }: { account: Account; busy: boolean; onExport: (account: Account) => void; onRemove: (account: Account) => void; onSwitch: (account: Account) => void; progress?: SwitchProgress }) {
   const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
   return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical className={styles.dragHandle} aria-label={t("drag", { account: account.label })} size={24} {...attributes} {...listeners} />
-    <div className={styles.accountCopy}><strong>{account.label}</strong>{(() => { const subscription = subscriptionLabel(account, t); return subscription && <span className={styles.subscription}><span className={`${styles.planBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name}</span><span className={styles.expiry}>{subscription.expiry}</span></span>; })()}{account.status === "invalid" && <span className={styles.invalidBadge}>{t("tokenInvalid", { defaultValue: "Token已失效" })}</span>}{account.status === "missing" && <span className={styles.missingBadge}>{t("credentialMissing", { defaultValue: "凭证缺失" })}</span>}</div>
+    <div className={styles.accountCopy}><strong>{account.label}</strong><div className={styles.accountMeta}>{(() => { const subscription = subscriptionLabel(account, t); return subscription && <span className={`${styles.metaBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name} · {subscription.expiry}</span>; })()}{(() => { const usage = usageLabel(account, t); return usage && <span className={styles.metaBadge}>{usage}</span>; })()}{account.status === "invalid" && <span className={styles.invalidBadge}>{t("tokenInvalid", { defaultValue: "Token已失效" })}</span>}{account.status === "missing" && <span className={styles.missingBadge}>{t("credentialMissing", { defaultValue: "凭证缺失" })}</span>}</div></div>
     <div className={styles.accountActions}>
       {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : canSwitchToDesktop(account) ? <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button> : null}
       {progress?.status === "error" && canSwitchToDesktop(account) && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}

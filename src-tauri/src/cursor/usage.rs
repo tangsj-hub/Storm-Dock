@@ -432,8 +432,8 @@ pub(crate) fn usage_pools(summary: &serde_json::Value, hard_limit: Option<&serde
         .or_else(|| {
             let inferred = inferred_cursor_limit_cents(summary)?;
             match plan_limit {
-                Some(plan) if inferred > plan + 1.0 => Some(inferred),
-                _ => None,
+                Some(plan) if inferred <= plan + 1.0 => None,
+                _ => Some(inferred),
             }
         });
     let cursor_used = plan_breakdown_total(summary)
@@ -752,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn usage_pools_free_uses_auto_and_api_percent() {
+    fn usage_pools_free_infers_a_currency_quota() {
         let summary = serde_json::json!({
             "membershipType": "free",
             "individualUsage": {
@@ -767,8 +767,9 @@ mod tests {
             }
         });
         let (primary, on_demand) = usage_pools(&summary, None);
-        assert_eq!(primary.kind, "percent");
-        assert_eq!(primary.percent, 100.0);
+        assert_eq!(primary.kind, "currency");
+        assert_eq!(primary.used, 123.0);
+        assert_eq!(primary.limit, Some(200.0));
         let on_demand = on_demand.expect("other models");
         assert_eq!(on_demand.kind, "percent");
         assert_eq!(on_demand.percent, 0.0);

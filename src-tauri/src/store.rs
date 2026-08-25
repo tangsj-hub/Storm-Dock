@@ -93,6 +93,9 @@ impl Controller {
         if !columns.iter().any(|name| name == "token_status") {
             database.execute("ALTER TABLE accounts ADD COLUMN token_status TEXT", [])?;
         }
+        if !columns.iter().any(|name| name == "usage_summary_json") {
+            database.execute("ALTER TABLE accounts ADD COLUMN usage_summary_json TEXT", [])?;
+        }
         Ok(database)
     }
 
@@ -195,6 +198,7 @@ impl Controller {
                 email: account.email.clone(),
                 import_type: account.import_type.clone(),
                 subscription: account.subscription.clone(),
+                usage: self.database.query_row("SELECT usage_summary_json FROM accounts WHERE id=?1", params![account.id], |row| row.get::<_, Option<String>>(0)).ok().flatten().and_then(|json| serde_json::from_str(&json).ok()),
                 status: self.database.query_row("SELECT token_status FROM accounts WHERE id=?1", params![account.id], |row| row.get(0)).ok().flatten(),
                 days_remaining: account
                     .subscription
@@ -248,7 +252,10 @@ impl Controller {
                 }
                 account.email = Some(email.to_owned());
                 account.import_type = import_type;
-                account.subscription = subscription_from_session(&session);
+                let imported_subscription = subscription_from_session(&session);
+                if imported_subscription.plan.is_some() {
+                    account.subscription.merge_from(imported_subscription);
+                }
                 account.updated_at = now;
                 account.last_used_at = now;
                 account.raw_export = raw_export_from_session(&session, &account.id, account.created_at, now, now, self.cursor.telemetry());
@@ -357,6 +364,9 @@ impl Controller {
         )?;
         if let Some(json) = json {
             if let Ok(mut details) = serde_json::from_str::<CursorUsageDetails>(&json) {
+                if details.account_id != id {
+                    return Ok(None);
+                }
                 if let Some(raw) = account.raw_export.get("cursor_usage_raw") {
                     let (primary, on_demand) = usage_pools(raw, raw.get("hard_limit"));
                     if !(primary.kind == "requests" && details.primary.kind != "requests") {
@@ -372,6 +382,9 @@ impl Controller {
     }
 
     pub(crate) fn save_cursor_usage(&mut self, id: &str, usage: CursorUsageDetails, raw: serde_json::Value) -> Result<()> {
+        if usage.account_id != id {
+            return Err(AppError::Message("用量数据与账号不匹配。".into()));
+        }
         let mut account = self.account(id)?;
         if let Some(summary) = raw.get("usage_summary") {
             account
@@ -387,14 +400,23 @@ impl Controller {
         }
         update_export_usage(&mut account.raw_export, raw, usage.checked_at);
         self.database.execute(
-            "UPDATE accounts SET usage_json=?1, raw_export_json=?2, subscription_json=?3, updated_at=?4 WHERE id=?5",
+            "UPDATE accounts SET usage_json=?1, usage_summary_json=?2, raw_export_json=?3, subscription_json=?4, updated_at=?5 WHERE id=?6",
             params![
                 serde_json::to_string(&usage)?,
+                serde_json::to_string(&usage.primary)?,
                 serde_json::to_string(&account.raw_export)?,
                 serde_json::to_string(&account.subscription)?,
                 now() as i64,
                 id
             ],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn save_cursor_usage_summary(&mut self, id: &str, usage: crate::models::UsageMetric) -> Result<()> {
+        self.database.execute(
+            "UPDATE accounts SET usage_summary_json=?1 WHERE id=?2",
+            params![serde_json::to_string(&usage)?, id],
         )?;
         Ok(())
     }
@@ -538,6 +560,44 @@ mod tests {
         assert_eq!(account.email.as_deref(), Some("me@example.com"));
         let _ = fs::remove_dir_all(data_dir);
     }
+
+    #[test]
+    fn reimport_without_a_plan_keeps_the_verified_subscription() {
+        let data_dir = env::temp_dir().join(format!("storm-dock-reimport-{}", uuid::Uuid::new_v4()));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        let account = controller
+            .save_imported_session(
+                ApplicationKind::Cursor,
+                None,
+                Session {
+                    values: BTreeMap::from([
+                        (ACCESS_TOKEN_KEY.into(), "a".repeat(40)),
+                        (EMAIL_KEY.into(), "me@example.com".into()),
+                        (crate::models::MEMBERSHIP_TYPE_KEY.into(), "pro".into()),
+                    ]),
+                    raw_export: None,
+                },
+                ImportType::Jwt,
+            )
+            .unwrap();
+        controller
+            .save_imported_session(
+                ApplicationKind::Cursor,
+                None,
+                Session {
+                    values: BTreeMap::from([
+                        (ACCESS_TOKEN_KEY.into(), "b".repeat(40)),
+                        (EMAIL_KEY.into(), "me@example.com".into()),
+                    ]),
+                    raw_export: None,
+                },
+                ImportType::Jwt,
+            )
+            .unwrap();
+        assert_eq!(controller.account(&account.id).unwrap().subscription.plan.as_deref(), Some("pro"));
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
     #[test]
     fn account_summaries_do_not_include_session_values() {
         let data_dir = env::temp_dir().join(format!("storm-dock-summary-{}", now()));

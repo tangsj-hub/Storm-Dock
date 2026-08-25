@@ -57,7 +57,20 @@ function UsagePage() {
   const [exportData, setExportData] = useState<unknown>();
   const flashTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(flashTimer.current), []);
-  useEffect(() => { if (accountId) void invoke<CursorUsageDetails | null>("get_saved_cursor_usage", { id: accountId }).then((usage) => { if (usage) setData(usage); }).catch((error) => setError(error instanceof Error ? error.message : String(error))); }, [accountId]);
+  useEffect(() => {
+    let cancelled = false;
+    setData(undefined);
+    setError(undefined);
+    if (!accountId) return () => { cancelled = true; };
+    void invoke<CursorUsageDetails | null>("get_saved_cursor_usage", { id: accountId })
+      .then((usage) => {
+        if (!cancelled && usage?.accountId === accountId) setData(usage);
+      })
+      .catch((error) => {
+        if (!cancelled) setError(error instanceof Error ? error.message : String(error));
+      });
+    return () => { cancelled = true; };
+  }, [accountId]);
   const refresh = async () => {
     if (!accountId || busy) { if (!accountId) setError(t("usageUnknown")); return; }
     setBusy(true);
@@ -65,7 +78,9 @@ function UsagePage() {
     setNoticeStatus("loading");
     setNotice(t("usageLoading"));
     try {
-      setData(await invoke<CursorUsageDetails>("get_cursor_usage", { id: accountId }));
+      const usage = await invoke<CursorUsageDetails>("get_cursor_usage", { id: accountId });
+      if (usage.accountId !== accountId) throw new Error(t("usageAccountMismatch"));
+      setData(usage);
       setNoticeStatus("success");
       setNotice(t("usageRefreshed"));
       setJustUpdated(true);
@@ -107,9 +122,8 @@ function UsagePage() {
     {data && <section className={styles.workspace}>
       {busy && <div aria-hidden="true" className={styles.indeterminate}><span /></div>}
       <div className={styles.identity}>
-        <strong>{data.name ?? data.label}</strong>
+        <strong>{data.email ?? data.label}</strong>
         {membership && <span className={styles.badge}>{membership}</span>}
-        {data.email && <span className={styles.email}>{data.email}</span>}
       </div>
       <div className={styles.usageLines}>
         <p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(t("usagePrimary"), data.primary, t)}</p>

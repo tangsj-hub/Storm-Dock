@@ -5,6 +5,9 @@ export type PluginSource = "local" | "marketplace" | "claude" | "codex" | "other
 export type Plugin = { id: string; name: string; description?: string; icon?: string; source: PluginSource; enabled: boolean; teamRequired: boolean; capabilities: PluginCapability[] };
 export type McpServer = { id: string; name: string };
 
+export type CodexSession = { id: string; title: string; projectDir?: string; sourcePath: string; updatedAt: number };
+export type CodexSessionMessage = { role: "user" | "assistant"; content: string; timestamp?: number };
+
 export type ApplicationStatus = {
   kind: ApplicationKind;
   label: string;

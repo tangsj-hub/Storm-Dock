@@ -7,6 +7,7 @@ use std::{
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::apps::{launch_cursor, terminate_cursor, wait_for_cursor_stop};
+use crate::codex_sessions::{CodexSession, CodexSessionMessage};
 use crate::cursor::api::{
     cursor_marketplace_plugins, dashboard_cookie, dashboard_request, fetch_cursor_subscription,
     fetch_cursor_subscription_fast, set_cursor_marketplace_plugin_enabled,
@@ -74,6 +75,26 @@ pub(crate) async fn list_cursor_plugins(
 pub(crate) async fn list_codex_plugins() -> Vec<Plugin> {
     tauri::async_runtime::spawn_blocking(collect_codex_plugins).await.unwrap_or_default()
 }
+
+#[tauri::command]
+pub(crate) async fn list_codex_sessions() -> Vec<CodexSession> {
+    tauri::async_runtime::spawn_blocking(crate::codex_sessions::list_sessions)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn get_codex_session_messages(id: String) -> Vec<CodexSessionMessage> {
+    tauri::async_runtime::spawn_blocking(move || crate::codex_sessions::load_messages(&id))
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn delete_codex_session(id: String) -> std::result::Result<(), String> { tauri::async_runtime::spawn_blocking(move || crate::codex_sessions::delete_session(&id)).await.map_err(|error| error.to_string())? }
+
+#[tauri::command]
+pub(crate) async fn launch_codex_session(id: String) -> std::result::Result<(), String> { tauri::async_runtime::spawn_blocking(move || crate::codex_sessions::launch_session(&id)).await.map_err(|error| error.to_string())? }
 
 #[tauri::command]
 pub(crate) fn set_codex_plugin_enabled(id: String, enabled: bool) -> std::result::Result<(), String> {

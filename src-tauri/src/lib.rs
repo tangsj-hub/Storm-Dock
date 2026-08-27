@@ -1,5 +1,6 @@
 mod apps;
 mod commands;
+mod codex_sessions;
 mod cursor;
 mod error;
 mod models;
@@ -63,6 +64,10 @@ pub fn run() {
             commands::list_applications,
             commands::list_cursor_plugins,
             commands::list_codex_plugins,
+            commands::list_codex_sessions,
+            commands::get_codex_session_messages,
+            commands::delete_codex_session,
+            commands::launch_codex_session,
             commands::set_codex_plugin_enabled,
             commands::set_codex_plugin_capability_enabled,
             commands::delete_codex_plugin,

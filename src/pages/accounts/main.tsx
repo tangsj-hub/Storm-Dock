@@ -1,26 +1,101 @@
 import { listen } from "@tauri-apps/api/event";
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Progress from "@radix-ui/react-progress";
 import * as Tabs from "@radix-ui/react-tabs";
-import { Check, ChartNoAxesCombined, ChevronsDownUp, ChevronsUpDown, Download, FileOutput, GripVertical, KeyRound, LogIn, Plus, Puzzle, RefreshCw, Settings, Trash2, UserRound, Waypoints } from "lucide-react";
+import {
+  Check,
+  ChartNoAxesCombined,
+  CheckSquare,
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Clock3,
+  Copy,
+  Download,
+  FileOutput,
+  FolderOpen,
+  GripVertical,
+  KeyRound,
+  LogIn,
+  MessageSquareText,
+  Play,
+  Plus,
+  Puzzle,
+  RefreshCw,
+  Search,
+  Settings,
+  Trash2,
+  UserRound,
+  Waypoints,
+  X,
+} from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
-import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentType,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { ExportDialog } from "../../components/ExportDialog";
 import { Tooltip } from "../../components/Tooltip";
-import { cachedPluginCount, PluginCatalog, type PluginHost } from "../../components/plugins/PluginCatalog";
+import {
+  cachedPluginCount,
+  PluginCatalog,
+  type PluginHost,
+} from "../../components/plugins/PluginCatalog";
 import logo from "../../assets/logo.svg";
 import codexIcon from "../../assets/codex.svg";
 import cursorIcon from "../../assets/cursor.svg";
 import "../../i18n";
-import { deleteCodexPlugin, deleteCursorPlugin, listAccounts, listApplications, listCodexPlugins, listCursorPlugins, listMcpServers, setCodexPluginCapabilityEnabled, setCodexPluginEnabled, setCursorPluginEnabled } from "../../lib/api";
-import { canSwitchToDesktop, type Account, type ApplicationKind, type ApplicationStatus, type McpServer } from "../../lib/types";
+import {
+  deleteCodexPlugin,
+  deleteCodexSession,
+  deleteCursorPlugin,
+  getCodexSessionMessages,
+  launchCodexSession,
+  listAccounts,
+  listApplications,
+  listCodexPlugins,
+  listCodexSessions,
+  listCursorPlugins,
+  listMcpServers,
+  setCodexPluginCapabilityEnabled,
+  setCodexPluginEnabled,
+  setCursorPluginEnabled,
+} from "../../lib/api";
+import {
+  canSwitchToDesktop,
+  type Account,
+  type ApplicationKind,
+  type ApplicationStatus,
+  type CodexSession,
+  type CodexSessionMessage,
+  type McpServer,
+} from "../../lib/types";
 import "../../styles/global.css";
 import styles from "./page.module.css";
 
@@ -33,96 +108,423 @@ type SwitchProgress = {
 };
 
 type SwitchOutcome = { restartRequired: boolean };
-type WorkspaceSection = "accounts" | "plugins" | "mcp";
-const workspaceSections: Array<{ id: WorkspaceSection; icon: ComponentType<{ "aria-hidden"?: boolean | "true" | "false"; size?: number }>; labelKey: string }> = [
-  { id: "accounts", icon: UserRound, labelKey: "accounts" }, { id: "plugins", icon: Puzzle, labelKey: "plugins" }, { id: "mcp", icon: Waypoints, labelKey: "mcp" },
+type WorkspaceSection = "accounts" | "sessions" | "plugins" | "mcp";
+const workspaceSections: Array<{
+  id: WorkspaceSection;
+  icon: ComponentType<{
+    "aria-hidden"?: boolean | "true" | "false";
+    size?: number;
+  }>;
+  labelKey: string;
+}> = [
+  { id: "accounts", icon: UserRound, labelKey: "accounts" },
+  { id: "sessions", icon: MessageSquareText, labelKey: "sessions" },
+  { id: "plugins", icon: Puzzle, labelKey: "plugins" },
+  { id: "mcp", icon: Waypoints, labelKey: "mcp" },
 ];
 
-function subscriptionLabel(account: Account, t: (key: string, options?: Record<string, unknown>) => string) {
+function subscriptionLabel(
+  account: Account,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
   const plan = account.subscription.plan;
   if (!plan) return undefined;
-  const name = t(`subscriptionPlans.${plan.toLowerCase()}`, { defaultValue: plan });
-  if (!account.subscription.expiresAt) return { name, expiry: t("subscriptionUnknownExpiry"), plan: plan.toLowerCase() };
+  const name = t(`subscriptionPlans.${plan.toLowerCase()}`, {
+    defaultValue: plan,
+  });
+  if (!account.subscription.expiresAt)
+    return {
+      name,
+      expiry: t("subscriptionUnknownExpiry"),
+      plan: plan.toLowerCase(),
+    };
   const days = account.daysRemaining;
-  if (days === undefined) return { name, expiry: t("subscriptionUnknownExpiry"), plan: plan.toLowerCase() };
-  if (days > 0) return { name, expiry: t("subscriptionDays", { count: days }), plan: plan.toLowerCase() };
-  if (days === 0) return { name, expiry: t("subscriptionToday"), plan: plan.toLowerCase() };
+  if (days === undefined)
+    return {
+      name,
+      expiry: t("subscriptionUnknownExpiry"),
+      plan: plan.toLowerCase(),
+    };
+  if (days > 0)
+    return {
+      name,
+      expiry: t("subscriptionDays", { count: days }),
+      plan: plan.toLowerCase(),
+    };
+  if (days === 0)
+    return { name, expiry: t("subscriptionToday"), plan: plan.toLowerCase() };
   return { name, expiry: t("subscriptionExpired"), plan: plan.toLowerCase() };
 }
 
-function usageLabel(account: Account, t: (key: string, options?: Record<string, unknown>) => string) {
+function usageLabel(
+  account: Account,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
   const usage = account.usage;
-  if (!usage) return account.subscription.plan?.toLowerCase() === "free" ? t("usageFree") : undefined;
+  if (!usage)
+    return account.subscription.plan?.toLowerCase() === "free"
+      ? t("usageFree")
+      : undefined;
   if (usage.kind === "currency") {
     return t("usageSpent", { amount: `$${(usage.used / 100).toFixed(2)}` });
   }
-  return account.subscription.plan?.toLowerCase() === "free" ? t("usageFree") : undefined;
+  return account.subscription.plan?.toLowerCase() === "free"
+    ? t("usageFree")
+    : undefined;
 }
 
-function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress }: { account: Account; busy: boolean; onExport: (account: Account) => void; onRemove: (account: Account) => void; onSwitch: (account: Account) => void; progress?: SwitchProgress }) {
+function formatRelativeSessionTime(
+  timestamp: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+) {
+  const elapsed = Math.max(0, Date.now() - timestamp);
+  const minutes = Math.floor(elapsed / 60_000);
+  const hours = Math.floor(elapsed / 3_600_000);
+  const days = Math.floor(elapsed / 86_400_000);
+  if (minutes < 1) return t("sessionsJustNow");
+  if (minutes < 60) return t("sessionsMinutesAgo", { count: minutes });
+  if (hours < 24) return t("sessionsHoursAgo", { count: hours });
+  if (days < 7) return t("sessionsDaysAgo", { count: days });
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function SortableAccount({
+  account,
+  busy,
+  onExport,
+  onRemove,
+  onSwitch,
+  progress,
+}: {
+  account: Account;
+  busy: boolean;
+  onExport: (account: Account) => void;
+  onRemove: (account: Account) => void;
+  onSwitch: (account: Account) => void;
+  progress?: SwitchProgress;
+}) {
   const { t } = useTranslation();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
-  return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
-    <GripVertical className={styles.dragHandle} aria-label={t("drag", { account: account.label })} size={24} {...attributes} {...listeners} />
-    <div className={styles.accountCopy}><strong>{account.label}</strong><div className={styles.accountMeta}>{(() => { const subscription = subscriptionLabel(account, t); return subscription && <span className={`${styles.metaBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name} · {subscription.expiry}</span>; })()}{(() => { const usage = usageLabel(account, t); return usage && <span className={styles.metaBadge}>{usage}</span>; })()}{account.status === "invalid" && <span className={styles.invalidBadge}>{t("tokenInvalid", { defaultValue: "Token已失效" })}</span>}{account.status === "missing" && <span className={styles.missingBadge}>{t("credentialMissing", { defaultValue: "凭证缺失" })}</span>}</div></div>
-    <div className={styles.accountActions}>
-      {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : canSwitchToDesktop(account) ? <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button> : null}
-      {progress?.status === "error" && canSwitchToDesktop(account) && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
-      <Tooltip content={t("usage")}><a aria-label={t("viewUsage", { account: account.label })} className={styles.iconButton} href={`/usage.html?accountId=${encodeURIComponent(account.id)}`}><ChartNoAxesCombined aria-hidden="true" size={18} /></a></Tooltip>
-      <Tooltip content={t("export")}><button aria-label={t("exportAccount", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onExport(account)} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>
-      <Tooltip content={t("delete")}><button aria-label={t("remove", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onRemove(account)} type="button"><Trash2 aria-hidden="true" size={19} /></button></Tooltip>
-    </div>
-  </article>;
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ disabled: busy, id: account.id });
+  return (
+    <article
+      className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`}
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+    >
+      <GripVertical
+        className={styles.dragHandle}
+        aria-label={t("drag", { account: account.label })}
+        size={24}
+        {...attributes}
+        {...listeners}
+      />
+      <div className={styles.accountCopy}>
+        <strong>{account.label}</strong>
+        <div className={styles.accountMeta}>
+          {(() => {
+            const subscription = subscriptionLabel(account, t);
+            return (
+              subscription && (
+                <span
+                  className={`${styles.metaBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}
+                >
+                  {subscription.name} · {subscription.expiry}
+                </span>
+              )
+            );
+          })()}
+          {(() => {
+            const usage = usageLabel(account, t);
+            return usage && <span className={styles.metaBadge}>{usage}</span>;
+          })()}
+          {account.status === "invalid" && (
+            <span className={styles.invalidBadge}>
+              {t("tokenInvalid", { defaultValue: "Token已失效" })}
+            </span>
+          )}
+          {account.status === "missing" && (
+            <span className={styles.missingBadge}>
+              {t("credentialMissing", { defaultValue: "凭证缺失" })}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className={styles.accountActions}>
+        {progress ? (
+          <div className={styles.progress}>
+            <span>{t(`switchStages.${progress.stage}`)}</span>
+            <Progress.Root
+              aria-label={t("switchProgress")}
+              className={styles.progressRoot}
+              value={progress.percent}
+            >
+              <Progress.Indicator
+                className={
+                  progress.status === "error"
+                    ? styles.progressError
+                    : styles.progressIndicator
+                }
+                style={{ transform: `translateX(-${100 - progress.percent}%)` }}
+              />
+            </Progress.Root>
+          </div>
+        ) : account.isCurrent ? (
+          <span className={styles.currentBadge}>
+            <Check aria-hidden="true" size={16} />
+            {t("current")}
+          </span>
+        ) : canSwitchToDesktop(account) ? (
+          <button
+            className={styles.activate}
+            disabled={busy}
+            onClick={() => onSwitch(account)}
+            type="button"
+          >
+            <LogIn aria-hidden="true" size={17} />
+            {t("switch")}
+          </button>
+        ) : null}
+        {progress?.status === "error" && canSwitchToDesktop(account) && (
+          <button
+            className={styles.activate}
+            onClick={() => onSwitch(account)}
+            type="button"
+          >
+            <RefreshCw aria-hidden="true" size={16} />
+            {t("retry")}
+          </button>
+        )}
+        <Tooltip content={t("usage")}>
+          <a
+            aria-label={t("viewUsage", { account: account.label })}
+            className={styles.iconButton}
+            href={`/usage.html?accountId=${encodeURIComponent(account.id)}`}
+          >
+            <ChartNoAxesCombined aria-hidden="true" size={18} />
+          </a>
+        </Tooltip>
+        <Tooltip content={t("export")}>
+          <button
+            aria-label={t("exportAccount", { account: account.label })}
+            className={styles.iconButton}
+            disabled={busy}
+            onClick={() => onExport(account)}
+            type="button"
+          >
+            <FileOutput aria-hidden="true" size={18} />
+          </button>
+        </Tooltip>
+        <Tooltip content={t("delete")}>
+          <button
+            aria-label={t("remove", { account: account.label })}
+            className={styles.iconButton}
+            disabled={busy}
+            onClick={() => onRemove(account)}
+            type="button"
+          >
+            <Trash2 aria-hidden="true" size={19} />
+          </button>
+        </Tooltip>
+      </div>
+    </article>
+  );
 }
 
-function WorkspaceToolbar({ section, busy, canManageAccounts, hasAccounts, pluginsExpanded, refreshing, onExport, onPluginsExpandedChange, onRefresh }: {
+function WorkspaceToolbar({
+  section,
+  busy,
+  canManageAccounts,
+  hasAccounts,
+  pluginsExpanded,
+  refreshing,
+  sessionsRefreshing,
+  onExport,
+  onPluginsExpandedChange,
+  onRefresh,
+  onSessionsRefresh,
+}: {
   section: WorkspaceSection;
   busy: boolean;
   canManageAccounts: boolean;
   hasAccounts: boolean;
   pluginsExpanded: boolean;
   refreshing: boolean;
+  sessionsRefreshing: boolean;
   onExport: () => void;
   onPluginsExpandedChange: (expanded: boolean) => void;
   onRefresh: () => void;
+  onSessionsRefresh: () => void;
 }) {
   const { t } = useTranslation();
-  return <div aria-label={t("sectionActions")} className={styles.contextToolbar} data-section={section}>
-    {section === "accounts" && <>
-      <Tooltip content={t("export")}><button aria-label={t("export")} className={styles.iconButton} disabled={busy || !canManageAccounts || !hasAccounts} onClick={onExport} type="button"><Download aria-hidden="true" size={19} /></button></Tooltip>
-      <Tooltip content={t("refresh")}><button aria-label={t("refresh")} className={styles.iconButton} disabled={busy || !canManageAccounts} onClick={onRefresh} type="button"><RefreshCw aria-hidden="true" className={refreshing ? styles.spinning : undefined} size={19} /></button></Tooltip>
-      <a aria-disabled={busy || !canManageAccounts} className={styles.addButton} href={busy || !canManageAccounts ? undefined : "/add.html"}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a>
-    </>}
-    {section === "plugins" && <Tooltip content={pluginsExpanded ? t("collapsePluginChildren") : t("expandPluginChildren")}><button aria-expanded={pluginsExpanded} aria-label={pluginsExpanded ? t("collapsePluginChildren") : t("expandPluginChildren")} className={styles.iconButton} onClick={() => onPluginsExpandedChange(!pluginsExpanded)} type="button">{pluginsExpanded ? <ChevronsDownUp aria-hidden="true" size={19} /> : <ChevronsUpDown aria-hidden="true" size={19} />}</button></Tooltip>}
-  </div>;
+  return (
+    <div
+      aria-label={t("sectionActions")}
+      className={styles.contextToolbar}
+      data-section={section}
+    >
+      {section === "accounts" && (
+        <>
+          <Tooltip content={t("export")}>
+            <button
+              aria-label={t("export")}
+              className={styles.iconButton}
+              disabled={busy || !canManageAccounts || !hasAccounts}
+              onClick={onExport}
+              type="button"
+            >
+              <Download aria-hidden="true" size={19} />
+            </button>
+          </Tooltip>
+          <Tooltip content={t("refresh")}>
+            <button
+              aria-label={t("refresh")}
+              className={styles.iconButton}
+              disabled={busy || !canManageAccounts}
+              onClick={onRefresh}
+              type="button"
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={refreshing ? styles.spinning : undefined}
+                size={19}
+              />
+            </button>
+          </Tooltip>
+          <a
+            aria-disabled={busy || !canManageAccounts}
+            className={styles.addButton}
+            href={busy || !canManageAccounts ? undefined : "/add.html"}
+          >
+            <Plus aria-hidden="true" size={18} />
+            {t("addAccount")}
+          </a>
+        </>
+      )}
+      {section === "plugins" && (
+        <Tooltip
+          content={
+            pluginsExpanded
+              ? t("collapsePluginChildren")
+              : t("expandPluginChildren")
+          }
+        >
+          <button
+            aria-expanded={pluginsExpanded}
+            aria-label={
+              pluginsExpanded
+                ? t("collapsePluginChildren")
+                : t("expandPluginChildren")
+            }
+            className={styles.iconButton}
+            onClick={() => onPluginsExpandedChange(!pluginsExpanded)}
+            type="button"
+          >
+            {pluginsExpanded ? (
+              <ChevronsDownUp aria-hidden="true" size={19} />
+            ) : (
+              <ChevronsUpDown aria-hidden="true" size={19} />
+            )}
+          </button>
+        </Tooltip>
+      )}
+      {section === "sessions" && (
+        <Tooltip content={t("refreshSessions")}>
+          <button
+            aria-label={t("refreshSessions")}
+            className={styles.iconButton}
+            disabled={sessionsRefreshing}
+            onClick={onSessionsRefresh}
+            type="button"
+          >
+            <RefreshCw
+              aria-hidden="true"
+              className={sessionsRefreshing ? styles.spinning : undefined}
+              size={19}
+            />
+          </button>
+        </Tooltip>
+      )}
+    </div>
+  );
 }
 
 function AccountsPage() {
   const { t } = useTranslation();
   const [applications, setApplications] = useState<ApplicationStatus[]>([]);
   const [selected, setSelected] = useState<ApplicationKind>("cursor");
-  const [workspaceSection, setWorkspaceSection] = useState<WorkspaceSection>("accounts");
+  const [workspaceSection, setWorkspaceSection] =
+    useState<WorkspaceSection>("accounts");
   const [pluginsExpanded, setPluginsExpanded] = useState(false);
-  const [pluginCount, setPluginCount] = useState<number | undefined>(() => cachedPluginCount("cursor"));
+  const [pluginCount, setPluginCount] = useState<number | undefined>(() =>
+    cachedPluginCount("cursor"),
+  );
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [codexSessions, setCodexSessions] = useState<CodexSession[]>([]);
+  const [sessionsRefreshing, setSessionsRefreshing] = useState(false);
+  const [expandedSessionProjects, setExpandedSessionProjects] = useState<
+    Set<string>
+  >(() => new Set());
+  const [selectedCodexSessionId, setSelectedCodexSessionId] =
+    useState<string>();
+  const [codexSessionMessages, setCodexSessionMessages] = useState<
+    CodexSessionMessage[]
+  >([]);
+  const [sessionMessagesLoading, setSessionMessagesLoading] = useState(false);
+  const [sessionSearch, setSessionSearch] = useState("");
+  const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
+  const [sessionSelectionMode, setSessionSelectionMode] = useState(false);
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [sessionDeleteTargets, setSessionDeleteTargets] = useState<
+    string[] | undefined
+  >();
+  const [sessionsDeleting, setSessionsDeleting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  const [notice, setNotice] = useState(() => new URLSearchParams(window.location.search).get("notice") ?? undefined);
+  const [notice, setNotice] = useState(
+    () =>
+      new URLSearchParams(window.location.search).get("notice") ?? undefined,
+  );
   const [switchProgress, setSwitchProgress] = useState<SwitchProgress>();
-  const [restartDialog, setRestartDialog] = useState<{ account: Account; operationId: string }>();
+  const [restartDialog, setRestartDialog] = useState<{
+    account: Account;
+    operationId: string;
+  }>();
   const [exportData, setExportData] = useState<unknown>();
   const [exportTarget, setExportTarget] = useState<Account>();
   const [countdown, setCountdown] = useState(10);
   const activeOperationId = useRef<string | undefined>(undefined);
   const latestLoad = useRef(0);
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
+  const knownSessionProjects = useRef(new Set<string>());
+  const latestSessionMessages = useRef(0);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
   const isCursor = selected === "cursor";
-  const showError = useCallback((error: unknown) => setNotice(error instanceof Error ? error.message : String(error)), []);
+  const showError = useCallback(
+    (error: unknown) =>
+      setNotice(error instanceof Error ? error.message : String(error)),
+    [],
+  );
   const loadAccounts = async () => {
     const request = ++latestLoad.current;
-    const [nextApplications, nextAccounts] = await Promise.all([listApplications(), listAccounts(selected)]);
+    const [nextApplications, nextAccounts] = await Promise.all([
+      listApplications(),
+      listAccounts(selected),
+    ]);
     if (request !== latestLoad.current) return;
     setApplications(nextApplications);
     setAccounts(nextAccounts);
@@ -132,35 +534,113 @@ function AccountsPage() {
     setMcpServers([]);
     setSelected(next);
   };
-  useEffect(() => { void loadAccounts().catch(showError); }, [selected]);
-  useEffect(() => { if (workspaceSection === "mcp") void listMcpServers(selected).then(setMcpServers).catch(showError); }, [selected, workspaceSection]);
+  useEffect(() => {
+    void loadAccounts().catch(showError);
+  }, [selected]);
+  useEffect(() => {
+    if (workspaceSection === "mcp")
+      void listMcpServers(selected).then(setMcpServers).catch(showError);
+  }, [selected, workspaceSection]);
+  const loadCodexSessions = useCallback(async () => {
+    setSessionsRefreshing(true);
+    try {
+      setCodexSessions(await listCodexSessions());
+    } catch (error) {
+      showError(error);
+    } finally {
+      setSessionsRefreshing(false);
+    }
+  }, [showError]);
+  useEffect(() => {
+    if (selected === "codex" && workspaceSection === "sessions")
+      void loadCodexSessions();
+  }, [loadCodexSessions, selected, workspaceSection]);
+  useEffect(() => {
+    const projects = new Set(
+      codexSessions.map(
+        (session) => session.projectDir?.trim() || "__unknown__",
+      ),
+    );
+    setExpandedSessionProjects((current) => {
+      const next = new Set(
+        [...current].filter((project) => projects.has(project)),
+      );
+      knownSessionProjects.current = projects;
+      return next;
+    });
+  }, [codexSessions]);
+  useEffect(() => {
+    if (
+      selectedCodexSessionId &&
+      codexSessions.some((session) => session.id === selectedCodexSessionId)
+    )
+      return;
+    setSelectedCodexSessionId(codexSessions[0]?.id);
+  }, [codexSessions, selectedCodexSessionId]);
+  useEffect(() => {
+    if (!selectedCodexSessionId) {
+      setCodexSessionMessages([]);
+      return;
+    }
+    const request = ++latestSessionMessages.current;
+    setSessionMessagesLoading(true);
+    void getCodexSessionMessages(selectedCodexSessionId)
+      .then((messages) => {
+        if (request === latestSessionMessages.current)
+          setCodexSessionMessages(messages);
+      })
+      .catch(showError)
+      .finally(() => {
+        if (request === latestSessionMessages.current)
+          setSessionMessagesLoading(false);
+      });
+  }, [selectedCodexSessionId, showError]);
   useEffect(() => {
     if (window.location.search) window.history.replaceState({}, "", "/");
     let unlisten: () => void = () => {};
     void listen("accounts-changed", () => {
       void loadAccounts().catch(showError);
-    }).then((stop) => { unlisten = stop; });
+    }).then((stop) => {
+      unlisten = stop;
+    });
     return () => unlisten();
   }, [isCursor, selected, workspaceSection]);
   useEffect(() => {
     let unlisten: () => void = () => {};
     void listen<SwitchProgress>("account-switch-progress", ({ payload }) => {
-      if (payload.operationId === activeOperationId.current) setSwitchProgress(payload);
-    }).then((stop) => { unlisten = stop; });
+      if (payload.operationId === activeOperationId.current)
+        setSwitchProgress(payload);
+    }).then((stop) => {
+      unlisten = stop;
+    });
     return () => unlisten();
   }, []);
   useEffect(() => {
     let unlisten: () => void = () => {};
-    void listen<{ completed: number; total: number }>("account-refresh-progress", ({ payload }) => {
-      setNotice(t("refreshProgress", payload));
-    }).then((stop) => { unlisten = stop; });
+    void listen<{ completed: number; total: number }>(
+      "account-refresh-progress",
+      ({ payload }) => {
+        setNotice(t("refreshProgress", payload));
+      },
+    ).then((stop) => {
+      unlisten = stop;
+    });
     return () => unlisten();
   }, [t]);
 
   const act = async (work: () => Promise<void>) => {
     setBusy(true);
     setNotice(undefined);
-    try { await work(); await loadAccounts(); return true; } catch (error) { showError(error); return false; } finally { setBusy(false); }
+    try {
+      await work();
+      await loadAccounts();
+      return true;
+    } catch (error) {
+      showError(error);
+      return false;
+    } finally {
+      setBusy(false);
+    }
   };
   const clearSwitch = () => {
     activeOperationId.current = undefined;
@@ -179,7 +659,10 @@ function AccountsPage() {
     setBusy(true);
     setNotice(undefined);
     try {
-      const outcome = await invoke<SwitchOutcome>("switch_account", { id: account.id, operationId });
+      const outcome = await invoke<SwitchOutcome>("switch_account", {
+        id: account.id,
+        operationId,
+      });
       if (outcome.restartRequired) {
         // The first phase only validates and prepares the switch. Do not show
         // its progress as an active switch while waiting for confirmation.
@@ -192,7 +675,13 @@ function AccountsPage() {
       await finishSwitch("cursorLaunched");
     } catch (error) {
       showError(error);
-      setSwitchProgress({ operationId, accountId: account.id, stage: "error", percent: 100, status: "error" });
+      setSwitchProgress({
+        operationId,
+        accountId: account.id,
+        stage: "error",
+        percent: 100,
+        status: "error",
+      });
       setBusy(false);
     }
   };
@@ -206,13 +695,28 @@ function AccountsPage() {
     if (!dialog) return;
     setRestartDialog(undefined);
     setBusy(true);
-    setSwitchProgress({ operationId: dialog.operationId, accountId: dialog.account.id, stage: "terminating", percent: 0, status: "running" });
+    setSwitchProgress({
+      operationId: dialog.operationId,
+      accountId: dialog.account.id,
+      stage: "terminating",
+      percent: 0,
+      status: "running",
+    });
     try {
-      await invoke("force_restart_cursor", { id: dialog.account.id, operationId: dialog.operationId });
+      await invoke("force_restart_cursor", {
+        id: dialog.account.id,
+        operationId: dialog.operationId,
+      });
       await finishSwitch("cursorRestarted");
     } catch (error) {
       showError(error);
-      setSwitchProgress({ operationId: dialog.operationId, accountId: dialog.account.id, stage: "error", percent: 100, status: "error" });
+      setSwitchProgress({
+        operationId: dialog.operationId,
+        accountId: dialog.account.id,
+        stage: "error",
+        percent: 100,
+        status: "error",
+      });
       setBusy(false);
     }
   };
@@ -230,21 +734,53 @@ function AccountsPage() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [restartDialog?.operationId]);
-  const remove = (account: Account) => act(async () => { const { invoke } = await import("@tauri-apps/api/core"); await invoke("delete_account", { id: account.id }); setNotice(t("deleted")); });
+  const remove = (account: Account) =>
+    act(async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("delete_account", { id: account.id });
+      setNotice(t("deleted"));
+    });
   const refresh = async () => {
     setBusy(true);
     setRefreshing(true);
     setRefreshFailed(false);
     setNotice(t("refreshing"));
     try {
-      const result = isCursor ? await invoke<{ total: number; failed: number; invalid: number; missing: number }>("refresh_all_cursor_accounts") : { total: 0, failed: 0, invalid: 0, missing: 0 };
+      const result = isCursor
+        ? await invoke<{
+            total: number;
+            failed: number;
+            invalid: number;
+            missing: number;
+          }>("refresh_all_cursor_accounts")
+        : { total: 0, failed: 0, invalid: 0, missing: 0 };
       const failed = result.failed;
       await loadAccounts();
       const other = failed - result.invalid - result.missing;
-      const reasons = [result.invalid && t("refreshTokenInvalid", { count: result.invalid }), result.missing && t("refreshCredentialMissing", { count: result.missing }), other && t("refreshOtherFailed", { count: other })].filter(Boolean).join("，");
-      setNotice(failed ? t("subscriptionsRefreshIncomplete", { reasons }) : t(accounts.length && isCursor ? "subscriptionsRefreshed" : "refreshed"));
-    } catch (error) { setRefreshFailed(true); showError(error); }
-    finally { setBusy(false); setRefreshing(false); }
+      const reasons = [
+        result.invalid && t("refreshTokenInvalid", { count: result.invalid }),
+        result.missing &&
+          t("refreshCredentialMissing", { count: result.missing }),
+        other && t("refreshOtherFailed", { count: other }),
+      ]
+        .filter(Boolean)
+        .join("，");
+      setNotice(
+        failed
+          ? t("subscriptionsRefreshIncomplete", { reasons })
+          : t(
+              accounts.length && isCursor
+                ? "subscriptionsRefreshed"
+                : "refreshed",
+            ),
+      );
+    } catch (error) {
+      setRefreshFailed(true);
+      showError(error);
+    } finally {
+      setBusy(false);
+      setRefreshing(false);
+    }
   };
   const reorder = async (activeId: string, targetId?: string) => {
     (document.activeElement as HTMLElement | null)?.blur();
@@ -254,71 +790,845 @@ function AccountsPage() {
     if (from < 0 || to < 0) return;
     const next = arrayMove(accounts, from, to);
     setAccounts(next);
-    if (await act(async () => { const { invoke } = await import("@tauri-apps/api/core"); await invoke("reorder_accounts", { kind: selected, ids: next.map((account) => account.id) }); })) setNotice(t("reordered"));
+    if (
+      await act(async () => {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("reorder_accounts", {
+          kind: selected,
+          ids: next.map((account) => account.id),
+        });
+      })
+    )
+      setNotice(t("reordered"));
   };
   const exportAccounts = async () => {
-    const file = await save({ defaultPath: `${selected}-accounts.json`, filters: [{ name: "JSON", extensions: ["json"] }], title: t("exportTitle") });
+    const file = await save({
+      defaultPath: `${selected}-accounts.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      title: t("exportTitle"),
+    });
     if (!file) return;
-    if (await act(async () => { await invoke("export_cursor_accounts", { file }); })) setNotice(t("exported"));
+    if (
+      await act(async () => {
+        await invoke("export_cursor_accounts", { file });
+      })
+    )
+      setNotice(t("exported"));
   };
   const openAccountExport = async (account: Account) => {
-    try { setExportData(await invoke<unknown>("get_cursor_export_record", { id: account.id })); setExportTarget(account); }
-    catch (error) { showError(error); }
+    try {
+      setExportData(
+        await invoke<unknown>("get_cursor_export_record", { id: account.id }),
+      );
+      setExportTarget(account);
+    } catch (error) {
+      showError(error);
+    }
   };
   const currentAccountId = accounts.find((account) => account.isCurrent)?.id;
-  useEffect(() => { setPluginCount(cachedPluginCount(selected, currentAccountId)); }, [currentAccountId, selected]);
-  const pluginHost = useMemo<PluginHost>(() => selected === "codex"
-    ? {
-      application: selected,
-      list: listCodexPlugins,
-      setEnabled: async (plugin, enabled) => { await setCodexPluginEnabled(plugin.id, enabled); },
-      setCapabilityEnabled: async (plugin, capability, enabled) => {
-        if (capability.kind === "hook") return;
-        await setCodexPluginCapabilityEnabled(plugin.id, capability.id, capability.kind, enabled);
-      },
-      remove: async (plugin) => { await deleteCodexPlugin(plugin.id); },
-    }
-    : {
-      application: selected,
-      accountId: currentAccountId,
-      list: listCursorPlugins,
-      setEnabled: async (plugin, enabled) => { await setCursorPluginEnabled(plugin.id, plugin.source, enabled); },
-      remove: async (plugin) => { await deleteCursorPlugin(plugin.id, plugin.source); },
-    }, [currentAccountId, selected]);
-  const pluginChanged = useCallback(() => setNotice(t("pluginRestartRequired", { application: selected === "codex" ? t("codex") : t("cursor") })), [selected, t]);
+  useEffect(() => {
+    setPluginCount(cachedPluginCount(selected, currentAccountId));
+  }, [currentAccountId, selected]);
+  const pluginHost = useMemo<PluginHost>(
+    () =>
+      selected === "codex"
+        ? {
+            application: selected,
+            list: listCodexPlugins,
+            setEnabled: async (plugin, enabled) => {
+              await setCodexPluginEnabled(plugin.id, enabled);
+            },
+            setCapabilityEnabled: async (plugin, capability, enabled) => {
+              if (capability.kind === "hook") return;
+              await setCodexPluginCapabilityEnabled(
+                plugin.id,
+                capability.id,
+                capability.kind,
+                enabled,
+              );
+            },
+            remove: async (plugin) => {
+              await deleteCodexPlugin(plugin.id);
+            },
+          }
+        : {
+            application: selected,
+            accountId: currentAccountId,
+            list: listCursorPlugins,
+            setEnabled: async (plugin, enabled) => {
+              await setCursorPluginEnabled(plugin.id, plugin.source, enabled);
+            },
+            remove: async (plugin) => {
+              await deleteCursorPlugin(plugin.id, plugin.source);
+            },
+          },
+    [currentAccountId, selected],
+  );
+  const pluginChanged = useCallback(
+    () =>
+      setNotice(
+        t("pluginRestartRequired", {
+          application: selected === "codex" ? t("codex") : t("cursor"),
+        }),
+      ),
+    [selected, t],
+  );
   const renderSection = () => {
-    const applicationLabel = applications.find((app) => app.kind === selected)?.label ?? t(selected);
+    const applicationLabel =
+      applications.find((app) => app.kind === selected)?.label ?? t(selected);
     if (workspaceSection !== "accounts") {
-      const section = workspaceSections.find(({ id }) => id === workspaceSection)!;
-      if (workspaceSection === "plugins") return <PluginCatalog disabled={busy} expanded={pluginsExpanded} host={pluginHost} onChanged={pluginChanged} onError={showError} onPluginsChange={(plugins) => setPluginCount(plugins.length)} />;
-      if (workspaceSection === "mcp") return mcpServers.length ? <div className={styles.pluginList}>{mcpServers.map((server) => <article className={styles.pluginCard} key={server.id}><span className={styles.pluginIcon}><Waypoints aria-hidden="true" size={20} /></span><strong>{server.name}</strong></article>)}</div> : <div className={styles.empty}><Waypoints aria-hidden="true" size={32} /><h2>{applicationLabel} · {t("mcpTitle")}</h2><p>{t("mcpDescription")}</p></div>;
-      return <div className={styles.placeholder}><h2>{applicationLabel} · {t(`${section.labelKey}Title`)}</h2><p>{t(`${section.labelKey}Description`)} </p></div>;
+      const section = workspaceSections.find(
+        ({ id }) => id === workspaceSection,
+      )!;
+      if (workspaceSection === "plugins")
+        return (
+          <PluginCatalog
+            disabled={busy}
+            expanded={pluginsExpanded}
+            host={pluginHost}
+            onChanged={pluginChanged}
+            onError={showError}
+            onPluginsChange={(plugins) => setPluginCount(plugins.length)}
+          />
+        );
+      if (workspaceSection === "mcp")
+        return mcpServers.length ? (
+          <div className={styles.pluginList}>
+            {mcpServers.map((server) => (
+              <article className={styles.pluginCard} key={server.id}>
+                <span className={styles.pluginIcon}>
+                  <Waypoints aria-hidden="true" size={20} />
+                </span>
+                <strong>{server.name}</strong>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.empty}>
+            <Waypoints aria-hidden="true" size={32} />
+            <h2>
+              {applicationLabel} · {t("mcpTitle")}
+            </h2>
+            <p>{t("mcpDescription")}</p>
+          </div>
+        );
+      if (workspaceSection === "sessions") {
+        if (selected !== "codex")
+          return (
+            <div className={styles.empty}>
+              <MessageSquareText aria-hidden="true" size={32} />
+              <h2>{t("sessionsTitle")}</h2>
+              <p>{t("sessionsCodexOnly")}</p>
+            </div>
+          );
+        if (sessionsRefreshing && codexSessions.length === 0)
+          return (
+            <div className={styles.empty}>
+              <RefreshCw
+                aria-hidden="true"
+                className={styles.spinning}
+                size={32}
+              />
+              <h2>{t("sessionsLoading")}</h2>
+            </div>
+          );
+        if (codexSessions.length === 0)
+          return (
+            <div className={styles.empty}>
+              <MessageSquareText aria-hidden="true" size={32} />
+              <h2>{t("sessionsEmptyTitle")}</h2>
+              <p>{t("sessionsEmptyDescription")}</p>
+            </div>
+          );
+        const normalizedSearch = sessionSearch.trim().toLocaleLowerCase();
+        const visibleSessions = normalizedSearch
+          ? codexSessions.filter((session) =>
+              [session.title, session.projectDir, session.id]
+                .filter(Boolean)
+                .some((value) =>
+                  value!.toLocaleLowerCase().includes(normalizedSearch),
+                ),
+            )
+          : codexSessions;
+        const projects = new Map<string, CodexSession[]>();
+        for (const session of visibleSessions) {
+          const project = session.projectDir?.trim() || "__unknown__";
+          projects.set(project, [...(projects.get(project) ?? []), session]);
+        }
+        const selectedSession = codexSessions.find(
+          (session) => session.id === selectedCodexSessionId,
+        );
+        const toggleAllVisible = () =>
+          setSelectedSessionIds((current) =>
+            visibleSessions.every((session) => current.has(session.id))
+              ? new Set(
+                  [...current].filter(
+                    (id) =>
+                      !visibleSessions.some((session) => session.id === id),
+                  ),
+                )
+              : new Set([
+                  ...current,
+                  ...visibleSessions.map((session) => session.id),
+                ]),
+          );
+        const copySessionText = async (value: string) => {
+          try {
+            await navigator.clipboard.writeText(value);
+            setNotice(t("copied"));
+          } catch (error) {
+            showError(error);
+          }
+        };
+        const deleteSelectedSessions = async () => {
+          const targets = sessionDeleteTargets ?? [];
+          if (!targets.length || sessionsDeleting) return;
+          setSessionsDeleting(true);
+          setNotice(undefined);
+          const results = await Promise.allSettled(
+            targets.map((id) => deleteCodexSession(id)),
+          );
+          const deletedIds = new Set(
+            targets.filter((_, index) => results[index].status === "fulfilled"),
+          );
+          const failedCount = targets.length - deletedIds.size;
+          if (deletedIds.size) {
+            setCodexSessions((current) =>
+              current.filter((session) => !deletedIds.has(session.id)),
+            );
+            setSelectedSessionIds(
+              (current) =>
+                new Set([...current].filter((id) => !deletedIds.has(id))),
+            );
+            if (
+              selectedCodexSessionId &&
+              deletedIds.has(selectedCodexSessionId)
+            )
+              setSelectedCodexSessionId(undefined);
+          }
+          setSessionDeleteTargets(undefined);
+          setSessionsDeleting(false);
+          if (failedCount)
+            showError(t("sessionsBatchDeleteFailed", { count: failedCount }));
+          else setNotice(t("sessionsBatchDeleted", { count: deletedIds.size }));
+        };
+        return (
+          <>
+            <div className={styles.sessionsLayout}>
+              <div className={styles.sessionPane}>
+                <header className={styles.sessionToolbar}>
+                  {sessionSearchOpen ? (
+                    <div className={styles.sessionSearch}>
+                      <Search aria-hidden="true" size={15} />
+                      <input
+                        autoFocus
+                        onChange={(event) =>
+                          setSessionSearch(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            setSessionSearch("");
+                            setSessionSearchOpen(false);
+                          }
+                        }}
+                        placeholder={t("searchSessions")}
+                        value={sessionSearch}
+                      />
+                      <button
+                        aria-label={t("close")}
+                        onClick={() => {
+                          setSessionSearch("");
+                          setSessionSearchOpen(false);
+                        }}
+                        type="button"
+                      >
+                        <X aria-hidden="true" size={15} />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className={styles.sessionToolbarTitle}>
+                        <strong>{t("sessionsTitle")}</strong>
+                        <span>{visibleSessions.length}</span>
+                      </div>
+                      <div className={styles.sessionToolbarActions}>
+                        <Tooltip content={t("collapseSessionProjects")}>
+                          <button
+                            aria-label={t("collapseSessionProjects")}
+                            onClick={() =>
+                              setExpandedSessionProjects(new Set())
+                            }
+                            type="button"
+                          >
+                            <ChevronsDownUp aria-hidden="true" size={16} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip
+                          content={
+                            sessionSelectionMode
+                              ? t("exitSessionBatch")
+                              : t("manageSessionBatch")
+                          }
+                        >
+                          <button
+                            aria-pressed={sessionSelectionMode}
+                            className={
+                              sessionSelectionMode
+                                ? styles.sessionToolbarActive
+                                : undefined
+                            }
+                            onClick={() =>
+                              setSessionSelectionMode((active) => !active)
+                            }
+                            type="button"
+                          >
+                            <CheckSquare aria-hidden="true" size={16} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip content={t("searchSessions")}>
+                          <button
+                            onClick={() => setSessionSearchOpen(true)}
+                            type="button"
+                          >
+                            <Search aria-hidden="true" size={16} />
+                          </button>
+                        </Tooltip>
+                      </div>
+                    </>
+                  )}
+                </header>
+                {sessionSelectionMode && (
+                  <div className={styles.sessionBatchBar}>
+                    <span>
+                      {t("sessionsSelected", {
+                        count: selectedSessionIds.size,
+                      })}
+                    </span>
+                    <button onClick={toggleAllVisible} type="button">
+                      {visibleSessions.every((session) =>
+                        selectedSessionIds.has(session.id),
+                      )
+                        ? t("sessionsClearAll")
+                        : t("sessionsSelectAll")}
+                    </button>
+                    <button
+                      onClick={() => setSelectedSessionIds(new Set())}
+                      type="button"
+                    >
+                      {t("sessionsClearSelection")}
+                    </button>
+                    <button
+                      className={styles.sessionBatchDelete}
+                      disabled={!selectedSessionIds.size || sessionsDeleting}
+                      onClick={() =>
+                        setSessionDeleteTargets([...selectedSessionIds])
+                      }
+                      type="button"
+                    >
+                      <Trash2 aria-hidden="true" size={14} />
+                      {sessionsDeleting
+                        ? t("sessionsDeleting")
+                        : t("sessionsDeleteSelected")}
+                    </button>
+                  </div>
+                )}
+                <div className={styles.sessionProjects}>
+                  {[...projects].map(([project, sessions]) => {
+                    const expanded = expandedSessionProjects.has(project);
+                    const allProjectSessionsSelected = sessions.every((session) =>
+                      selectedSessionIds.has(session.id),
+                    );
+                    const label =
+                      project === "__unknown__"
+                        ? t("sessionsUnknownProject")
+                        : (project.split("/").filter(Boolean).at(-1) ??
+                          project);
+                    return (
+                      <section className={styles.sessionProject} key={project}>
+                        <div className={styles.sessionProjectHeader}>
+                          {sessionSelectionMode && (
+                            <input
+                              aria-label={t("selectSessionProject", { project: label })}
+                              checked={allProjectSessionsSelected}
+                              onChange={(event) =>
+                                setSelectedSessionIds((current) => {
+                                  const next = new Set(current);
+                                  sessions.forEach((session) => {
+                                    if (event.target.checked) next.add(session.id);
+                                    else next.delete(session.id);
+                                  });
+                                  return next;
+                                })
+                              }
+                              type="checkbox"
+                            />
+                          )}
+                          <button
+                            aria-expanded={expanded}
+                            aria-label={t("toggleSessionProject", {
+                              project: label,
+                            })}
+                            className={styles.sessionProjectTrigger}
+                            onClick={() =>
+                              setExpandedSessionProjects((current) => {
+                                const next = new Set(current);
+                                if (next.has(project)) next.delete(project);
+                                else next.add(project);
+                                return next;
+                              })
+                            }
+                            type="button"
+                          >
+                            {expanded ? (
+                              <ChevronDown aria-hidden="true" size={15} />
+                            ) : (
+                              <ChevronRight aria-hidden="true" size={15} />
+                            )}
+                            <FolderOpen aria-hidden="true" size={16} />
+                            <span>{label}</span>
+                            <small className={styles.sessionProjectCount}>
+                              {sessions.length}
+                            </small>
+                          </button>
+                        </div>
+                        {expanded && (
+                          <div className={styles.sessionList}>
+                            {sessions.map((session) => (
+                              <div
+                                className={`${styles.sessionCard} ${session.id === selectedCodexSessionId ? styles.sessionCardActive : ""}`}
+                                key={session.id}
+                              >
+                                {sessionSelectionMode && (
+                                  <input
+                                    aria-label={t("selectSession", {
+                                      session: session.title,
+                                    })}
+                                    checked={selectedSessionIds.has(session.id)}
+                                    onChange={(event) =>
+                                      setSelectedSessionIds((current) => {
+                                        const next = new Set(current);
+                                        if (event.target.checked)
+                                          next.add(session.id);
+                                        else next.delete(session.id);
+                                        return next;
+                                      })
+                                    }
+                                    type="checkbox"
+                                  />
+                                )}
+                                <button
+                                  aria-current={
+                                    session.id === selectedCodexSessionId
+                                      ? "page"
+                                      : undefined
+                                  }
+                                  onClick={() =>
+                                    setSelectedCodexSessionId(session.id)
+                                  }
+                                  type="button"
+                                >
+                                  <strong>{session.title}</strong>
+                                  <span>
+                                    {formatRelativeSessionTime(
+                                      session.updatedAt,
+                                      t,
+                                    )}
+                                  </span>
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </section>
+                    );
+                  })}
+                </div>
+              </div>
+              <section className={styles.sessionDetail}>
+                {!selectedSession ? (
+                  <div className={styles.sessionDetailEmpty}>
+                    <MessageSquareText aria-hidden="true" size={32} />
+                    <p>{t("sessionsSelect")}</p>
+                  </div>
+                ) : (
+                  <>
+                    <header className={styles.sessionDetailHeader}>
+                      <div className={styles.sessionDetailTop}>
+                        <h2>{selectedSession.title}</h2>
+                        <div className={styles.sessionDetailActions}>
+                          <Tooltip content={t("launchSession")}>
+                            <button
+                              aria-label={t("launchSession")}
+                              onClick={() =>
+                                void launchCodexSession(selectedSession.id)
+                              }
+                              type="button"
+                            >
+                              <Play aria-hidden="true" size={17} />
+                            </button>
+                          </Tooltip>
+                          <Tooltip content={t("deleteSession")}>
+                            <button
+                              aria-label={t("deleteSession")}
+                              onClick={() => {
+                                if (window.confirm(t("deleteSessionConfirm")))
+                                  void deleteCodexSession(
+                                    selectedSession.id,
+                                  ).then(() => {
+                                    setCodexSessions((current) =>
+                                      current.filter(
+                                        (session) =>
+                                          session.id !== selectedSession.id,
+                                      ),
+                                    );
+                                    setSelectedCodexSessionId(undefined);
+                                  });
+                              }}
+                              type="button"
+                            >
+                              <Trash2 aria-hidden="true" size={17} />
+                            </button>
+                          </Tooltip>
+                        </div>
+                      </div>
+                      <div className={styles.sessionDetailMeta}>
+                        <Clock3 aria-hidden="true" size={13} />
+                        <span>
+                          {new Date(selectedSession.updatedAt).toLocaleString()}
+                        </span>
+                        {selectedSession.projectDir && (
+                          <>
+                            <FolderOpen aria-hidden="true" size={13} />
+                            <span>
+                              {selectedSession.projectDir
+                                .split("/")
+                                .filter(Boolean)
+                                .at(-1)}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <dl className={styles.sessionDetailFields}>
+                        <div>
+                          <dt>{t("sessionsSourcePath")}</dt>
+                          <dd><code>{selectedSession.sourcePath}</code><Tooltip content={t("copy")}><button aria-label={t("copy")} onClick={() => void copySessionText(selectedSession.sourcePath)} type="button"><Copy aria-hidden="true" size={14} /></button></Tooltip></dd>
+                        </div>
+                        <div>
+                          <dt>{t("sessionsResumeCommand")}</dt>
+                          <dd><code>{`codex resume ${selectedSession.id}`}</code><Tooltip content={t("copy")}><button aria-label={t("copy")} onClick={() => void copySessionText(`codex resume ${selectedSession.id}`)} type="button"><Copy aria-hidden="true" size={14} /></button></Tooltip></dd>
+                        </div>
+                      </dl>
+                    </header>
+                    <div className={styles.sessionMessages}>
+                      {sessionMessagesLoading ? (
+                        <div className={styles.sessionDetailEmpty}>
+                          <RefreshCw
+                            aria-hidden="true"
+                            className={styles.spinning}
+                            size={24}
+                          />
+                          <p>{t("sessionsMessagesLoading")}</p>
+                        </div>
+                      ) : codexSessionMessages.length ? (
+                        codexSessionMessages.map((message, index) => (
+                          <article
+                            className={`${styles.sessionMessage} ${message.role === "user" ? styles.sessionMessageUser : styles.sessionMessageAssistant}`}
+                            key={`${message.timestamp ?? index}-${index}`}
+                          >
+                            <header>
+                              <strong>
+                                {t(
+                                  message.role === "user"
+                                    ? "sessionsRoleUser"
+                                    : "sessionsRoleAssistant",
+                                )}
+                              </strong>
+                              {message.timestamp && (
+                                <time>
+                                  {new Date(message.timestamp).toLocaleString()}
+                                </time>
+                              )}
+                            </header>
+                            <p>{message.content}</p>
+                          </article>
+                        ))
+                      ) : (
+                        <div className={styles.sessionDetailEmpty}>
+                          <p>{t("sessionsMessagesEmpty")}</p>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </section>
+            </div>
+            <AlertDialog.Root
+              onOpenChange={(open) => {
+                if (!open && !sessionsDeleting)
+                  setSessionDeleteTargets(undefined);
+              }}
+              open={Boolean(sessionDeleteTargets)}
+            >
+              <AlertDialog.Portal>
+                <AlertDialog.Overlay className={styles.dialogOverlay} />
+                <AlertDialog.Content className={styles.dialogContent}>
+                  <AlertDialog.Title>
+                    {t("sessionsBatchDeleteTitle")}
+                  </AlertDialog.Title>
+                  <AlertDialog.Description>
+                    {t("sessionsBatchDeleteConfirm", {
+                      count: sessionDeleteTargets?.length ?? 0,
+                    })}
+                  </AlertDialog.Description>
+                  <div className={styles.dialogActions}>
+                    <AlertDialog.Cancel asChild>
+                      <button
+                        className={styles.dialogCancel}
+                        disabled={sessionsDeleting}
+                        type="button"
+                      >
+                        {t("cancel")}
+                      </button>
+                    </AlertDialog.Cancel>
+                    <AlertDialog.Action asChild>
+                      <button
+                        autoFocus
+                        className={styles.dialogConfirm}
+                        disabled={sessionsDeleting}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          void deleteSelectedSessions();
+                        }}
+                        type="button"
+                      >
+                        {sessionsDeleting
+                          ? t("sessionsDeleting")
+                          : t("sessionsDeleteSelected")}
+                      </button>
+                    </AlertDialog.Action>
+                  </div>
+                </AlertDialog.Content>
+              </AlertDialog.Portal>
+            </AlertDialog.Root>
+          </>
+        );
+      }
+      return (
+        <div className={styles.placeholder}>
+          <h2>
+            {applicationLabel} · {t(`${section.labelKey}Title`)}
+          </h2>
+          <p>{t(`${section.labelKey}Description`)} </p>
+        </div>
+      );
     }
-    return accounts.length === 0 ? <div className={styles.empty}><KeyRound aria-hidden="true" size={32} /><h2>{t("emptyTitle")}</h2><p>{t("emptyDescription")}</p></div> : <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => void reorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount account={account} busy={busy} key={account.id} onExport={(account) => void openAccountExport(account)} onRemove={remove} onSwitch={switchTo} progress={switchProgress?.accountId === account.id ? switchProgress : undefined} />)}</div></SortableContext></DndContext>;
+    return accounts.length === 0 ? (
+      <div className={styles.empty}>
+        <KeyRound aria-hidden="true" size={32} />
+        <h2>{t("emptyTitle")}</h2>
+        <p>{t("emptyDescription")}</p>
+      </div>
+    ) : (
+      <DndContext
+        collisionDetection={closestCenter}
+        onDragEnd={({ active, over }) =>
+          void reorder(String(active.id), over ? String(over.id) : undefined)
+        }
+        sensors={sensors}
+      >
+        <SortableContext
+          items={accounts.map((account) => account.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className={styles.accountList}>
+            {accounts.map((account) => (
+              <SortableAccount
+                account={account}
+                busy={busy}
+                key={account.id}
+                onExport={(account) => void openAccountExport(account)}
+                onRemove={remove}
+                onSwitch={switchTo}
+                progress={
+                  switchProgress?.accountId === account.id
+                    ? switchProgress
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+    );
   };
 
-  return <Toast.Provider><main className={styles.shell}>
-    <header className={styles.header}>
-      <div className={styles.brand}><img alt="" src={logo} /><span>{t("appName")}</span><Tooltip content={t("settings")}><a aria-label={t("settings")} className={styles.settingsButton} href="/settings.html"><Settings aria-hidden="true" size={16} /></a></Tooltip></div>
-      <Tabs.Root className={styles.switcher} onValueChange={(value) => selectApplication(value as ApplicationKind)} value={selected}><Tabs.List aria-label={t("applications")}>
-        {(["cursor", "codex"] as const).map((kind) => <Tabs.Trigger className={styles.appTab} key={kind} value={kind}><img alt="" src={kind === "cursor" ? cursorIcon : codexIcon} />{kind === "codex" ? t("codex") : applications.find((app) => app.kind === kind)?.label ?? t(kind)}</Tabs.Trigger>)}
-      </Tabs.List></Tabs.Root>
-      <WorkspaceToolbar busy={busy} canManageAccounts={isCursor} hasAccounts={accounts.length > 0} onExport={() => void exportAccounts()} onPluginsExpandedChange={setPluginsExpanded} onRefresh={() => void refresh()} pluginsExpanded={pluginsExpanded} refreshing={refreshing} section={workspaceSection} />
-    </header>
-    <section className={styles.workspace}>
-      <aside aria-label={t("accountSections")} className={styles.sidebar}>
-        <nav className={styles.sidebarNav}>
-          {workspaceSections.map(({ id, icon: Icon, labelKey }) => { const count = id === "accounts" ? accounts.length : id === "plugins" ? pluginCount : undefined; const hasCount = count !== undefined; const showBadge = hasCount && count > 0 && workspaceSection === id; const label = hasCount ? t(id === "accounts" ? "accountsWithCount" : "pluginsWithCount", { count }) : t(labelKey); return <Tooltip content={label} key={id}><button aria-label={label} aria-current={workspaceSection === id ? "page" : undefined} className={`${styles.sidebarItem} ${workspaceSection === id ? styles.sidebarItemActive : ""}`} onClick={() => { if (id === workspaceSection) return; setWorkspaceSection(id); }} type="button"><Icon aria-hidden="true" size={18} />{showBadge && <span aria-hidden="true" className={styles.sidebarBadge}>{count}</span>}</button></Tooltip>; })}
-        </nav>
-      </aside>
-      <div className={styles.content}>
-        {renderSection()}
-      </div>
-    </section>
-  </main>
-  <AlertDialog.Root onOpenChange={(open) => { if (!open && restartDialog) cancelRestart(); }} open={Boolean(restartDialog)}><AlertDialog.Portal><AlertDialog.Overlay className={styles.dialogOverlay} /><AlertDialog.Content className={styles.dialogContent}><AlertDialog.Title>{t("restartDialogTitle")}</AlertDialog.Title><AlertDialog.Description>{t("restartDialogDescription")}</AlertDialog.Description><p className={styles.dialogWarning}>{t("restartDialogWarning")}</p><div className={styles.dialogActions}><AlertDialog.Cancel asChild><button autoFocus className={styles.dialogCancel} onClick={cancelRestart} type="button">{t("cancelCountdown", { seconds: countdown })}</button></AlertDialog.Cancel><button className={styles.dialogConfirm} onClick={() => void forceRestart()} type="button">{t("forceRestart")}</button></div></AlertDialog.Content></AlertDialog.Portal></AlertDialog.Root>
-  {exportTarget && exportData !== undefined && <ExportDialog data={[exportData]} filename={`cursor-account-${exportTarget.id}.json`} onOpenChange={(open) => { if (!open) setExportTarget(undefined); }} open />}
-  <ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} status={refreshing ? "loading" : refreshFailed ? "error" : "success"} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
+  return (
+    <Toast.Provider>
+      <main className={styles.shell}>
+        <div
+          aria-hidden="true"
+          className={styles.windowDragSurface}
+          onMouseDown={() => void getCurrentWindow().startDragging()}
+        />
+        <header className={styles.header}>
+          <div className={styles.brand}>
+            <img alt="" src={logo} />
+            <span>{t("appName")}</span>
+            <Tooltip content={t("settings")}>
+              <a
+                aria-label={t("settings")}
+                className={styles.settingsButton}
+                href="/settings.html"
+              >
+                <Settings aria-hidden="true" size={16} />
+              </a>
+            </Tooltip>
+          </div>
+          <Tabs.Root
+            className={styles.switcher}
+            onValueChange={(value) =>
+              selectApplication(value as ApplicationKind)
+            }
+            value={selected}
+          >
+            <Tabs.List aria-label={t("applications")}>
+              {(["cursor", "codex"] as const).map((kind) => (
+                <Tabs.Trigger className={styles.appTab} key={kind} value={kind}>
+                  <img
+                    alt=""
+                    src={kind === "cursor" ? cursorIcon : codexIcon}
+                  />
+                  {kind === "codex"
+                    ? t("codex")
+                    : (applications.find((app) => app.kind === kind)?.label ??
+                      t(kind))}
+                </Tabs.Trigger>
+              ))}
+            </Tabs.List>
+          </Tabs.Root>
+          <WorkspaceToolbar
+            busy={busy}
+            canManageAccounts={isCursor}
+            hasAccounts={accounts.length > 0}
+            onExport={() => void exportAccounts()}
+            onPluginsExpandedChange={setPluginsExpanded}
+            onRefresh={() => void refresh()}
+            onSessionsRefresh={() => void loadCodexSessions()}
+            pluginsExpanded={pluginsExpanded}
+            refreshing={refreshing}
+            sessionsRefreshing={sessionsRefreshing}
+            section={workspaceSection}
+          />
+        </header>
+        <section className={styles.workspace}>
+          <aside aria-label={t("accountSections")} className={styles.sidebar}>
+            <nav className={styles.sidebarNav}>
+              {workspaceSections.map(({ id, icon: Icon, labelKey }) => {
+                const count =
+                  id === "accounts"
+                    ? accounts.length
+                    : id === "plugins"
+                      ? pluginCount
+                      : undefined;
+                const hasCount = count !== undefined;
+                const showBadge =
+                  hasCount && count > 0 && workspaceSection === id;
+                const label = hasCount
+                  ? t(
+                      id === "accounts"
+                        ? "accountsWithCount"
+                        : "pluginsWithCount",
+                      { count },
+                    )
+                  : t(labelKey);
+                return (
+                  <Tooltip content={label} key={id}>
+                    <button
+                      aria-label={label}
+                      aria-current={
+                        workspaceSection === id ? "page" : undefined
+                      }
+                      className={`${styles.sidebarItem} ${workspaceSection === id ? styles.sidebarItemActive : ""}`}
+                      onClick={() => {
+                        if (id === workspaceSection) return;
+                        setWorkspaceSection(id);
+                      }}
+                      type="button"
+                    >
+                      <Icon aria-hidden="true" size={18} />
+                      {showBadge && (
+                        <span
+                          aria-hidden="true"
+                          className={styles.sidebarBadge}
+                        >
+                          {count}
+                        </span>
+                      )}
+                    </button>
+                  </Tooltip>
+                );
+              })}
+            </nav>
+          </aside>
+          <div className={styles.content}>{renderSection()}</div>
+        </section>
+      </main>
+      <AlertDialog.Root
+        onOpenChange={(open) => {
+          if (!open && restartDialog) cancelRestart();
+        }}
+        open={Boolean(restartDialog)}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className={styles.dialogOverlay} />
+          <AlertDialog.Content className={styles.dialogContent}>
+            <AlertDialog.Title>{t("restartDialogTitle")}</AlertDialog.Title>
+            <AlertDialog.Description>
+              {t("restartDialogDescription")}
+            </AlertDialog.Description>
+            <p className={styles.dialogWarning}>{t("restartDialogWarning")}</p>
+            <div className={styles.dialogActions}>
+              <AlertDialog.Cancel asChild>
+                <button
+                  autoFocus
+                  className={styles.dialogCancel}
+                  onClick={cancelRestart}
+                  type="button"
+                >
+                  {t("cancelCountdown", { seconds: countdown })}
+                </button>
+              </AlertDialog.Cancel>
+              <button
+                className={styles.dialogConfirm}
+                onClick={() => void forceRestart()}
+                type="button"
+              >
+                {t("forceRestart")}
+              </button>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+      {exportTarget && exportData !== undefined && (
+        <ExportDialog
+          data={[exportData]}
+          filename={`cursor-account-${exportTarget.id}.json`}
+          onOpenChange={(open) => {
+            if (!open) setExportTarget(undefined);
+          }}
+          open
+        />
+      )}
+      <ToastMessage
+        notice={notice}
+        onOpenChange={(open) => {
+          if (!open) setNotice(undefined);
+        }}
+        status={refreshing ? "loading" : refreshFailed ? "error" : "success"}
+      />
+      <Toast.Viewport className={styles.toastViewport} />
+    </Toast.Provider>
+  );
 }
 
 createRoot(document.getElementById("root")!).render(<AccountsPage />);

@@ -1,4 +1,7 @@
 export type ApplicationKind = "cursor" | "codex";
+export type PluginCapability = { id: string; name: string; description?: string; kind: "skill" | "mcp" | "hook"; enabled: boolean };
+export type CursorPlugin = { id: string; name: string; description?: string; icon?: string; source: "local" | "marketplace" | "claude" | "codex"; enabled: boolean; teamRequired: boolean; capabilities: PluginCapability[] };
+export type McpServer = { id: string; name: string };
 
 export type ApplicationStatus = {
   kind: ApplicationKind;

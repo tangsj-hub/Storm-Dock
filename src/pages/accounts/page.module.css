@@ -9,7 +9,7 @@
 .appTab { align-items: center; background: transparent; border: 0; border-radius: 4px; color: #68717d; display: inline-flex; font-size: 13px; font-weight: 600; gap: 6px; line-height: 28px; padding: 0 14px; }
 .appTab img { height: 15px; width: 15px; }
 .appTab[data-state="active"] { background: #fff; box-shadow: 0 1px 2px rgb(25 34 48 / 15%); color: #20242c; }
-.toolbar { align-items: center; display: flex; gap: 8px; justify-self: end; }
+.contextToolbar { align-items: center; display: flex; gap: 8px; justify-self: end; min-height: 34px; }
 .iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
 .iconButton:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
 .spinning { animation: spin .8s linear infinite; }
@@ -57,6 +57,37 @@
 .placeholder { align-items: center; background: #fff; border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
 .placeholder h2 { color: #343b45; font-size: 16px; margin: 0 0 6px; }
 .placeholder p { font-size: 13px; }
+.pluginList { display: grid; gap: 8px; }
+.pluginCard { background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; padding: 10px 14px; }
+.pluginHeader { align-items: center; display: flex; gap: 12px; min-height: 50px; }
+.pluginCopy { display: grid; flex: 1; min-width: 0; }
+.pluginCopy p { color: #6f7782; font-size: 12px; line-height: 18px; margin: 1px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pluginIcon { align-items: center; display: inline-flex; flex: 0 0 24px; height: 24px; justify-content: center; overflow: hidden; width: 24px; }
+.pluginIcon svg { color: #377ef0; }
+.pluginIcon img { display: block; height: 20px; object-fit: contain; width: 20px; }
+.pluginCard strong { color: #343b45; font-size: 14px; line-height: 24px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pluginSourceBadge { border-radius: 3px; font-size: 10px; font-weight: 650; line-height: 18px; padding: 0 6px; white-space: nowrap; }
+.pluginSourceBadge[data-source="marketplace"] { background: #e8f1ff; color: #2464c3; }
+.pluginSourceBadge[data-source="claude"] { background: #fff3d9; color: #8b5a12; }
+.pluginSourceBadge[data-source="local"] { background: #e7f5ec; color: #337453; }
+.pluginActions { align-items: center; display: flex; gap: 7px; margin-left: auto; }
+.pluginSwitch { background: #aeb8c4; border: 0; border-radius: 999px; height: 22px; padding: 2px; transition: background .15s; width: 38px; }
+.pluginSwitch[aria-checked="true"] { background: #377ef0; }
+.pluginSwitch > span { background: #fff; border-radius: 50%; display: block; height: 18px; transform: translateX(0); transition: transform .15s; width: 18px; }
+.pluginSwitch[aria-checked="true"] > span { transform: translateX(16px); }
+.capabilityGroup { border-top: 1px solid #e8ecf0; margin-top: 8px; padding-top: 9px; }
+.capabilityGroup h2 { align-items: baseline; color: #20242c; display: flex; font-size: 14px; font-weight: 650; gap: 7px; line-height: 24px; margin: 0 0 4px; }
+.capabilityGroup h2 span { color: #8b949e; font-weight: 500; }
+.capabilityList { display: grid; }
+.capabilityRow { align-items: flex-start; display: flex; gap: 13px; min-height: 68px; padding: 10px 12px; }
+.capabilityRow:hover { background: #f8fafc; }
+.capabilityIcon { align-items: center; color: #377ef0; display: inline-flex; flex: 0 0 26px; height: 26px; justify-content: center; margin-top: 2px; }
+.capabilityCopy { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.capabilityCopy strong { color: #252a32; font-size: 14px; font-weight: 650; line-height: 21px; }
+.capabilityCopy span, .capabilityCopy p { color: #6f7782; font-size: 12px; line-height: 18px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.capabilityCopy p { font-size: 13px; }
+.capabilityRow .pluginSwitch { flex: 0 0 auto; margin-top: 6px; }
+.hookNotice { color: #8b949e; font-size: 12px; line-height: 22px; margin-top: 6px; white-space: nowrap; }
 .placeholder { align-items: center; background: #fff; border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
 .placeholder h2 { color: #343b45; font-size: 16px; margin: 0 0 6px; }
 .placeholder p { font-size: 13px; }

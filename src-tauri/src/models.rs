@@ -45,6 +45,36 @@ pub(crate) struct ApplicationStatus {
     pub(crate) reason: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CursorPlugin {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) description: Option<String>,
+    pub(crate) icon: Option<String>,
+    pub(crate) source: String,
+    pub(crate) enabled: bool,
+    pub(crate) team_required: bool,
+    pub(crate) capabilities: Vec<PluginCapability>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PluginCapability {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) kind: String,
+    pub(crate) enabled: bool,
+    pub(crate) description: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct McpServer {
+    pub(crate) id: String,
+    pub(crate) name: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Account {
@@ -216,7 +246,10 @@ pub(crate) fn parse_iso_timestamp(text: &str) -> Option<u64> {
 }
 
 pub(crate) fn parse_timestamp(value: &serde_json::Value) -> Option<u64> {
-    if let Some(number) = value.as_u64().or_else(|| value.as_f64().map(|number| number as u64)) {
+    if let Some(number) = value
+        .as_u64()
+        .or_else(|| value.as_f64().map(|number| number as u64))
+    {
         return Some(if number > 10_000_000_000 {
             number / 1_000
         } else {
@@ -235,13 +268,20 @@ impl SubscriptionSummary {
             .or_else(|| self.billing_cycle_end.take());
         self.checked_at = summary.checked_at.or(self.checked_at);
         if self.expires_at.is_none() {
-            self.expires_at = self.billing_cycle_end.as_deref().and_then(parse_iso_timestamp);
+            self.expires_at = self
+                .billing_cycle_end
+                .as_deref()
+                .and_then(parse_iso_timestamp);
         }
     }
 
     pub(crate) fn reset_timestamp(&self, raw_export: &serde_json::Value) -> Option<u64> {
         self.expires_at
-            .or_else(|| self.billing_cycle_end.as_deref().and_then(parse_iso_timestamp))
+            .or_else(|| {
+                self.billing_cycle_end
+                    .as_deref()
+                    .and_then(parse_iso_timestamp)
+            })
             .or_else(|| parse_timestamp(raw_export.get("billingCycleEnd")?))
             .or_else(|| parse_timestamp(raw_export.pointer("/cursor_usage_raw/billingCycleEnd")?))
     }

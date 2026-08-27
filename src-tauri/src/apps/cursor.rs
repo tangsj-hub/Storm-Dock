@@ -1,16 +1,9 @@
 use rusqlite::{params, Connection};
-use std::{
-    collections::BTreeMap,
-    env, fs,
-    path::PathBuf,
-    time::Duration,
-};
+use std::{collections::BTreeMap, env, fs, path::PathBuf, time::Duration};
 
 use crate::apps::ApplicationAdapter;
 use crate::error::{AppError, Result};
-use crate::models::{
-    ApplicationKind, ApplicationStatus, Session, ACCESS_TOKEN_KEY, CURSOR_KEYS,
-};
+use crate::models::{ApplicationKind, ApplicationStatus, Session, ACCESS_TOKEN_KEY, CURSOR_KEYS};
 
 pub(crate) struct CursorAdapter {
     pub(crate) database: Option<PathBuf>,

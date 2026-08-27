@@ -75,7 +75,10 @@ pub(crate) fn is_cursor_user_id(value: &str) -> bool {
     let Some(rest) = value.strip_prefix("user_") else {
         return false;
     };
-    rest.len() >= 6 && rest.chars().all(|character| character.is_ascii_alphanumeric())
+    rest.len() >= 6
+        && rest
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
 }
 
 pub(crate) fn parse_cursor_session_token(raw: &str) -> Option<(String, String)> {
@@ -181,7 +184,9 @@ impl Session {
         let (user_id, access_token) = split_cursor_credential(&credential)?;
         let mut session = session_from_access_token(&access_token, user_id);
         if let Some(refresh) = text(&["refresh_token", "refreshToken", "cursorAuth/refreshToken"]) {
-            session.values.insert("cursorAuth/refreshToken".into(), refresh);
+            session
+                .values
+                .insert("cursorAuth/refreshToken".into(), refresh);
         }
         if let Some(email) = text(&["email", "cursorAuth/cachedEmail"]) {
             session.values.insert(EMAIL_KEY.into(), email.clone());
@@ -250,11 +255,13 @@ pub(crate) fn raw_export_from_session(
         }
     }
     record.insert("cursor_auth_raw".into(), serde_json::Value::Object(auth));
-    record.insert("telemetry_machine_ids".into(), serde_json::Value::Object(telemetry));
+    record.insert(
+        "telemetry_machine_ids".into(),
+        serde_json::Value::Object(telemetry),
+    );
     record.insert("updated_at".into(), serde_json::Value::from(updated_at));
     serde_json::Value::Object(record)
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -305,35 +312,45 @@ mod tests {
         let session = Session::from_import(&format!("{user_id}::{jwt}")).unwrap();
         assert_eq!(session.values.get(ACCESS_TOKEN_KEY), Some(&jwt));
         assert_eq!(
-            session.values.get("glass.lastSignedInAuthId").map(String::as_str),
+            session
+                .values
+                .get("glass.lastSignedInAuthId")
+                .map(String::as_str),
             Some("auth0|user_01ABCDEFGHJKMNPQRSTVWXYZ")
         );
-        assert_eq!(session.values.get(EMAIL_KEY).map(String::as_str), Some("me@example.com"));
+        assert_eq!(
+            session.values.get(EMAIL_KEY).map(String::as_str),
+            Some("me@example.com")
+        );
         assert_eq!(import_type(&session), ImportType::Jwt);
 
-        let encoded = Session::from_import(&format!(
-            "WorkosCursorSessionToken={user_id}%3A%3A{jwt}"
-        ))
-        .unwrap();
+        let encoded =
+            Session::from_import(&format!("WorkosCursorSessionToken={user_id}%3A%3A{jwt}"))
+                .unwrap();
         assert_eq!(encoded.values.get(ACCESS_TOKEN_KEY), Some(&jwt));
 
         let token = "a".repeat(40);
         let session_token = Session::from_import(&format!("{user_id}::{token}")).unwrap();
         assert_eq!(session_token.values.get(ACCESS_TOKEN_KEY), Some(&token));
         assert_eq!(
-            session_token.values.get("glass.lastSignedInAuthId").map(String::as_str),
+            session_token
+                .values
+                .get("glass.lastSignedInAuthId")
+                .map(String::as_str),
             Some(user_id)
         );
         assert_eq!(import_type(&session_token), ImportType::Token);
 
-        let json = Session::from_import(&format!(r#"{{"sessionToken":"{user_id}::{token}"}}"#)).unwrap();
+        let json =
+            Session::from_import(&format!(r#"{{"sessionToken":"{user_id}::{token}"}}"#)).unwrap();
         assert_eq!(json.values.get(ACCESS_TOKEN_KEY), Some(&token));
         assert!(Session::from_import(user_id).is_err());
     }
 
     #[test]
     fn jwt_claims_accept_padded_payloads() {
-        let mut payload = URL_SAFE_NO_PAD.encode(r#"{"email":"me@example.com","sub":"user_01ABCDEFGHJKMNPQRSTVWXYZ"}"#);
+        let mut payload = URL_SAFE_NO_PAD
+            .encode(r#"{"email":"me@example.com","sub":"user_01ABCDEFGHJKMNPQRSTVWXYZ"}"#);
         while payload.len() % 4 != 0 {
             payload.push('=');
         }
@@ -341,5 +358,4 @@ mod tests {
         let claims = jwt_claims(&format!("header.{payload}.signature")).unwrap();
         assert_eq!(claims["email"], "me@example.com");
     }
-
 }

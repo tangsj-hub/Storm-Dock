@@ -2,9 +2,7 @@ mod codex;
 mod cursor;
 
 pub(crate) use codex::CodexAdapter;
-pub(crate) use cursor::{
-    launch_cursor, terminate_cursor, wait_for_cursor_stop, CursorAdapter,
-};
+pub(crate) use cursor::{launch_cursor, terminate_cursor, wait_for_cursor_stop, CursorAdapter};
 
 use crate::error::Result;
 use crate::models::{ApplicationKind, ApplicationStatus, Session};

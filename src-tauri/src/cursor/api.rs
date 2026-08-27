@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{thread, time::Duration};
 
 use crate::cursor::session::{jwt_claims, session_user_id};
 use crate::error::{AppError, Result};
@@ -6,6 +6,273 @@ use crate::models::{now, parse_timestamp, Session, SubscriptionSummary, ACCESS_T
 
 const CURSOR_SUBSCRIPTION_URL: &str = "https://api2.cursor.sh/auth/full_stripe_profile";
 const CURSOR_DASHBOARD_URL: &str = "https://cursor.com/api";
+const CURSOR_CONNECT_URL: &str = "https://api2.cursor.sh";
+
+#[derive(Debug, PartialEq)]
+pub(crate) struct MarketplacePlugin {
+    pub(crate) id: u64,
+    pub(crate) name: String,
+    pub(crate) icon: Option<String>,
+    pub(crate) enabled: bool,
+    pub(crate) team_required: bool,
+}
+
+pub(crate) fn cursor_marketplace_plugins(session: &Session) -> Result<Vec<MarketplacePlugin>> {
+    let bytes = cursor_connect_request(session, "GetEffectiveUserPlugins", &[])?;
+    parse_effective_user_plugins(&bytes)
+}
+
+fn parse_effective_user_plugins(bytes: &[u8]) -> Result<Vec<MarketplacePlugin>> {
+    let mut plugins = Vec::new();
+    for effective in protobuf_fields(&bytes)?
+        .into_iter()
+        .filter_map(|field| (field.number == 1 && field.wire_type == 2).then_some(field.value))
+    {
+        let fields = protobuf_fields(effective)?;
+        let Some(plugin) = fields
+            .iter()
+            .find(|field| field.number == 1 && field.wire_type == 2)
+            .map(|field| field.value)
+        else {
+            continue;
+        };
+        let plugin_fields = protobuf_fields(plugin)?;
+        let Some(id) = plugin_fields
+            .iter()
+            .find(|field| field.number == 1 && field.wire_type == 0)
+            .and_then(|field| decode_varint(field.value).ok())
+        else {
+            continue;
+        };
+        let name = [3, 2]
+            .into_iter()
+            .find_map(|number| protobuf_string(&plugin_fields, number))
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| id.to_string());
+        let icon = protobuf_string(&plugin_fields, 10).filter(|value| !value.trim().is_empty());
+        let enabled = fields
+            .iter()
+            .find(|field| field.number == 4 && field.wire_type == 0)
+            .and_then(|field| decode_varint(field.value).ok())
+            .is_some_and(|value| value != 0);
+        let team_required = fields
+            .iter()
+            .find(|field| field.number == 3 && field.wire_type == 0)
+            .and_then(|field| decode_varint(field.value).ok())
+            .is_some_and(|value| value != 0);
+        plugins.push(MarketplacePlugin {
+            id,
+            name,
+            icon,
+            enabled,
+            team_required,
+        });
+    }
+    Ok(plugins)
+}
+
+pub(crate) fn set_cursor_marketplace_plugin_enabled(
+    session: &Session,
+    id: u64,
+    enabled: bool,
+) -> Result<()> {
+    let mut body = protobuf_varint_field(1, id);
+    body.extend(protobuf_varint_field(3, enabled.into()));
+    cursor_connect_request(session, "UpdateUserPluginInstall", &body)?;
+    Ok(())
+}
+
+pub(crate) fn uninstall_cursor_marketplace_plugin(session: &Session, id: u64) -> Result<()> {
+    let current = cursor_marketplace_plugins(session)?;
+    let plugin = current
+        .iter()
+        .find(|plugin| plugin.id == id)
+        .ok_or_else(|| AppError::Message("找不到 Cursor Marketplace 插件。".into()))?;
+    if plugin.team_required {
+        return Err(AppError::Message("此插件由团队策略管理，无法删除。".into()));
+    }
+    cursor_connect_request(
+        session,
+        "UninstallUserPlugin",
+        &protobuf_varint_field(1, id),
+    )?;
+    verify_marketplace_plugin_state(session, id, None)
+}
+
+fn verify_marketplace_plugin_state(
+    session: &Session,
+    id: u64,
+    expected_enabled: Option<bool>,
+) -> Result<()> {
+    for attempt in 0..3 {
+        let plugin = cursor_marketplace_plugins(session)?
+            .into_iter()
+            .find(|plugin| plugin.id == id);
+        let matches = match expected_enabled {
+            Some(enabled) => plugin.is_some_and(|plugin| plugin.enabled == enabled),
+            None => plugin.is_none(),
+        };
+        if matches {
+            return Ok(());
+        }
+        if attempt < 2 {
+            thread::sleep(Duration::from_millis(250));
+        }
+    }
+    Err(AppError::Message(match expected_enabled {
+        Some(false) => "Cursor 未确认插件已禁用，可能受团队策略限制。".into(),
+        Some(true) => "Cursor 未确认插件已启用，请稍后重试。".into(),
+        None => "Cursor 未确认插件已删除，可能受团队策略限制。".into(),
+    }))
+}
+
+fn cursor_connect_request(session: &Session, method: &str, body: &[u8]) -> Result<Vec<u8>> {
+    let token = session
+        .values
+        .get(ACCESS_TOKEN_KEY)
+        .ok_or(AppError::SecretMissing)?;
+    let response = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|error| AppError::Message(format!("无法创建 Cursor 插件请求: {error}")))?
+        .post(format!(
+            "{CURSOR_CONNECT_URL}/aiserver.v1.DashboardService/{method}"
+        ))
+        .bearer_auth(token)
+        .header("Content-Type", "application/proto")
+        .header("Accept", "application/proto")
+        .header("Connect-Protocol-Version", "1")
+        .header("X-Ghost-Mode", "false")
+        .body(body.to_vec())
+        .send()
+        .map_err(|error| AppError::Message(format!("Cursor 插件请求失败: {error}")))?;
+    let status = response.status();
+    let bytes = response
+        .bytes()
+        .map_err(|error| AppError::Message(format!("无法读取 Cursor 插件响应: {error}")))?
+        .to_vec();
+    if status.as_u16() == 401 || status.as_u16() == 403 {
+        return Err(AppError::Message(
+            "Cursor 登录已失效，请在 Cursor 中重新登录后重试。".into(),
+        ));
+    }
+    if !status.is_success() {
+        return Err(AppError::Message(format!(
+            "Cursor 插件请求失败（HTTP {}）。",
+            status
+        )));
+    }
+    Ok(bytes)
+}
+
+struct ProtobufField<'a> {
+    number: u64,
+    wire_type: u64,
+    value: &'a [u8],
+}
+
+fn protobuf_fields(bytes: &[u8]) -> Result<Vec<ProtobufField<'_>>> {
+    let mut fields = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let key = read_varint(bytes, &mut offset)?;
+        let number = key >> 3;
+        let wire_type = key & 7;
+        if number == 0 {
+            return Err(AppError::Message("Cursor 插件响应格式无效。".into()));
+        }
+        let start = offset;
+        match wire_type {
+            0 => {
+                read_varint(bytes, &mut offset)?;
+            }
+            1 => {
+                offset = offset
+                    .checked_add(8)
+                    .filter(|end| *end <= bytes.len())
+                    .ok_or_else(|| AppError::Message("Cursor 插件响应格式无效。".into()))?
+            }
+            2 => {
+                let len = read_varint(bytes, &mut offset)? as usize;
+                let end = offset
+                    .checked_add(len)
+                    .filter(|end| *end <= bytes.len())
+                    .ok_or_else(|| AppError::Message("Cursor 插件响应格式无效。".into()))?;
+                fields.push(ProtobufField {
+                    number,
+                    wire_type,
+                    value: &bytes[offset..end],
+                });
+                offset = end;
+                continue;
+            }
+            5 => {
+                offset = offset
+                    .checked_add(4)
+                    .filter(|end| *end <= bytes.len())
+                    .ok_or_else(|| AppError::Message("Cursor 插件响应格式无效。".into()))?
+            }
+            _ => return Err(AppError::Message("Cursor 插件响应格式无效。".into())),
+        }
+        fields.push(ProtobufField {
+            number,
+            wire_type,
+            value: &bytes[start..offset],
+        });
+    }
+    Ok(fields)
+}
+
+fn protobuf_string(fields: &[ProtobufField<'_>], number: u64) -> Option<String> {
+    fields
+        .iter()
+        .find(|field| field.number == number && field.wire_type == 2)
+        .and_then(|field| std::str::from_utf8(field.value).ok())
+        .map(str::to_owned)
+}
+
+fn read_varint(bytes: &[u8], offset: &mut usize) -> Result<u64> {
+    let start = *offset;
+    let value = decode_varint(&bytes[start..])?;
+    let mut index = start;
+    while bytes.get(index).is_some_and(|byte| byte & 0x80 != 0) {
+        index += 1;
+    }
+    *offset = index + 1;
+    Ok(value)
+}
+
+fn decode_varint(bytes: &[u8]) -> Result<u64> {
+    let mut value = 0u64;
+    for (index, byte) in bytes.iter().copied().enumerate().take(10) {
+        value |= u64::from(byte & 0x7f) << (index * 7);
+        if byte & 0x80 == 0 {
+            return Ok(value);
+        }
+    }
+    Err(AppError::Message("Cursor 插件响应格式无效。".into()))
+}
+
+fn protobuf_varint_field(number: u64, value: u64) -> Vec<u8> {
+    let mut result = encode_varint(number << 3);
+    result.extend(encode_varint(value));
+    result
+}
+
+fn encode_varint(mut value: u64) -> Vec<u8> {
+    let mut result = Vec::new();
+    loop {
+        let mut byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value != 0 {
+            byte |= 0x80;
+        }
+        result.push(byte);
+        if value == 0 {
+            return result;
+        }
+    }
+}
 
 fn plan_from_response(value: &serde_json::Value) -> Option<String> {
     match value {
@@ -83,9 +350,9 @@ pub(crate) fn fetch_stripe_profile(session: &Session) -> Result<serde_json::Valu
     let response = response.error_for_status().map_err(|error| {
         AppError::Message(format!("could not refresh Cursor subscription: {error}"))
     })?;
-    response.json().map_err(|error| {
-        AppError::Message(format!("could not read Cursor subscription: {error}"))
-    })
+    response
+        .json()
+        .map_err(|error| AppError::Message(format!("could not read Cursor subscription: {error}")))
 }
 
 pub(crate) fn fetch_cursor_subscription(session: &Session) -> Result<SubscriptionSummary> {
@@ -98,9 +365,9 @@ pub(crate) fn fetch_cursor_subscription(session: &Session) -> Result<Subscriptio
         stripe.as_ref().ok().map(subscription_from_response),
     )
     .ok_or_else(|| {
-        stripe.err().unwrap_or_else(|| {
-            AppError::Message("could not refresh Cursor subscription".into())
-        })
+        stripe
+            .err()
+            .unwrap_or_else(|| AppError::Message("could not refresh Cursor subscription".into()))
     })
 }
 
@@ -201,11 +468,12 @@ pub(crate) fn dashboard_request(
         _ => {}
     }
     if let Some(error) = api_error {
-        return Err(AppError::Message(format!("Cursor 用量查询失败（{error}）。")));
+        return Err(AppError::Message(format!(
+            "Cursor 用量查询失败（{error}）。"
+        )));
     }
     parsed.ok_or_else(|| AppError::Message("无法读取 Cursor 用量数据。".into()))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -219,7 +487,8 @@ mod tests {
     #[test]
     fn dashboard_cookie_can_use_session_user_id_without_jwt_claims() {
         let token = "a".repeat(40);
-        let session = session_from_access_token(&token, Some("user_01ABCDEFGHJKMNPQRSTVWXYZ".into()));
+        let session =
+            session_from_access_token(&token, Some("user_01ABCDEFGHJKMNPQRSTVWXYZ".into()));
         assert_eq!(
             dashboard_cookie(&session).unwrap(),
             format!("WorkosCursorSessionToken=user_01ABCDEFGHJKMNPQRSTVWXYZ%3A%3A{token}")
@@ -301,7 +570,9 @@ mod tests {
         }));
         assert_eq!(stripe_only_date.expires_at, None);
         let merged_without_usage_date = merge_subscription(
-            Some(subscription_from_response(&serde_json::json!({ "membershipType": "pro" }))),
+            Some(subscription_from_response(
+                &serde_json::json!({ "membershipType": "pro" }),
+            )),
             Some(summary),
         );
         assert_eq!(merged_without_usage_date.unwrap().expires_at, None);
@@ -326,4 +597,38 @@ mod tests {
         assert_eq!(summary.expires_at, None);
     }
 
+    #[test]
+    fn effective_user_plugins_read_the_server_id_display_name_icon_and_enabled_state() {
+        let plugin = [
+            protobuf_varint_field(1, 47_051_883),
+            protobuf_bytes_field(2, b"caveman"),
+            protobuf_bytes_field(3, b"Caveman"),
+            protobuf_bytes_field(10, b"https://example.test/caveman.png"),
+        ]
+        .concat();
+        let effective = [
+            protobuf_bytes_field(1, &plugin),
+            protobuf_varint_field(4, 1),
+        ]
+        .concat();
+        let response = protobuf_bytes_field(1, &effective);
+
+        assert_eq!(
+            parse_effective_user_plugins(&response).unwrap(),
+            vec![MarketplacePlugin {
+                id: 47_051_883,
+                name: "Caveman".into(),
+                icon: Some("https://example.test/caveman.png".into()),
+                enabled: true,
+                team_required: false,
+            }]
+        );
+    }
+
+    fn protobuf_bytes_field(number: u64, value: &[u8]) -> Vec<u8> {
+        let mut result = encode_varint((number << 3) | 2);
+        result.extend(encode_varint(value.len() as u64));
+        result.extend(value);
+        result
+    }
 }

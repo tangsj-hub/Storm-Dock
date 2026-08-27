@@ -95,7 +95,10 @@ impl CursorOauthHandshake {
         let mut random = [0u8; 32];
         random[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
         random[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
-        Self::from_parts(uuid::Uuid::new_v4().to_string(), URL_SAFE_NO_PAD.encode(random))
+        Self::from_parts(
+            uuid::Uuid::new_v4().to_string(),
+            URL_SAFE_NO_PAD.encode(random),
+        )
     }
 
     pub(crate) fn from_parts(uuid: String, verifier: String) -> Self {
@@ -115,7 +118,11 @@ pub(crate) fn pkce_challenge(verifier: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
 }
 
-pub(crate) fn emit_official_login_status(app: &AppHandle, stage: &'static str, login_url: Option<String>) {
+pub(crate) fn emit_official_login_status(
+    app: &AppHandle,
+    stage: &'static str,
+    login_url: Option<String>,
+) {
     let _ = app.emit(
         "official-login-status",
         OfficialLoginStatus { stage, login_url },
@@ -134,7 +141,9 @@ pub(crate) fn open_browser(url: &str) -> Result<()> {
         Err(std::io::Error::other("unsupported OS"));
     match status {
         Ok(status) if status.success() => Ok(()),
-        _ => Err(AppError::Message("无法打开浏览器，请手动打开登录链接。".into())),
+        _ => Err(AppError::Message(
+            "无法打开浏览器，请手动打开登录链接。".into(),
+        )),
     }
 }
 
@@ -229,7 +238,10 @@ pub(crate) fn session_from_oauth_poll(value: &serde_json::Value) -> Result<Sessi
         .filter(|token| token.len() >= 40)
         .ok_or(AppError::InvalidImport)?;
     let mut values = BTreeMap::from([(ACCESS_TOKEN_KEY.into(), access_token.clone())]);
-    if let Some(refresh) = json_text(value, &["refreshToken", "refresh_token", "cursorAuth/refreshToken"]) {
+    if let Some(refresh) = json_text(
+        value,
+        &["refreshToken", "refresh_token", "cursorAuth/refreshToken"],
+    ) {
         values.insert("cursorAuth/refreshToken".into(), refresh);
     }
     if let Some(auth_id) = json_text(value, &["authId", "auth_id"]) {
@@ -244,7 +256,11 @@ pub(crate) fn session_from_oauth_poll(value: &serde_json::Value) -> Result<Sessi
     }
     if let Some(claims) = jwt_claims(&access_token) {
         if !values.contains_key(EMAIL_KEY) {
-            if let Some(email) = claims.get("email").and_then(serde_json::Value::as_str).filter(|email| !email.is_empty()) {
+            if let Some(email) = claims
+                .get("email")
+                .and_then(serde_json::Value::as_str)
+                .filter(|email| !email.is_empty())
+            {
                 values.insert(EMAIL_KEY.into(), email.into());
                 values.insert(
                     "cursorAuth/cachedScopedProfile".into(),
@@ -253,7 +269,11 @@ pub(crate) fn session_from_oauth_poll(value: &serde_json::Value) -> Result<Sessi
             }
         }
         if !values.contains_key("glass.lastSignedInAuthId") {
-            if let Some(sub) = claims.get("sub").and_then(serde_json::Value::as_str).filter(|sub| !sub.is_empty()) {
+            if let Some(sub) = claims
+                .get("sub")
+                .and_then(serde_json::Value::as_str)
+                .filter(|sub| !sub.is_empty())
+            {
                 values.insert("glass.lastSignedInAuthId".into(), sub.into());
             }
         }
@@ -273,7 +293,10 @@ pub(crate) fn enrich_cursor_session(session: &mut Session) -> Option<Subscriptio
                     "cursorAuth/cachedScopedProfile".into(),
                     serde_json::json!({ "displayName": email }).to_string(),
                 );
-            } else if !session.values.contains_key("cursorAuth/cachedScopedProfile") {
+            } else if !session
+                .values
+                .contains_key("cursorAuth/cachedScopedProfile")
+            {
                 if let Some(name) = json_text(&me, &["name", "displayName"]) {
                     session.values.insert(
                         "cursorAuth/cachedScopedProfile".into(),
@@ -334,7 +357,6 @@ pub(crate) fn complete_cursor_oauth(
     Ok(account)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -349,9 +371,15 @@ mod tests {
             "11111111-1111-4111-8111-111111111111".into(),
             "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".into(),
         );
-        assert!(handshake.login_url.starts_with("https://cursor.com/loginDeepControl?"));
-        assert!(handshake.login_url.contains("challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
-        assert!(handshake.login_url.contains("uuid=11111111-1111-4111-8111-111111111111"));
+        assert!(handshake
+            .login_url
+            .starts_with("https://cursor.com/loginDeepControl?"));
+        assert!(handshake
+            .login_url
+            .contains("challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"));
+        assert!(handshake
+            .login_url
+            .contains("uuid=11111111-1111-4111-8111-111111111111"));
         assert!(handshake.login_url.contains("mode=login"));
         assert!(handshake.login_url.contains("redirectTarget=cli"));
         assert!(!handshake.login_url.contains("verifier"));
@@ -360,7 +388,8 @@ mod tests {
 
     #[test]
     fn oauth_poll_response_builds_a_cursor_session() {
-        let claims = URL_SAFE_NO_PAD.encode(r#"{"sub":"auth0|user_123","email":"me@example.com","exp":4102444800}"#);
+        let claims = URL_SAFE_NO_PAD
+            .encode(r#"{"sub":"auth0|user_123","email":"me@example.com","exp":4102444800}"#);
         let token = format!("header.{claims}.signature-padding-for-length");
         let session = session_from_oauth_poll(&serde_json::json!({
             "accessToken": token,
@@ -369,10 +398,18 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(session.values.get(ACCESS_TOKEN_KEY), Some(&token));
-        assert_eq!(session.values.get("cursorAuth/refreshToken"), Some(&"refresh-token-value".into()));
-        assert_eq!(session.values.get("glass.lastSignedInAuthId"), Some(&"auth0|user_123".into()));
-        assert_eq!(session.values.get(EMAIL_KEY), Some(&"me@example.com".into()));
+        assert_eq!(
+            session.values.get("cursorAuth/refreshToken"),
+            Some(&"refresh-token-value".into())
+        );
+        assert_eq!(
+            session.values.get("glass.lastSignedInAuthId"),
+            Some(&"auth0|user_123".into())
+        );
+        assert_eq!(
+            session.values.get(EMAIL_KEY),
+            Some(&"me@example.com".into())
+        );
         assert_eq!(import_type(&session), ImportType::OAuth);
     }
-
 }

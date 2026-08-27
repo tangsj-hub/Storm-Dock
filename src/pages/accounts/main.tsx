@@ -5,8 +5,8 @@ import { CSS } from "@dnd-kit/utilities";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Progress from "@radix-ui/react-progress";
 import * as Tabs from "@radix-ui/react-tabs";
-import { Check, ChartNoAxesCombined, Download, FileOutput, GripVertical, KeyRound, LogIn, Plus, Puzzle, RefreshCw, Settings, Trash2, UserRound, Waypoints } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { Check, ChartNoAxesCombined, Download, FileOutput, GripVertical, KeyRound, LogIn, Plus, Puzzle, RefreshCw, Settings, Trash2, UserRound, Waypoints, Zap } from "lucide-react";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { type ComponentType, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -18,8 +18,8 @@ import logo from "../../assets/logo.svg";
 import codexIcon from "../../assets/codex.svg";
 import cursorIcon from "../../assets/cursor.svg";
 import "../../i18n";
-import { listAccounts, listApplications } from "../../lib/api";
-import { canSwitchToDesktop, type Account, type ApplicationKind, type ApplicationStatus } from "../../lib/types";
+import { deleteCursorPlugin, listAccounts, listApplications, listCodexPlugins, listCursorPlugins, listMcpServers, setCodexPluginCapabilityEnabled, setCodexPluginEnabled, setCursorPluginEnabled } from "../../lib/api";
+import { canSwitchToDesktop, type Account, type ApplicationKind, type ApplicationStatus, type CursorPlugin, type McpServer, type PluginCapability } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "./page.module.css";
 
@@ -33,9 +33,37 @@ type SwitchProgress = {
 
 type SwitchOutcome = { restartRequired: boolean };
 type WorkspaceSection = "accounts" | "plugins" | "mcp";
+type PluginCache = { application: ApplicationKind; accountId?: string; plugins: CursorPlugin[] };
 const workspaceSections: Array<{ id: WorkspaceSection; icon: ComponentType<{ "aria-hidden"?: boolean | "true" | "false"; size?: number }>; labelKey: string }> = [
   { id: "accounts", icon: UserRound, labelKey: "accounts" }, { id: "plugins", icon: Puzzle, labelKey: "plugins" }, { id: "mcp", icon: Waypoints, labelKey: "mcp" },
 ];
+
+const PLUGIN_CACHE_KEY = "cursor-plugin-catalog-v8";
+
+function readPluginCache(application: ApplicationKind, accountId?: string) {
+  try {
+    const cached = JSON.parse(localStorage.getItem(PLUGIN_CACHE_KEY) ?? "null") as PluginCache | null;
+    return cached && cached.application === application && cached.accountId === accountId && Array.isArray(cached.plugins) ? cached.plugins : undefined;
+  } catch { return undefined; }
+}
+
+function writePluginCache(application: ApplicationKind, accountId: string | undefined, plugins: CursorPlugin[]) {
+  localStorage.setItem(PLUGIN_CACHE_KEY, JSON.stringify({ application, accountId, plugins } satisfies PluginCache));
+}
+
+function PluginIcon({ icon }: Pick<CursorPlugin, "icon">) {
+  const [failed, setFailed] = useState(false);
+  const src = icon ? pluginIconSource(icon) : undefined;
+  return <span className={styles.pluginIcon}>{src && !failed ? <img alt="" decoding="async" loading="lazy" onError={() => setFailed(true)} src={src} /> : <Puzzle aria-hidden="true" size={20} />}</span>;
+}
+
+function pluginIconSource(value: string) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === "https:") return value;
+  } catch { /* A local icon path is handled below. */ }
+  return /^(?:\/|[A-Za-z]:[\\/])/.test(value) ? convertFileSrc(value) : undefined;
+}
 
 function subscriptionLabel(account: Account, t: (key: string, options?: Record<string, unknown>) => string) {
   const plan = account.subscription.plan;
@@ -74,12 +102,35 @@ function SortableAccount({ account, busy, onExport, onRemove, onSwitch, progress
   </article>;
 }
 
+function WorkspaceToolbar({ section, busy, canManageAccounts, hasAccounts, refreshing, onExport, onRefresh }: {
+  section: WorkspaceSection;
+  busy: boolean;
+  canManageAccounts: boolean;
+  hasAccounts: boolean;
+  refreshing: boolean;
+  onExport: () => void;
+  onRefresh: () => void;
+}) {
+  const { t } = useTranslation();
+  return <div aria-label={t("sectionActions")} className={styles.contextToolbar} data-section={section}>
+    {section === "accounts" && <>
+      <Tooltip content={t("export")}><button aria-label={t("export")} className={styles.iconButton} disabled={busy || !canManageAccounts || !hasAccounts} onClick={onExport} type="button"><Download aria-hidden="true" size={19} /></button></Tooltip>
+      <Tooltip content={t("refresh")}><button aria-label={t("refresh")} className={styles.iconButton} disabled={busy || !canManageAccounts} onClick={onRefresh} type="button"><RefreshCw aria-hidden="true" className={refreshing ? styles.spinning : undefined} size={19} /></button></Tooltip>
+      <a aria-disabled={busy || !canManageAccounts} className={styles.addButton} href={busy || !canManageAccounts ? undefined : "/add.html"}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a>
+    </>}
+  </div>;
+}
+
 function AccountsPage() {
   const { t } = useTranslation();
   const [applications, setApplications] = useState<ApplicationStatus[]>([]);
   const [selected, setSelected] = useState<ApplicationKind>("cursor");
   const [workspaceSection, setWorkspaceSection] = useState<WorkspaceSection>("accounts");
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [plugins, setPlugins] = useState<CursorPlugin[]>([]);
+  const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [pluginsLoading, setPluginsLoading] = useState(false);
+  const [pendingPlugins, setPendingPlugins] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -91,23 +142,88 @@ function AccountsPage() {
   const [countdown, setCountdown] = useState(10);
   const activeOperationId = useRef<string | undefined>(undefined);
   const latestLoad = useRef(0);
+  const pluginsLoaded = useRef(false);
+  const pluginsLoadingRef = useRef(false);
+  const latestPluginLoad = useRef(0);
+  const pluginLoadFrame = useRef<number | undefined>(undefined);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const isCursor = selected === "cursor";
+  const currentCursorAccountId = selected === "cursor" ? accounts.find((account) => account.isCurrent)?.id : undefined;
   const showError = (error: unknown) => setNotice(error instanceof Error ? error.message : String(error));
-  const load = async () => {
+  const loadAccounts = async () => {
     const request = ++latestLoad.current;
     const [nextApplications, nextAccounts] = await Promise.all([listApplications(), listAccounts(selected)]);
     if (request !== latestLoad.current) return;
     setApplications(nextApplications);
     setAccounts(nextAccounts);
   };
-  useEffect(() => { void load().catch(showError); }, [selected]);
+  const loadPlugins = async () => {
+    if (pluginsLoaded.current || pluginsLoadingRef.current) return;
+    const request = ++latestPluginLoad.current;
+    const cached = readPluginCache(selected, currentCursorAccountId);
+    if (cached) setPlugins(cached);
+    else setPluginsLoading(true);
+    pluginsLoadingRef.current = true;
+    try {
+      const nextPlugins = selected === "cursor" ? await listCursorPlugins() : await listCodexPlugins();
+      if (request === latestPluginLoad.current) {
+        setPlugins(nextPlugins);
+        writePluginCache(selected, currentCursorAccountId, nextPlugins);
+        pluginsLoaded.current = true;
+      }
+    } catch (error) { showError(error); }
+    finally {
+      if (request === latestPluginLoad.current) {
+        pluginsLoadingRef.current = false;
+        setPluginsLoading(false);
+      }
+    }
+  };
+  const schedulePluginLoad = () => {
+    if (pluginLoadFrame.current !== undefined) cancelAnimationFrame(pluginLoadFrame.current);
+    pluginLoadFrame.current = requestAnimationFrame(() => {
+      pluginLoadFrame.current = requestAnimationFrame(() => {
+        pluginLoadFrame.current = undefined;
+        void loadPlugins();
+      });
+    });
+  };
+  const selectApplication = (next: ApplicationKind) => {
+    if (next === selected) return;
+    // A product switch is a data-boundary change: invalidate in-flight work
+    // before exposing the new workspace, so Cursor data cannot bleed into Codex.
+    ++latestPluginLoad.current;
+    pluginsLoaded.current = false;
+    pluginsLoadingRef.current = false;
+    if (pluginLoadFrame.current !== undefined) cancelAnimationFrame(pluginLoadFrame.current);
+    pluginLoadFrame.current = undefined;
+    setPlugins(readPluginCache(next) ?? []);
+    setPluginsLoading(false);
+    setMcpServers([]);
+    setSelected(next);
+  };
+  useEffect(() => { void loadAccounts().catch(showError); }, [selected]);
+  useEffect(() => {
+    if (workspaceSection === "plugins") schedulePluginLoad();
+    return () => {
+      if (pluginLoadFrame.current !== undefined) {
+        cancelAnimationFrame(pluginLoadFrame.current);
+        pluginLoadFrame.current = undefined;
+      }
+    };
+  }, [selected, workspaceSection]);
+  useEffect(() => { if (workspaceSection === "mcp") void listMcpServers(selected).then(setMcpServers).catch(showError); }, [selected, workspaceSection]);
   useEffect(() => {
     if (window.location.search) window.history.replaceState({}, "", "/");
     let unlisten: () => void = () => {};
-    void listen("accounts-changed", () => void load().catch(showError)).then((stop) => { unlisten = stop; });
+    void listen("accounts-changed", () => {
+      pluginsLoaded.current = false;
+      localStorage.removeItem(PLUGIN_CACHE_KEY);
+      void loadAccounts().catch(showError);
+      if (workspaceSection === "plugins") schedulePluginLoad();
+    }).then((stop) => { unlisten = stop; });
     return () => unlisten();
-  }, [selected]);
+  }, [isCursor, selected, workspaceSection]);
   useEffect(() => {
     let unlisten: () => void = () => {};
     void listen<SwitchProgress>("account-switch-progress", ({ payload }) => {
@@ -126,7 +242,7 @@ function AccountsPage() {
   const act = async (work: () => Promise<void>) => {
     setBusy(true);
     setNotice(undefined);
-    try { await work(); await load(); return true; } catch (error) { showError(error); return false; } finally { setBusy(false); }
+    try { await work(); await loadAccounts(); return true; } catch (error) { showError(error); return false; } finally { setBusy(false); }
   };
   const clearSwitch = () => {
     activeOperationId.current = undefined;
@@ -134,7 +250,9 @@ function AccountsPage() {
     setBusy(false);
   };
   const finishSwitch = async (noticeKey: string) => {
-    await load();
+    await loadAccounts();
+    pluginsLoaded.current = false;
+    if (workspaceSection === "plugins") schedulePluginLoad();
     setNotice(t(noticeKey));
     window.setTimeout(clearSwitch, 500);
   };
@@ -205,7 +323,7 @@ function AccountsPage() {
     try {
       const result = isCursor ? await invoke<{ total: number; failed: number; invalid: number; missing: number }>("refresh_all_cursor_accounts") : { total: 0, failed: 0, invalid: 0, missing: 0 };
       const failed = result.failed;
-      await load();
+      await loadAccounts();
       const other = failed - result.invalid - result.missing;
       const reasons = [result.invalid && t("refreshTokenInvalid", { count: result.invalid }), result.missing && t("refreshCredentialMissing", { count: result.missing }), other && t("refreshOtherFailed", { count: other })].filter(Boolean).join("，");
       setNotice(failed ? t("subscriptionsRefreshIncomplete", { reasons }) : t(accounts.length && isCursor ? "subscriptionsRefreshed" : "refreshed"));
@@ -231,27 +349,85 @@ function AccountsPage() {
     try { setExportData(await invoke<unknown>("get_cursor_export_record", { id: account.id })); setExportTarget(account); }
     catch (error) { showError(error); }
   };
+  const pluginKey = (plugin: Pick<CursorPlugin, "id" | "source">) => `${plugin.source}:${plugin.id}`;
+  const togglePlugin = async (plugin: CursorPlugin) => {
+    const key = pluginKey(plugin);
+    const enabled = !plugin.enabled;
+    setPendingPlugins((current) => new Set(current).add(key));
+    try {
+      if (selected === "codex") await setCodexPluginEnabled(plugin.id, enabled);
+      else await setCursorPluginEnabled(plugin.id, plugin.source, enabled);
+      setPlugins((current) => {
+        const next = current.map((item) => pluginKey(item) === key ? { ...item, enabled } : item);
+        writePluginCache(selected, currentCursorAccountId, next);
+        return next;
+      });
+      setNotice(t("pluginRestartRequired", { application: selected === "codex" ? t("codex") : t("cursor") }));
+    } catch (error) { showError(error); }
+    finally {
+      setPendingPlugins((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+  const removePlugin = async (plugin: CursorPlugin) => {
+    const key = pluginKey(plugin);
+    setPendingPlugins((current) => new Set(current).add(key));
+    try {
+      await deleteCursorPlugin(plugin.id, plugin.source);
+      setPlugins((current) => {
+        const next = current.filter((item) => pluginKey(item) !== key);
+        writePluginCache(selected, currentCursorAccountId, next);
+        return next;
+      });
+      setNotice(t("pluginRestartRequired"));
+    } catch (error) { showError(error); }
+    finally {
+      setPendingPlugins((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
+    }
+  };
+  const togglePluginCapability = async (plugin: CursorPlugin, capability: PluginCapability) => {
+    if (capability.kind === "hook") return;
+    const key = `${pluginKey(plugin)}:${capability.kind}:${capability.id}`;
+    setPendingPlugins((current) => new Set(current).add(key));
+    try {
+      const enabled = !capability.enabled;
+      await setCodexPluginCapabilityEnabled(plugin.id, capability.id, capability.kind, enabled);
+      setPlugins((current) => current.map((item) => pluginKey(item) === pluginKey(plugin) ? { ...item, capabilities: item.capabilities.map((entry) => entry.kind === capability.kind && entry.id === capability.id ? { ...entry, enabled } : entry) } : item));
+      setNotice(t("pluginRestartRequired", { application: t("codex") }));
+    } catch (error) { showError(error); }
+    finally { setPendingPlugins((current) => { const next = new Set(current); next.delete(key); return next; }); }
+  };
+  const pluginSourceLabel = (source: CursorPlugin["source"]) => t(`pluginSource${source[0].toUpperCase()}${source.slice(1)}`);
   const renderSection = () => {
     const applicationLabel = applications.find((app) => app.kind === selected)?.label ?? t(selected);
     if (workspaceSection !== "accounts") {
       const section = workspaceSections.find(({ id }) => id === workspaceSection)!;
+      if (workspaceSection === "plugins") return plugins.length ? <div className={styles.pluginList}>{plugins.map((plugin) => { const groups = (["skill", "mcp", "hook"] as const).map((kind) => ({ kind, capabilities: plugin.capabilities.filter((capability) => capability.kind === kind) })).filter((group) => group.capabilities.length); return <article className={styles.pluginCard} key={pluginKey(plugin)}><header className={styles.pluginHeader}><PluginIcon icon={plugin.icon} /><div className={styles.pluginCopy}><strong>{plugin.name}</strong>{plugin.description && <p>{plugin.description}</p>}</div><span className={styles.pluginSourceBadge} data-source={plugin.source}>{pluginSourceLabel(plugin.source)}</span><div className={styles.pluginActions}><Tooltip content={plugin.teamRequired ? t("pluginManagedByTeam") : plugin.enabled ? t("pluginDisable") : t("pluginEnable")}><button aria-checked={plugin.enabled} aria-label={plugin.teamRequired ? t("pluginManagedByTeam") : plugin.enabled ? t("pluginDisable") : t("pluginEnable")} className={styles.pluginSwitch} disabled={busy || plugin.teamRequired || pendingPlugins.has(pluginKey(plugin))} onClick={() => void togglePlugin(plugin)} role="switch" type="button"><span /></button></Tooltip>{(plugin.source === "local" || plugin.source === "marketplace") && <Tooltip content={plugin.teamRequired ? t("pluginManagedByTeam") : t("pluginDelete")}><button aria-label={plugin.teamRequired ? t("pluginManagedByTeam") : t("pluginDelete")} className={styles.iconButton} disabled={busy || plugin.teamRequired || pendingPlugins.has(pluginKey(plugin))} onClick={() => void removePlugin(plugin)} type="button"><Trash2 aria-hidden="true" size={18} /></button></Tooltip>}</div></header>{groups.map(({ kind, capabilities }) => <section className={styles.capabilityGroup} key={kind}><h2>{kind === "skill" ? t("pluginCapabilitySkills") : kind === "mcp" ? t("pluginCapabilityMcps") : t("pluginCapabilityHooks")} <span>{capabilities.length}</span></h2><div className={styles.capabilityList}>{capabilities.map((capability) => { const key = `${pluginKey(plugin)}:${capability.kind}:${capability.id}`; const manageable = capability.kind !== "hook"; return <div className={styles.capabilityRow} key={`${capability.kind}:${capability.id}`}><span className={styles.capabilityIcon}>{capability.kind === "skill" ? <Puzzle aria-hidden="true" size={20} /> : capability.kind === "mcp" ? <Waypoints aria-hidden="true" size={20} /> : <Zap aria-hidden="true" size={20} />}</span><div className={styles.capabilityCopy}><strong>{capability.name}</strong>{capability.description && <p>{capability.description}</p>}</div>{manageable ? <Tooltip content={capability.enabled ? t("pluginDisable") : t("pluginEnable")}><button aria-checked={capability.enabled} aria-label={capability.enabled ? t("pluginDisable") : t("pluginEnable")} className={styles.pluginSwitch} disabled={busy || !plugin.enabled || pendingPlugins.has(key)} onClick={() => void togglePluginCapability(plugin, capability)} role="switch" type="button"><span /></button></Tooltip> : <span className={styles.hookNotice}>{t("pluginHookTrustRequired")}</span>}</div>; })}</div></section>)}</article>; })}</div> : <div className={styles.empty}><Puzzle aria-hidden="true" size={32} />{pluginsLoading ? <h2>{t("refreshing")}</h2> : <><h2>{t("pluginsEmptyTitle")}</h2><p>{t("pluginsEmptyDescription")}</p></>}</div>;
+      if (workspaceSection === "mcp") return mcpServers.length ? <div className={styles.pluginList}>{mcpServers.map((server) => <article className={styles.pluginCard} key={server.id}><span className={styles.pluginIcon}><Waypoints aria-hidden="true" size={20} /></span><strong>{server.name}</strong></article>)}</div> : <div className={styles.empty}><Waypoints aria-hidden="true" size={32} /><h2>{applicationLabel} · {t("mcpTitle")}</h2><p>{t("mcpDescription")}</p></div>;
       return <div className={styles.placeholder}><h2>{applicationLabel} · {t(`${section.labelKey}Title`)}</h2><p>{t(`${section.labelKey}Description`)} </p></div>;
     }
-    return selected === "codex" ? <div className={styles.empty}><h2>{t("unsupportedTitle")}</h2><p>{t("unsupportedDescription")}</p></div> : accounts.length === 0 ? <div className={styles.empty}><KeyRound aria-hidden="true" size={32} /><h2>{t("emptyTitle")}</h2><p>{t("emptyDescription")}</p></div> : <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => void reorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount account={account} busy={busy} key={account.id} onExport={(account) => void openAccountExport(account)} onRemove={remove} onSwitch={switchTo} progress={switchProgress?.accountId === account.id ? switchProgress : undefined} />)}</div></SortableContext></DndContext>;
+    return accounts.length === 0 ? <div className={styles.empty}><KeyRound aria-hidden="true" size={32} /><h2>{t("emptyTitle")}</h2><p>{t("emptyDescription")}</p></div> : <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => void reorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount account={account} busy={busy} key={account.id} onExport={(account) => void openAccountExport(account)} onRemove={remove} onSwitch={switchTo} progress={switchProgress?.accountId === account.id ? switchProgress : undefined} />)}</div></SortableContext></DndContext>;
   };
 
   return <Toast.Provider><main className={styles.shell}>
     <header className={styles.header}>
       <div className={styles.brand}><img alt="" src={logo} /><span>{t("appName")}</span><Tooltip content={t("settings")}><a aria-label={t("settings")} className={styles.settingsButton} href="/settings.html"><Settings aria-hidden="true" size={16} /></a></Tooltip></div>
-      <Tabs.Root className={styles.switcher} onValueChange={(value) => setSelected(value as ApplicationKind)} value={selected}><Tabs.List aria-label={t("applications")}>
+      <Tabs.Root className={styles.switcher} onValueChange={(value) => selectApplication(value as ApplicationKind)} value={selected}><Tabs.List aria-label={t("applications")}>
         {(["cursor", "codex"] as const).map((kind) => <Tabs.Trigger className={styles.appTab} key={kind} value={kind}><img alt="" src={kind === "cursor" ? cursorIcon : codexIcon} />{kind === "codex" ? t("codex") : applications.find((app) => app.kind === kind)?.label ?? t(kind)}</Tabs.Trigger>)}
       </Tabs.List></Tabs.Root>
-      <div className={styles.toolbar}><Tooltip content={t("export")}><button aria-label={t("export")} className={styles.iconButton} disabled={busy || !isCursor || !accounts.length} onClick={() => void exportAccounts()} type="button"><Download aria-hidden="true" size={19} /></button></Tooltip><Tooltip content={t("refresh")}><button aria-label={t("refresh")} className={styles.iconButton} disabled={busy} onClick={() => void refresh()} type="button"><RefreshCw aria-hidden="true" className={refreshing ? styles.spinning : undefined} size={19} /></button></Tooltip><a aria-disabled={busy || !isCursor} className={styles.addButton} href={busy || !isCursor ? undefined : "/add.html"}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a></div>
+      <WorkspaceToolbar busy={busy} canManageAccounts={isCursor} hasAccounts={accounts.length > 0} onExport={() => void exportAccounts()} onRefresh={() => void refresh()} refreshing={refreshing} section={workspaceSection} />
     </header>
     <section className={styles.workspace}>
       <aside aria-label={t("accountSections")} className={styles.sidebar}>
         <nav className={styles.sidebarNav}>
-          {workspaceSections.map(({ id, icon: Icon, labelKey }) => <Tooltip content={t(labelKey)} key={id}><button aria-label={t(labelKey)} aria-current={workspaceSection === id ? "page" : undefined} className={`${styles.sidebarItem} ${workspaceSection === id ? styles.sidebarItemActive : ""}`} onClick={() => setWorkspaceSection(id)} type="button"><Icon aria-hidden="true" size={18} /></button></Tooltip>)}
+          {workspaceSections.map(({ id, icon: Icon, labelKey }) => <Tooltip content={t(labelKey)} key={id}><button aria-label={t(labelKey)} aria-current={workspaceSection === id ? "page" : undefined} className={`${styles.sidebarItem} ${workspaceSection === id ? styles.sidebarItemActive : ""}`} onClick={() => { if (id === workspaceSection) return; setWorkspaceSection(id); }} type="button"><Icon aria-hidden="true" size={18} /></button></Tooltip>)}
         </nav>
       </aside>
       <div className={styles.content}>

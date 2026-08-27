@@ -61,6 +61,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_applications,
+            commands::list_cursor_plugins,
+            commands::list_codex_plugins,
+            commands::set_codex_plugin_enabled,
+            commands::set_codex_plugin_capability_enabled,
+            commands::list_mcp_servers,
+            commands::set_cursor_plugin_enabled,
+            commands::delete_cursor_plugin,
             commands::list_accounts,
             commands::get_database_path,
             commands::move_database,

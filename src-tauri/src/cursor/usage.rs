@@ -45,11 +45,18 @@ pub(crate) fn first_team_id(teams: &serde_json::Value) -> Option<i64> {
         .or_else(|| teams.as_array())
         .into_iter()
         .flatten()
-        .find_map(|team| team.get("id").or_else(|| team.get("teamId")).and_then(json_i64))
+        .find_map(|team| {
+            team.get("id")
+                .or_else(|| team.get("teamId"))
+                .and_then(json_i64)
+        })
 }
 
 pub(crate) fn team_member_user_id(spend: &serde_json::Value, emails: &[String]) -> Option<i64> {
-    let wanted: Vec<String> = emails.iter().filter_map(|email| normalized_email(email)).collect();
+    let wanted: Vec<String> = emails
+        .iter()
+        .filter_map(|email| normalized_email(email))
+        .collect();
     if wanted.is_empty() {
         return None;
     }
@@ -108,7 +115,9 @@ pub(crate) fn auth_numeric_id(me: &serde_json::Value) -> Option<i64> {
         .find_map(|key| me.get(*key).and_then(json_i64))
 }
 
-pub(crate) fn usage_events_from_response(value: &serde_json::Value) -> Option<Vec<serde_json::Value>> {
+pub(crate) fn usage_events_from_response(
+    value: &serde_json::Value,
+) -> Option<Vec<serde_json::Value>> {
     let item = ["usageEventsDisplay", "usageEvents", "events"]
         .iter()
         .find_map(|key| value.get(*key))
@@ -120,10 +129,18 @@ pub(crate) fn usage_events_from_response(value: &serde_json::Value) -> Option<Ve
     }
 }
 
-pub(crate) fn usage_events_body(team_id: Option<i64>, user_id: Option<i64>, page: u32, dated: bool) -> serde_json::Value {
+pub(crate) fn usage_events_body(
+    team_id: Option<i64>,
+    user_id: Option<i64>,
+    page: u32,
+    dated: bool,
+) -> serde_json::Value {
     let mut body = serde_json::Map::new();
     body.insert("page".into(), serde_json::Value::from(page));
-    body.insert("pageSize".into(), serde_json::Value::from(USAGE_EVENTS_PAGE_SIZE));
+    body.insert(
+        "pageSize".into(),
+        serde_json::Value::from(USAGE_EVENTS_PAGE_SIZE),
+    );
     if let Some(team_id) = team_id {
         body.insert("teamId".into(), serde_json::Value::from(team_id));
     }
@@ -211,7 +228,11 @@ pub(crate) fn text_at(value: &serde_json::Value, path: &[&str]) -> Option<String
 }
 
 pub(crate) fn json_model_name(value: &serde_json::Value) -> Option<String> {
-    if let Some(name) = value.as_str().map(str::trim).filter(|name| !name.is_empty()) {
+    if let Some(name) = value
+        .as_str()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
         return Some(name.to_owned());
     }
     ["name", "model", "modelName", "displayName"]
@@ -233,7 +254,11 @@ pub(crate) fn event_model_name(event: &serde_json::Value) -> Option<String> {
 }
 
 pub(crate) fn event_request_weight(event: &serde_json::Value) -> f64 {
-    event.get("requestsCosts").and_then(json_number).map(|value| value.max(0.0)).unwrap_or(0.0)
+    event
+        .get("requestsCosts")
+        .and_then(json_number)
+        .map(|value| value.max(0.0))
+        .unwrap_or(0.0)
 }
 
 pub(crate) fn event_number(event: &serde_json::Value, keys: &[&str]) -> Option<f64> {
@@ -248,7 +273,10 @@ pub(crate) fn usage_event_from_value(event: &serde_json::Value) -> Option<UsageE
         model: event_model_name(event),
         requests: event_request_weight(event),
         input_tokens: event_number(event, &["inputTokens", "input_tokens", "inputTokenCount"]),
-        output_tokens: event_number(event, &["outputTokens", "output_tokens", "outputTokenCount"]),
+        output_tokens: event_number(
+            event,
+            &["outputTokens", "output_tokens", "outputTokenCount"],
+        ),
         cost_usd: event_number(event, &["costUsd", "cost_usd", "costUSD"]),
         charged_cents: event_number(event, &["chargedCents", "charged_cents"]),
         on_demand: event.get("kind").and_then(serde_json::Value::as_str)
@@ -280,8 +308,15 @@ pub(crate) fn sort_models(models: &mut [ModelUsageSummary]) {
 
 pub(crate) fn models_from_events(events: &serde_json::Value) -> Vec<ModelUsageSummary> {
     let mut by_model: BTreeMap<String, f64> = BTreeMap::new();
-    for event in events.get("usageEventsDisplay").and_then(serde_json::Value::as_array).into_iter().flatten() {
-        let Some(name) = event_model_name(event) else { continue; };
+    for event in events
+        .get("usageEventsDisplay")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(name) = event_model_name(event) else {
+            continue;
+        };
         *by_model.entry(name).or_default() += event_request_weight(event);
     }
     let mut models: Vec<_> = by_model
@@ -317,14 +352,24 @@ pub(crate) fn weekly_usage(events: &serde_json::Value) -> Option<Vec<WeeklyUsage
         .collect();
     let mut values: BTreeMap<Date, (f64, f64, bool)> = BTreeMap::new();
     for event in events.get("usageEventsDisplay")?.as_array()? {
-        let Some(date) = event_date(event) else { continue; };
+        let Some(date) = event_date(event) else {
+            continue;
+        };
         if !days.contains(&date) {
             continue;
         }
         let item = values.entry(date).or_default();
-        item.0 += event.get("requestsCosts").and_then(json_number).unwrap_or(0.0);
-        if event.get("kind").and_then(serde_json::Value::as_str) == Some("USAGE_EVENT_KIND_USAGE_BASED") {
-            item.1 += event.get("chargedCents").and_then(json_number).unwrap_or(0.0);
+        item.0 += event
+            .get("requestsCosts")
+            .and_then(json_number)
+            .unwrap_or(0.0);
+        if event.get("kind").and_then(serde_json::Value::as_str)
+            == Some("USAGE_EVENT_KIND_USAGE_BASED")
+        {
+            item.1 += event
+                .get("chargedCents")
+                .and_then(json_number)
+                .unwrap_or(0.0);
             item.2 = true;
         }
     }
@@ -352,7 +397,10 @@ pub(crate) fn percent_from_message(text: Option<&str>) -> Option<f64> {
         .rfind(|character: char| !(character.is_ascii_digit() || character == '.'))
         .map(|index| index + 1)
         .unwrap_or(0);
-    head.get(start..)?.parse().ok().filter(|value: &f64| value.is_finite())
+    head.get(start..)?
+        .parse()
+        .ok()
+        .filter(|value: &f64| value.is_finite())
 }
 
 pub(crate) fn percent_metric(percent: f64) -> UsageMetric {
@@ -372,10 +420,14 @@ pub(crate) fn with_percent(mut metric: UsageMetric, percent: Option<f64>) -> Usa
 }
 
 pub(crate) fn plan_breakdown_total(summary: &serde_json::Value) -> Option<f64> {
-    number_at(summary, &["individualUsage", "plan", "breakdown", "total"]).filter(|value| *value > 0.0)
+    number_at(summary, &["individualUsage", "plan", "breakdown", "total"])
+        .filter(|value| *value > 0.0)
 }
 
-pub(crate) fn per_user_limit_cents(summary: &serde_json::Value, hard_limit: Option<&serde_json::Value>) -> Option<f64> {
+pub(crate) fn per_user_limit_cents(
+    summary: &serde_json::Value,
+    hard_limit: Option<&serde_json::Value>,
+) -> Option<f64> {
     hard_limit
         .and_then(|value| number_at(value, &["perUserMonthlyLimitDollars"]))
         .or_else(|| number_at(summary, &["hard_limit", "perUserMonthlyLimitDollars"]))
@@ -417,18 +469,31 @@ pub(crate) fn is_team_scoped(summary: &serde_json::Value) -> bool {
         || limit_type.eq_ignore_ascii_case("team")
 }
 
-pub(crate) fn usage_pools(summary: &serde_json::Value, hard_limit: Option<&serde_json::Value>) -> (UsageMetric, Option<UsageMetric>) {
+pub(crate) fn usage_pools(
+    summary: &serde_json::Value,
+    hard_limit: Option<&serde_json::Value>,
+) -> (UsageMetric, Option<UsageMetric>) {
     let plan_used = number_at(summary, &["individualUsage", "plan", "used"]);
-    let plan_limit = number_at(summary, &["individualUsage", "plan", "limit"]).filter(|limit| *limit > 0.0);
+    let plan_limit =
+        number_at(summary, &["individualUsage", "plan", "limit"]).filter(|limit| *limit > 0.0);
     let overall_used = number_at(summary, &["individualUsage", "overall", "used"]);
     let total_percent = number_at(summary, &["individualUsage", "plan", "totalPercentUsed"])
-        .or_else(|| percent_from_message(text_at(summary, &["autoModelSelectedDisplayMessage"]).as_deref()));
-    let auto_percent = number_at(summary, &["individualUsage", "plan", "autoPercentUsed"])
-        .or_else(|| percent_from_message(text_at(summary, &["autoModelSelectedDisplayMessage"]).as_deref()));
-    let api_percent = number_at(summary, &["individualUsage", "plan", "apiPercentUsed"])
-        .or_else(|| percent_from_message(text_at(summary, &["namedModelSelectedDisplayMessage"]).as_deref()));
+        .or_else(|| {
+            percent_from_message(text_at(summary, &["autoModelSelectedDisplayMessage"]).as_deref())
+        });
+    let auto_percent =
+        number_at(summary, &["individualUsage", "plan", "autoPercentUsed"]).or_else(|| {
+            percent_from_message(text_at(summary, &["autoModelSelectedDisplayMessage"]).as_deref())
+        });
+    let api_percent =
+        number_at(summary, &["individualUsage", "plan", "apiPercentUsed"]).or_else(|| {
+            percent_from_message(text_at(summary, &["namedModelSelectedDisplayMessage"]).as_deref())
+        });
     let seat_limit = per_user_limit_cents(summary, hard_limit)
-        .or_else(|| number_at(summary, &["individualUsage", "overall", "limit"]).filter(|limit| *limit > 0.0))
+        .or_else(|| {
+            number_at(summary, &["individualUsage", "overall", "limit"])
+                .filter(|limit| *limit > 0.0)
+        })
         .or_else(|| {
             let inferred = inferred_cursor_limit_cents(summary)?;
             match plan_limit {
@@ -443,7 +508,9 @@ pub(crate) fn usage_pools(summary: &serde_json::Value, hard_limit: Option<&serde
             _ => None,
         })
         .or(plan_used);
-    let two_pool = auto_percent.is_some() || api_percent.is_some() || matches!((seat_limit, plan_limit), (Some(seat), Some(plan)) if seat > plan + 1.0);
+    let two_pool = auto_percent.is_some()
+        || api_percent.is_some()
+        || matches!((seat_limit, plan_limit), (Some(seat), Some(plan)) if seat > plan + 1.0);
     let primary = if let Some(limit) = seat_limit {
         usage_metric("currency", cursor_used.unwrap_or(0.0), Some(limit))
     } else if two_pool {
@@ -459,7 +526,10 @@ pub(crate) fn usage_pools(summary: &serde_json::Value, hard_limit: Option<&serde
     };
     let on_demand = if two_pool {
         if let (Some(used), Some(limit)) = (plan_used, plan_limit) {
-            Some(with_percent(usage_metric("currency", used, Some(limit)), api_percent))
+            Some(with_percent(
+                usage_metric("currency", used, Some(limit)),
+                api_percent,
+            ))
         } else if let Some(percent) = api_percent {
             Some(percent_metric(percent))
         } else {
@@ -471,68 +541,168 @@ pub(crate) fn usage_pools(summary: &serde_json::Value, hard_limit: Option<&serde
     (primary, on_demand)
 }
 
-pub(crate) fn update_export_usage(record: &mut serde_json::Value, raw: serde_json::Value, checked_at: u64) {
-    let Some(record) = record.as_object_mut() else { return; };
-    let mut compatibility = raw.get("usage_summary").cloned().unwrap_or_else(|| raw.clone());
-    let Some(usage_raw) = compatibility.as_object_mut() else { return; };
+pub(crate) fn update_export_usage(
+    record: &mut serde_json::Value,
+    raw: serde_json::Value,
+    checked_at: u64,
+) {
+    let Some(record) = record.as_object_mut() else {
+        return;
+    };
+    let mut compatibility = raw
+        .get("usage_summary")
+        .cloned()
+        .unwrap_or_else(|| raw.clone());
+    let Some(usage_raw) = compatibility.as_object_mut() else {
+        return;
+    };
     let summary = raw.get("usage_summary").unwrap_or(&raw);
-    for key in ["cursor_usage_sources", "total_input_tokens", "total_output_tokens", "used_models", "billing_cycle_start", "billing_cycle_end"] {
+    for key in [
+        "cursor_usage_sources",
+        "total_input_tokens",
+        "total_output_tokens",
+        "used_models",
+        "billing_cycle_start",
+        "billing_cycle_end",
+    ] {
         record.remove(key);
     }
-    record.insert("usage_updated_at".into(), serde_json::Value::from(checked_at));
+    record.insert(
+        "usage_updated_at".into(),
+        serde_json::Value::from(checked_at),
+    );
     if let Some(value) = text_at(summary, &["membershipType"]) {
         record.insert("membership_type".into(), serde_json::Value::String(value));
     }
-    let events = raw.get("usage_events").and_then(|value| value.get("usageEventsDisplay")).and_then(serde_json::Value::as_array);
+    let events = raw
+        .get("usage_events")
+        .and_then(|value| value.get("usageEventsDisplay"))
+        .and_then(serde_json::Value::as_array);
     let mut input_total = None;
     let mut output_total = None;
-    let mut by_model: BTreeMap<String, serde_json::Map<String, serde_json::Value>> = BTreeMap::new();
+    let mut by_model: BTreeMap<String, serde_json::Map<String, serde_json::Value>> =
+        BTreeMap::new();
     for event in events.into_iter().flatten() {
-        let number = |keys: &[&str]| keys.iter().find_map(|key| event.get(*key).and_then(serde_json::Value::as_f64));
+        let number = |keys: &[&str]| {
+            keys.iter()
+                .find_map(|key| event.get(*key).and_then(serde_json::Value::as_f64))
+        };
         if let Some(value) = number(&["inputTokens", "input_tokens", "inputTokenCount"]) {
             input_total = Some(input_total.unwrap_or(0.0) + value);
         }
         if let Some(value) = number(&["outputTokens", "output_tokens", "outputTokenCount"]) {
             output_total = Some(output_total.unwrap_or(0.0) + value);
         }
-        let Some(name) = event_model_name(event) else { continue; };
+        let Some(name) = event_model_name(event) else {
+            continue;
+        };
         let model = by_model.entry(name.clone()).or_insert_with(|| {
             let mut model = serde_json::Map::new();
             model.insert("model_name".into(), serde_json::Value::String(name));
             model
         });
-        let requests = model.get("num_requests").and_then(json_number).unwrap_or(0.0) + event_request_weight(event);
-        model.insert("num_requests".into(), serde_json::Value::from(requests.round() as u64));
-        for (target, keys) in [("input_tokens", &["inputTokens", "input_tokens", "inputTokenCount"][..]), ("output_tokens", &["outputTokens", "output_tokens", "outputTokenCount"][..]), ("cost_usd", &["costUsd", "cost_usd", "costUSD"][..])] {
+        let requests = model
+            .get("num_requests")
+            .and_then(json_number)
+            .unwrap_or(0.0)
+            + event_request_weight(event);
+        model.insert(
+            "num_requests".into(),
+            serde_json::Value::from(requests.round() as u64),
+        );
+        for (target, keys) in [
+            (
+                "input_tokens",
+                &["inputTokens", "input_tokens", "inputTokenCount"][..],
+            ),
+            (
+                "output_tokens",
+                &["outputTokens", "output_tokens", "outputTokenCount"][..],
+            ),
+            ("cost_usd", &["costUsd", "cost_usd", "costUSD"][..]),
+        ] {
             if let Some(value) = number(keys) {
-                let total = model.get(target).and_then(serde_json::Value::as_f64).unwrap_or(0.0) + value;
+                let total = model
+                    .get(target)
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0)
+                    + value;
                 model.insert(target.into(), serde_json::Value::from(total));
             }
         }
     }
-    if let Some(value) = input_total { usage_raw.insert("total_input_tokens".into(), serde_json::Value::from(value)); }
-    if let Some(value) = output_total { usage_raw.insert("total_output_tokens".into(), serde_json::Value::from(value)); }
-    if !by_model.is_empty() { usage_raw.insert("used_models".into(), serde_json::Value::Array(by_model.into_values().map(serde_json::Value::Object).collect())); }
+    if let Some(value) = input_total {
+        usage_raw.insert("total_input_tokens".into(), serde_json::Value::from(value));
+    }
+    if let Some(value) = output_total {
+        usage_raw.insert("total_output_tokens".into(), serde_json::Value::from(value));
+    }
+    if !by_model.is_empty() {
+        usage_raw.insert(
+            "used_models".into(),
+            serde_json::Value::Array(
+                by_model
+                    .into_values()
+                    .map(serde_json::Value::Object)
+                    .collect(),
+            ),
+        );
+    }
     if let Some(value) = raw.get("hard_limit") {
         usage_raw.insert("hard_limit".into(), value.clone());
     }
     record.insert("cursor_usage_raw".into(), compatibility);
 }
 
-pub(crate) fn cursor_usage_from_snapshot(account: &Account, raw: &serde_json::Value) -> Option<CursorUsageDetails> {
+pub(crate) fn cursor_usage_from_snapshot(
+    account: &Account,
+    raw: &serde_json::Value,
+) -> Option<CursorUsageDetails> {
     let summary = raw;
     let (primary, on_demand) = usage_pools(summary, summary.get("hard_limit"));
-    let mut models: Vec<_> = raw.get("used_models").and_then(serde_json::Value::as_array).into_iter().flatten().filter_map(|model| {
-        let requests = model.get("num_requests").and_then(json_number).filter(|value| *value > 0.0)?;
-        Some(ModelUsageSummary { name: model.get("model_name")?.as_str()?.into(), requests: requests.round() as u64 })
-    }).collect();
+    let mut models: Vec<_> = raw
+        .get("used_models")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|model| {
+            let requests = model
+                .get("num_requests")
+                .and_then(json_number)
+                .filter(|value| *value > 0.0)?;
+            Some(ModelUsageSummary {
+                name: model.get("model_name")?.as_str()?.into(),
+                requests: requests.round() as u64,
+            })
+        })
+        .collect();
     sort_models(&mut models);
     Some(CursorUsageDetails {
-        account_id: account.id.clone(), label: account.label.clone(), email: account.email.clone(), name: None, membership_type: text_at(summary, &["membershipType"]), primary, reset_at: text_at(summary, &["billingCycleEnd"]), on_demand, models, weekly_available: false, weekly: vec![], weekly_error: None, events: usage_event_rows(raw), checked_at: account.raw_export.get("usage_updated_at").and_then(serde_json::Value::as_u64).unwrap_or(account.updated_at),
+        account_id: account.id.clone(),
+        label: account.label.clone(),
+        email: account.email.clone(),
+        name: None,
+        membership_type: text_at(summary, &["membershipType"]),
+        primary,
+        reset_at: text_at(summary, &["billingCycleEnd"]),
+        on_demand,
+        models,
+        weekly_available: false,
+        weekly: vec![],
+        weekly_error: None,
+        events: usage_event_rows(raw),
+        checked_at: account
+            .raw_export
+            .get("usage_updated_at")
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(account.updated_at),
     })
 }
 
-pub(crate) fn fetch_cursor_usage(account: &Account, session: &Session) -> Result<(CursorUsageDetails, serde_json::Value)> {
+pub(crate) fn fetch_cursor_usage(
+    account: &Account,
+    session: &Session,
+) -> Result<(CursorUsageDetails, serde_json::Value)> {
     let cookie = dashboard_cookie(session)?;
     let me = dashboard_request(&cookie, "/auth/me", None)?;
     let summary = dashboard_request(&cookie, "/usage-summary", None)?;
@@ -543,22 +713,45 @@ pub(crate) fn fetch_cursor_usage(account: &Account, session: &Session) -> Result
         .and_then(serde_json::Value::as_str)
         .is_some_and(|value| value.eq_ignore_ascii_case("enterprise"));
     let team_scoped = is_team_scoped(&summary);
-    let teams = team_scoped.then(|| dashboard_request(&cookie, "/dashboard/teams", Some(serde_json::json!({}))).ok()).flatten();
+    let teams = team_scoped
+        .then(|| dashboard_request(&cookie, "/dashboard/teams", Some(serde_json::json!({}))).ok())
+        .flatten();
     let team_id = teams.as_ref().and_then(first_team_id);
-    let hard_limit = team_id.and_then(|team_id| dashboard_request(&cookie, "/dashboard/get-hard-limit", Some(serde_json::json!({ "teamId": team_id }))).ok());
+    let hard_limit = team_id.and_then(|team_id| {
+        dashboard_request(
+            &cookie,
+            "/dashboard/get-hard-limit",
+            Some(serde_json::json!({ "teamId": team_id })),
+        )
+        .ok()
+    });
     let (mut primary, on_demand) = usage_pools(&summary, hard_limit.as_ref());
     if primary.kind == "requests" {
         let requests = usage
             .as_object()
             .into_iter()
             .flat_map(|map| map.values())
-            .filter_map(|item| item.get("numRequests").and_then(json_number).map(|value| value.round() as u64))
+            .filter_map(|item| {
+                item.get("numRequests")
+                    .and_then(json_number)
+                    .map(|value| value.round() as u64)
+            })
             .sum::<u64>();
         primary = usage_metric("requests", requests as f64, None);
     }
 
-    let team_spend = team_id.and_then(|team_id| dashboard_request(&cookie, "/dashboard/get-team-spend", Some(serde_json::json!({ "teamId": team_id }))).ok());
-    let member_emails: Vec<String> = [email.clone(), account.email.clone()].into_iter().flatten().collect();
+    let team_spend = team_id.and_then(|team_id| {
+        dashboard_request(
+            &cookie,
+            "/dashboard/get-team-spend",
+            Some(serde_json::json!({ "teamId": team_id })),
+        )
+        .ok()
+    });
+    let member_emails: Vec<String> = [email.clone(), account.email.clone()]
+        .into_iter()
+        .flatten()
+        .collect();
     let member_id = team_spend
         .as_ref()
         .and_then(|spend| team_member_user_id(spend, &member_emails))
@@ -594,15 +787,23 @@ pub(crate) fn fetch_cursor_usage(account: &Account, session: &Session) -> Result
     raw.insert("auth_me".into(), me);
     raw.insert("usage_summary".into(), summary);
     raw.insert("usage".into(), usage);
-    raw.insert("usage_events".into(), usage_events.unwrap_or(serde_json::Value::Null));
+    raw.insert(
+        "usage_events".into(),
+        usage_events.unwrap_or(serde_json::Value::Null),
+    );
     if team_scoped {
         raw.insert("teams".into(), teams.unwrap_or(serde_json::Value::Null));
-        raw.insert("hard_limit".into(), hard_limit.unwrap_or(serde_json::Value::Null));
-        raw.insert("team_spend".into(), team_spend.unwrap_or(serde_json::Value::Null));
+        raw.insert(
+            "hard_limit".into(),
+            hard_limit.unwrap_or(serde_json::Value::Null),
+        );
+        raw.insert(
+            "team_spend".into(),
+            team_spend.unwrap_or(serde_json::Value::Null),
+        );
     }
     Ok((details, serde_json::Value::Object(raw)))
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -882,8 +1083,14 @@ mod tests {
         assert_eq!(enterprise["teamId"], 77);
         assert_eq!(enterprise["userId"], 42);
         assert_eq!(enterprise["page"], 2);
-        assert!(enterprise.get("startDate").and_then(serde_json::Value::as_str).is_some());
-        assert!(enterprise.get("endDate").and_then(serde_json::Value::as_str).is_some());
+        assert!(enterprise
+            .get("startDate")
+            .and_then(serde_json::Value::as_str)
+            .is_some());
+        assert!(enterprise
+            .get("endDate")
+            .and_then(serde_json::Value::as_str)
+            .is_some());
         let unscoped = usage_events_body(None, Some(9), 1, false);
         assert!(unscoped.get("teamId").is_none());
         assert_eq!(unscoped["userId"], 9);
@@ -891,20 +1098,34 @@ mod tests {
 
     #[test]
     fn usage_events_from_response_treats_missing_or_null_as_empty() {
-        assert_eq!(usage_events_from_response(&serde_json::json!({ "totalUsageEventsCount": 0 })), Some(vec![]));
-        assert_eq!(usage_events_from_response(&serde_json::json!({ "usageEventsDisplay": null })), Some(vec![]));
         assert_eq!(
-            usage_events_from_response(&serde_json::json!({ "usageEvents": [{ "model": "composer-2.5-fast" }] }))
-                .unwrap()
-                .len(),
+            usage_events_from_response(&serde_json::json!({ "totalUsageEventsCount": 0 })),
+            Some(vec![])
+        );
+        assert_eq!(
+            usage_events_from_response(&serde_json::json!({ "usageEventsDisplay": null })),
+            Some(vec![])
+        );
+        assert_eq!(
+            usage_events_from_response(
+                &serde_json::json!({ "usageEvents": [{ "model": "composer-2.5-fast" }] })
+            )
+            .unwrap()
+            .len(),
             1
         );
     }
 
     #[test]
     fn auth_numeric_id_reads_dashboard_me_id() {
-        assert_eq!(auth_numeric_id(&serde_json::json!({ "id": "232352588", "email": "a@b.c" })), Some(232_352_588));
-        assert_eq!(auth_numeric_id(&serde_json::json!({ "userId": 42 })), Some(42));
+        assert_eq!(
+            auth_numeric_id(&serde_json::json!({ "id": "232352588", "email": "a@b.c" })),
+            Some(232_352_588)
+        );
+        assert_eq!(
+            auth_numeric_id(&serde_json::json!({ "userId": 42 })),
+            Some(42)
+        );
     }
 
     #[test]
@@ -963,24 +1184,36 @@ mod tests {
     #[test]
     fn usage_export_matches_the_requested_shape_without_internal_sources() {
         let mut record = serde_json::json!({ "id": "cursor_source" });
-        update_export_usage(&mut record, serde_json::json!({
-            "auth_me": { "email": "me@example.com" },
-            "usage_summary": { "membershipType": "enterprise", "billingCycleEnd": "2026-08-27T00:00:00.000Z" },
-            "usage": { "fallback": { "numRequests": 2 } },
-            "usage_events": { "usageEventsDisplay": [{
-                "model": "cursor-model", "requestsCosts": 1, "inputTokens": 12, "outputTokens": 5, "costUsd": 1.25
-            }, {
-                "model": "cursor-model", "requestsCosts": 1, "inputTokens": 3, "outputTokens": 7, "costUsd": 0.75
-            }] }
-        }), 42);
+        update_export_usage(
+            &mut record,
+            serde_json::json!({
+                "auth_me": { "email": "me@example.com" },
+                "usage_summary": { "membershipType": "enterprise", "billingCycleEnd": "2026-08-27T00:00:00.000Z" },
+                "usage": { "fallback": { "numRequests": 2 } },
+                "usage_events": { "usageEventsDisplay": [{
+                    "model": "cursor-model", "requestsCosts": 1, "inputTokens": 12, "outputTokens": 5, "costUsd": 1.25
+                }, {
+                    "model": "cursor-model", "requestsCosts": 1, "inputTokens": 3, "outputTokens": 7, "costUsd": 0.75
+                }] }
+            }),
+            42,
+        );
         assert_eq!(record["cursor_usage_raw"]["membershipType"], "enterprise");
         assert_eq!(record["cursor_usage_raw"]["total_input_tokens"], 15.0);
         assert_eq!(record["cursor_usage_raw"]["total_output_tokens"], 12.0);
-        assert_eq!(record["cursor_usage_raw"]["used_models"][0]["model_name"], "cursor-model");
-        assert_eq!(record["cursor_usage_raw"]["used_models"][0]["num_requests"], 2);
-        assert_eq!(record["cursor_usage_raw"]["used_models"][0]["cost_usd"], 2.0);
+        assert_eq!(
+            record["cursor_usage_raw"]["used_models"][0]["model_name"],
+            "cursor-model"
+        );
+        assert_eq!(
+            record["cursor_usage_raw"]["used_models"][0]["num_requests"],
+            2
+        );
+        assert_eq!(
+            record["cursor_usage_raw"]["used_models"][0]["cost_usd"],
+            2.0
+        );
         assert!(record.get("cursor_usage_sources").is_none());
         assert!(record.get("total_input_tokens").is_none());
     }
-
 }

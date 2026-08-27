@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 
@@ -15,5 +15,8 @@ export default defineConfig({
         usage: resolve(__dirname, "usage.html")
       }
     }
-  }
+  },
+  test: {
+    include: ["src/pages/home/**/*.test.ts"],
+  },
 });

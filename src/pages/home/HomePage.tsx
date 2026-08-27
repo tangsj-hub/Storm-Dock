@@ -98,17 +98,23 @@ import {
 } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "./page.module.css";
-
-type SwitchProgress = {
-  operationId: string;
-  accountId: string;
-  stage: string;
-  percent: number;
-  status: "running" | "waiting" | "success" | "error";
-};
+import {
+  subscriptionLabel,
+  usageLabel,
+} from "./lib/accountPresentation";
+import {
+  filterSessions,
+  formatRelativeSessionTime,
+  groupSessions,
+  removeSelectedIds,
+  toggleSelectedIds,
+} from "./lib/sessionPresentation";
+import { useLatestRequest } from "./hooks/useLatestRequest";
+import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
+import { AccountList } from "./components/AccountList";
+import type { WorkspaceSection, SwitchProgress } from "./types";
 
 type SwitchOutcome = { restartRequired: boolean };
-type WorkspaceSection = "accounts" | "sessions" | "plugins" | "mcp";
 const workspaceSections: Array<{
   id: WorkspaceSection;
   icon: ComponentType<{
@@ -123,7 +129,7 @@ const workspaceSections: Array<{
   { id: "mcp", icon: Waypoints, labelKey: "mcp" },
 ];
 
-function subscriptionLabel(
+function legacySubscriptionLabel(
   account: Account,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
@@ -156,7 +162,7 @@ function subscriptionLabel(
   return { name, expiry: t("subscriptionExpired"), plan: plan.toLowerCase() };
 }
 
-function usageLabel(
+function legacyUsageLabel(
   account: Account,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
@@ -173,7 +179,7 @@ function usageLabel(
     : undefined;
 }
 
-function formatRelativeSessionTime(
+function legacyFormatRelativeSessionTime(
   timestamp: number,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
@@ -188,7 +194,7 @@ function formatRelativeSessionTime(
   return new Date(timestamp).toLocaleDateString();
 }
 
-function SortableAccount({
+function LegacySortableAccount({
   account,
   busy,
   onExport,
@@ -337,7 +343,7 @@ function SortableAccount({
   );
 }
 
-function WorkspaceToolbar({
+function LegacyWorkspaceToolbar({
   section,
   busy,
   canManageAccounts,
@@ -455,7 +461,7 @@ function WorkspaceToolbar({
   );
 }
 
-function AccountsPage() {
+export function HomePage() {
   const { t } = useTranslation();
   const [applications, setApplications] = useState<ApplicationStatus[]>([]);
   const [selected, setSelected] = useState<ApplicationKind>("cursor");
@@ -504,9 +510,9 @@ function AccountsPage() {
   const [exportTarget, setExportTarget] = useState<Account>();
   const [countdown, setCountdown] = useState(10);
   const activeOperationId = useRef<string | undefined>(undefined);
-  const latestLoad = useRef(0);
+  const beginAccountsRequest = useLatestRequest();
   const knownSessionProjects = useRef(new Set<string>());
-  const latestSessionMessages = useRef(0);
+  const beginSessionMessageRequest = useLatestRequest();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, {
@@ -519,16 +525,16 @@ function AccountsPage() {
       setNotice(error instanceof Error ? error.message : String(error)),
     [],
   );
-  const loadAccounts = async () => {
-    const request = ++latestLoad.current;
+  const loadAccounts = useCallback(async () => {
+    const isCurrent = beginAccountsRequest();
     const [nextApplications, nextAccounts] = await Promise.all([
       listApplications(),
       listAccounts(selected),
     ]);
-    if (request !== latestLoad.current) return;
+    if (!isCurrent()) return;
     setApplications(nextApplications);
     setAccounts(nextAccounts);
-  };
+  }, [beginAccountsRequest, selected]);
   const selectApplication = (next: ApplicationKind) => {
     if (next === selected) return;
     setMcpServers([]);
@@ -536,7 +542,7 @@ function AccountsPage() {
   };
   useEffect(() => {
     void loadAccounts().catch(showError);
-  }, [selected]);
+  }, [loadAccounts, showError]);
   useEffect(() => {
     if (workspaceSection === "mcp")
       void listMcpServers(selected).then(setMcpServers).catch(showError);
@@ -582,19 +588,19 @@ function AccountsPage() {
       setCodexSessionMessages([]);
       return;
     }
-    const request = ++latestSessionMessages.current;
+    const isCurrent = beginSessionMessageRequest();
     setSessionMessagesLoading(true);
     void getCodexSessionMessages(selectedCodexSessionId)
       .then((messages) => {
-        if (request === latestSessionMessages.current)
+        if (isCurrent())
           setCodexSessionMessages(messages);
       })
       .catch(showError)
       .finally(() => {
-        if (request === latestSessionMessages.current)
+        if (isCurrent())
           setSessionMessagesLoading(false);
       });
-  }, [selectedCodexSessionId, showError]);
+  }, [beginSessionMessageRequest, selectedCodexSessionId, showError]);
   useEffect(() => {
     if (window.location.search) window.history.replaceState({}, "", "/");
     let unlisten: () => void = () => {};
@@ -604,7 +610,7 @@ function AccountsPage() {
       unlisten = stop;
     });
     return () => unlisten();
-  }, [isCursor, selected, workspaceSection]);
+  }, [loadAccounts, showError]);
   useEffect(() => {
     let unlisten: () => void = () => {};
     void listen<SwitchProgress>("account-switch-progress", ({ payload }) => {
@@ -873,6 +879,14 @@ function AccountsPage() {
       ),
     [selected, t],
   );
+  const visibleCodexSessions = useMemo(
+    () => filterSessions(codexSessions, sessionSearch),
+    [codexSessions, sessionSearch],
+  );
+  const sessionProjects = useMemo(
+    () => groupSessions(visibleCodexSessions),
+    [visibleCodexSessions],
+  );
   const renderSection = () => {
     const applicationLabel =
       applications.find((app) => app.kind === selected)?.label ?? t(selected);
@@ -940,37 +954,14 @@ function AccountsPage() {
               <p>{t("sessionsEmptyDescription")}</p>
             </div>
           );
-        const normalizedSearch = sessionSearch.trim().toLocaleLowerCase();
-        const visibleSessions = normalizedSearch
-          ? codexSessions.filter((session) =>
-              [session.title, session.projectDir, session.id]
-                .filter(Boolean)
-                .some((value) =>
-                  value!.toLocaleLowerCase().includes(normalizedSearch),
-                ),
-            )
-          : codexSessions;
-        const projects = new Map<string, CodexSession[]>();
-        for (const session of visibleSessions) {
-          const project = session.projectDir?.trim() || "__unknown__";
-          projects.set(project, [...(projects.get(project) ?? []), session]);
-        }
+        const visibleSessions = visibleCodexSessions;
+        const projects = sessionProjects;
         const selectedSession = codexSessions.find(
           (session) => session.id === selectedCodexSessionId,
         );
         const toggleAllVisible = () =>
           setSelectedSessionIds((current) =>
-            visibleSessions.every((session) => current.has(session.id))
-              ? new Set(
-                  [...current].filter(
-                    (id) =>
-                      !visibleSessions.some((session) => session.id === id),
-                  ),
-                )
-              : new Set([
-                  ...current,
-                  ...visibleSessions.map((session) => session.id),
-                ]),
+            toggleSelectedIds(current, visibleSessions.map((session) => session.id)),
           );
         const copySessionText = async (value: string) => {
           try {
@@ -996,10 +987,7 @@ function AccountsPage() {
             setCodexSessions((current) =>
               current.filter((session) => !deletedIds.has(session.id)),
             );
-            setSelectedSessionIds(
-              (current) =>
-                new Set([...current].filter((id) => !deletedIds.has(id))),
-            );
+            setSelectedSessionIds((current) => removeSelectedIds(current, deletedIds));
             if (
               selectedCodexSessionId &&
               deletedIds.has(selectedCodexSessionId)
@@ -1429,36 +1417,7 @@ function AccountsPage() {
         <p>{t("emptyDescription")}</p>
       </div>
     ) : (
-      <DndContext
-        collisionDetection={closestCenter}
-        onDragEnd={({ active, over }) =>
-          void reorder(String(active.id), over ? String(over.id) : undefined)
-        }
-        sensors={sensors}
-      >
-        <SortableContext
-          items={accounts.map((account) => account.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          <div className={styles.accountList}>
-            {accounts.map((account) => (
-              <SortableAccount
-                account={account}
-                busy={busy}
-                key={account.id}
-                onExport={(account) => void openAccountExport(account)}
-                onRemove={remove}
-                onSwitch={switchTo}
-                progress={
-                  switchProgress?.accountId === account.id
-                    ? switchProgress
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-        </SortableContext>
-      </DndContext>
+      <AccountList accounts={accounts} busy={busy} onExport={(account) => void openAccountExport(account)} onRemove={remove} onReorder={(activeId, targetId) => void reorder(activeId, targetId)} onSwitch={switchTo} progress={switchProgress} />
     );
   };
 
@@ -1590,7 +1549,6 @@ function AccountsPage() {
             <div className={styles.dialogActions}>
               <AlertDialog.Cancel asChild>
                 <button
-                  autoFocus
                   className={styles.dialogCancel}
                   onClick={cancelRestart}
                   type="button"
@@ -1599,6 +1557,7 @@ function AccountsPage() {
                 </button>
               </AlertDialog.Cancel>
               <button
+                autoFocus
                 className={styles.dialogConfirm}
                 onClick={() => void forceRestart()}
                 type="button"
@@ -1630,5 +1589,3 @@ function AccountsPage() {
     </Toast.Provider>
   );
 }
-
-createRoot(document.getElementById("root")!).render(<AccountsPage />);

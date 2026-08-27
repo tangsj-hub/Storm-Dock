@@ -16,7 +16,7 @@ use crate::cursor::oauth::{complete_cursor_oauth, open_browser, OauthLoginState}
 use crate::cursor::usage::{fetch_cursor_usage, usage_pools};
 use crate::error::AppError;
 use crate::models::{
-    import_type, Account, AccountSummary, ApplicationKind, ApplicationStatus, CursorPlugin,
+    import_type, Account, AccountSummary, ApplicationKind, ApplicationStatus, Plugin,
     CursorUsageDetails, McpServer, PluginCapability, Session, SwitchOutcome, SwitchProgress, MEMBERSHIP_TYPE_KEY,
 };
 use crate::store::AppState;
@@ -56,7 +56,7 @@ pub(crate) fn list_applications(
 #[tauri::command]
 pub(crate) async fn list_cursor_plugins(
     state: State<'_, AppState>,
-) -> std::result::Result<Vec<CursorPlugin>, String> {
+) -> std::result::Result<Vec<Plugin>, String> {
     // Capture the session while holding the store lock, then release it before
     // scanning plugin directories or making the Marketplace request.
     let session = state
@@ -71,7 +71,7 @@ pub(crate) async fn list_cursor_plugins(
 }
 
 #[tauri::command]
-pub(crate) async fn list_codex_plugins() -> Vec<CursorPlugin> {
+pub(crate) async fn list_codex_plugins() -> Vec<Plugin> {
     tauri::async_runtime::spawn_blocking(collect_codex_plugins).await.unwrap_or_default()
 }
 
@@ -93,11 +93,29 @@ pub(crate) fn set_codex_plugin_capability_enabled(plugin_id: String, capability_
 }
 
 #[tauri::command]
+pub(crate) async fn delete_codex_plugin(id: String) -> std::result::Result<(), String> {
+    if id.is_empty() || id.contains('\0') {
+        return Err("无效的 ChatGPT 插件标识。".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let output = std::process::Command::new("codex")
+            .args(["plugin", "remove", &id, "--json"])
+            .output()
+            .map_err(|error| format!("无法启动 Codex 插件管理命令：{error}"))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        Err(if message.is_empty() { "Codex 插件删除失败。".into() } else { message })
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub(crate) async fn list_mcp_servers(kind: ApplicationKind) -> Vec<McpServer> {
     tauri::async_runtime::spawn_blocking(move || collect_mcp_servers(kind)).await.unwrap_or_default()
 }
 
-fn collect_codex_plugins() -> Vec<CursorPlugin> {
+fn collect_codex_plugins() -> Vec<Plugin> {
     let Some(home) = std::env::var_os("HOME") else { return Vec::new(); };
     let codex_root = PathBuf::from(home).join(".codex");
     let config = fs::read_to_string(codex_root.join("config.toml")).ok()
@@ -116,7 +134,7 @@ fn collect_codex_plugins() -> Vec<CursorPlugin> {
             add_codex_plugin_metadata(&mut plugins, id, &version.path(), is_enabled, &enabled, &config);
         }
     }
-    plugins.into_iter().map(|(id, (name, description, icon, source, enabled, team_required, capabilities))| CursorPlugin { id, name, description, icon, source, enabled, team_required, capabilities }).collect()
+    plugins.into_iter().map(|(id, (name, description, icon, source, enabled, team_required, capabilities))| Plugin { id, name, description, icon, source, enabled, team_required, capabilities }).collect()
 }
 
 fn update_codex_plugin_enabled(path: &PathBuf, id: &str, enabled: bool) -> std::result::Result<(), String> {
@@ -233,7 +251,16 @@ fn collect_codex_plugin_hooks(path: &PathBuf, manifest: Option<&serde_json::Valu
 }
 
 fn codex_plugin_manifest(path: &PathBuf) -> Option<serde_json::Value> {
-    fs::read(path.join(".codex-plugin/plugin.json")).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    plugin_manifest(path)
+}
+
+fn plugin_manifest(path: &PathBuf) -> Option<serde_json::Value> {
+    [".codex-plugin/plugin.json", ".cursor-plugin/plugin.json", ".claude-plugin/plugin.json", "plugin.json"]
+        .into_iter()
+        .map(|file| path.join(file))
+        .find(|file| file.is_file())
+        .and_then(|file| fs::read(file).ok())
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
 
 fn skill_description(path: &PathBuf) -> Option<String> {
@@ -266,7 +293,7 @@ fn collect_mcp_servers(kind: ApplicationKind) -> Vec<McpServer> {
     }
 }
 
-fn collect_cursor_plugins(session: Option<Session>) -> Vec<CursorPlugin> {
+fn collect_cursor_plugins(session: Option<Session>) -> Vec<Plugin> {
     let Some(home) = std::env::var_os("HOME") else {
         return Vec::new();
     };
@@ -275,15 +302,18 @@ fn collect_cursor_plugins(session: Option<Session>) -> Vec<CursorPlugin> {
     if let Some(session) = session {
         if let Ok(marketplace_plugins) = cursor_marketplace_plugins(&session) {
             for plugin in marketplace_plugins {
+                let cached = marketplace_plugin_cache(&home, &plugin.slug);
+                let metadata = cached.as_ref().map(|path| read_plugin_metadata(path, &plugin.name));
                 plugins.insert(
                     plugin.id.to_string(),
                     (
                         plugin.name,
-                        None,
-                        plugin.icon,
+                        metadata.as_ref().and_then(|(_, description, _)| description.clone()),
+                        plugin.icon.or_else(|| metadata.as_ref().and_then(|(_, _, icon)| icon.clone())),
                         "marketplace".into(),
                         plugin.enabled,
                         plugin.team_required,
+                        cached.as_ref().map(collect_plugin_capabilities).unwrap_or_default(),
                     ),
                 );
             }
@@ -357,7 +387,7 @@ fn collect_cursor_plugins(session: Option<Session>) -> Vec<CursorPlugin> {
     plugins
         .into_iter()
         .map(
-            |(id, (name, description, icon, source, enabled, team_required))| CursorPlugin {
+            |(id, (name, description, icon, source, enabled, team_required, capabilities))| Plugin {
                 id,
                 name,
                 description,
@@ -365,10 +395,18 @@ fn collect_cursor_plugins(session: Option<Session>) -> Vec<CursorPlugin> {
                 source,
                 enabled,
                 team_required,
-                capabilities: Vec::new(),
+                capabilities,
             },
         )
         .collect()
+}
+
+fn marketplace_plugin_cache(home: &PathBuf, slug: &str) -> Option<PathBuf> {
+    if slug.is_empty() || slug == "." || slug == ".." || slug.contains(['/', '\\']) {
+        return None;
+    }
+    let root = home.join(".cursor/plugins/cache").join(slug).join(slug);
+    fs::read_dir(root).ok()?.flatten().filter(|entry| entry.path().is_dir()).max_by_key(|entry| entry.file_name()).map(|entry| entry.path())
 }
 
 fn read_json(path: PathBuf) -> Option<serde_json::Value> {
@@ -378,14 +416,46 @@ fn read_json(path: PathBuf) -> Option<serde_json::Value> {
 }
 
 fn add_plugin_metadata(
-    plugins: &mut std::collections::BTreeMap<String, (String, Option<String>, Option<String>, String, bool, bool)>,
+    plugins: &mut std::collections::BTreeMap<String, (String, Option<String>, Option<String>, String, bool, bool, Vec<PluginCapability>)>,
     id: String,
     path: &PathBuf,
     source: &str,
     enabled: bool,
 ) {
     let (name, description, icon) = read_plugin_metadata(path, &id);
-    plugins.insert(id, (name, description, icon, source.into(), enabled, false));
+    plugins.insert(id, (name, description, icon, source.into(), enabled, false, collect_plugin_capabilities(path)));
+}
+
+// Cursor and Claude expose plugin bundle metadata but not per-capability
+// controls, so their child entries are intentionally read-only in the UI.
+fn collect_plugin_capabilities(path: &PathBuf) -> Vec<PluginCapability> {
+    let mut capabilities = collect_plugin_skills(path);
+    capabilities.extend(collect_plugin_mcp(path));
+    capabilities.extend(collect_codex_plugin_hooks(path, plugin_manifest(path).as_ref()));
+    capabilities
+}
+
+fn collect_plugin_skills(path: &PathBuf) -> Vec<PluginCapability> {
+    fs::read_dir(path.join("skills")).into_iter().flatten().flatten().filter_map(|entry| {
+        let skill = entry.path();
+        let skill_file = skill.join("SKILL.md");
+        skill_file.is_file().then(|| PluginCapability {
+            id: skill.to_string_lossy().into_owned(),
+            name: entry.file_name().to_string_lossy().into_owned(),
+            description: skill_description(&skill_file),
+            kind: "skill".into(),
+            enabled: true,
+        })
+    }).collect()
+}
+
+fn collect_plugin_mcp(path: &PathBuf) -> Vec<PluginCapability> {
+    let Some(mcp) = fs::read(path.join(".mcp.json")).ok().and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()) else { return Vec::new(); };
+    let Some(servers) = mcp.get("mcp_servers").or(Some(&mcp)).and_then(serde_json::Value::as_object) else { return Vec::new(); };
+    servers.iter().map(|(id, server)| PluginCapability {
+        id: id.clone(), name: id.clone(), kind: "mcp".into(), enabled: true,
+        description: server.get("description").and_then(serde_json::Value::as_str).map(str::to_owned),
+    }).collect()
 }
 
 fn read_plugin_metadata(path: &PathBuf, id: &str) -> (String, Option<String>, Option<String>) {

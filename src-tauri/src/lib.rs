@@ -65,6 +65,7 @@ pub fn run() {
             commands::list_codex_plugins,
             commands::set_codex_plugin_enabled,
             commands::set_codex_plugin_capability_enabled,
+            commands::delete_codex_plugin,
             commands::list_mcp_servers,
             commands::set_cursor_plugin_enabled,
             commands::delete_cursor_plugin,

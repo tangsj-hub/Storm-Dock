@@ -1,0 +1,15 @@
+.list { display: grid; gap: 12px; }
+.card { background: #fff; border: 1px solid #dce3eb; border-radius: 6px; padding: 14px; }
+.header, .capability, .actions { align-items: center; display: flex; gap: 12px; }
+.icon { align-items: center; background: #f1f5f9; border-radius: 5px; color: #377ef0; display: inline-flex; flex: 0 0 38px; height: 38px; justify-content: center; overflow: hidden; }
+.icon img { height: 100%; object-fit: cover; width: 100%; }
+.copy { display: grid; flex: 1; gap: 2px; min-width: 0; }
+.copy strong { color: #252a32; font-size: 14px; font-weight: 650; line-height: 21px; }
+.copy p { color: #6f7782; font-size: 13px; line-height: 18px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source { background: #eff4fb; border-radius: 4px; color: #2464c3; font-size: 11px; padding: 3px 6px; }
+.source[data-source="claude"] { background: #fff3d9; color: #8b5a12; }.source[data-source="local"] { background: #e7f5ec; color: #337453; }
+.actions { margin-left: auto; }.switch { background: #aeb8c4; border: 0; border-radius: 999px; height: 22px; padding: 2px; width: 38px; }.switch[aria-checked="true"] { background: #377ef0; }.switch > span { background: #fff; border-radius: 50%; display: block; height: 18px; transform: translateX(0); transition: transform .15s; width: 18px; }.switch[aria-checked="true"] > span { transform: translateX(16px); }.delete { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }.delete:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
+.group { border-top: 1px solid #e8ecf0; margin-top: 10px; padding-top: 9px; }.group h2 { color: #20242c; font-size: 14px; margin: 0 0 4px; }.group h2 span { color: #8b949e; font-weight: 500; }
+.capability { align-items: flex-start; min-height: 54px; padding: 8px 6px; }.capabilityIcon { color: #377ef0; flex: 0 0 auto; margin-top: 2px; }.capability .switch { margin-top: 5px; }.notice { color: #8b949e; font-size: 12px; margin-top: 6px; white-space: nowrap; }
+.empty { align-items: center; color: #7c8794; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }.empty h2 { color: #343b45; font-size: 16px; margin: 12px 0 6px; }.empty p { font-size: 13px; margin: 0; }
+@media (max-width: 640px) { .source { display: none; }.header { align-items: flex-start; }.actions { gap: 4px; }.capability .copy p { white-space: normal; } }

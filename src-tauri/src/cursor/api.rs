@@ -11,6 +11,7 @@ const CURSOR_CONNECT_URL: &str = "https://api2.cursor.sh";
 #[derive(Debug, PartialEq)]
 pub(crate) struct MarketplacePlugin {
     pub(crate) id: u64,
+    pub(crate) slug: String,
     pub(crate) name: String,
     pub(crate) icon: Option<String>,
     pub(crate) enabled: bool,
@@ -44,6 +45,9 @@ fn parse_effective_user_plugins(bytes: &[u8]) -> Result<Vec<MarketplacePlugin>> 
         else {
             continue;
         };
+        let slug = protobuf_string(&plugin_fields, 2)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| id.to_string());
         let name = [3, 2]
             .into_iter()
             .find_map(|number| protobuf_string(&plugin_fields, number))
@@ -62,6 +66,7 @@ fn parse_effective_user_plugins(bytes: &[u8]) -> Result<Vec<MarketplacePlugin>> 
             .is_some_and(|value| value != 0);
         plugins.push(MarketplacePlugin {
             id,
+            slug,
             name,
             icon,
             enabled,
@@ -617,6 +622,7 @@ mod tests {
             parse_effective_user_plugins(&response).unwrap(),
             vec![MarketplacePlugin {
                 id: 47_051_883,
+                slug: "caveman".into(),
                 name: "Caveman".into(),
                 icon: Some("https://example.test/caveman.png".into()),
                 enabled: true,

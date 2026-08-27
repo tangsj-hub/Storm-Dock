@@ -47,7 +47,7 @@ pub(crate) struct ApplicationStatus {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct CursorPlugin {
+pub(crate) struct Plugin {
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) description: Option<String>,

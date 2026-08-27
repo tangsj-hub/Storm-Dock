@@ -1,6 +1,8 @@
 export type ApplicationKind = "cursor" | "codex";
+/** Host-neutral plugin contract. New integrations map their native format here. */
 export type PluginCapability = { id: string; name: string; description?: string; kind: "skill" | "mcp" | "hook"; enabled: boolean };
-export type CursorPlugin = { id: string; name: string; description?: string; icon?: string; source: "local" | "marketplace" | "claude" | "codex"; enabled: boolean; teamRequired: boolean; capabilities: PluginCapability[] };
+export type PluginSource = "local" | "marketplace" | "claude" | "codex" | "other";
+export type Plugin = { id: string; name: string; description?: string; icon?: string; source: PluginSource; enabled: boolean; teamRequired: boolean; capabilities: PluginCapability[] };
 export type McpServer = { id: string; name: string };
 
 export type ApplicationStatus = {

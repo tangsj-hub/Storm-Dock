@@ -1,4 +1,5 @@
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as Tabs from "@radix-ui/react-tabs";
 import { Check, ChevronDown, FolderSync, Languages, PanelTop, Power } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -9,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import i18n from "../../i18n";
 import { getDatabasePath, moveDatabase } from "../../lib/api";
+import { LocalEnvPanel } from "./LocalEnvPanel";
 import "../../styles/global.css";
 import styles from "./page.module.css";
 
@@ -21,6 +23,7 @@ function SettingsPage() {
   const { t } = useTranslation();
   const [language, setLanguage] = useState(i18n.language);
   const [notice, setNotice] = useState<string>();
+  const [noticeStatus, setNoticeStatus] = useState<"success" | "error">("success");
   const [databasePath, setDatabasePath] = useState("");
   const [movingDatabase, setMovingDatabase] = useState(false);
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
@@ -53,22 +56,37 @@ function SettingsPage() {
 
   return <Toast.Provider><main className={styles.shell}>
     <header className={styles.header}><a aria-label={t("back")} className={styles.back} href="/">←</a><h1>{t("settingsTitle")}</h1></header>
-    <section className={styles.workspace}>
-      <div className={styles.sectionTitle}><PanelTop aria-hidden="true" size={20} /><h2>{t("windowBehavior")}</h2></div>
-      <div className={styles.behaviorList}>
-        <div className={styles.behaviorRow}><div className={styles.settingCopy}><span className={`${styles.icon} ${styles.powerIcon}`}><Power aria-hidden="true" size={20} /></span><div><h2>{t("launchAtLogin")}</h2><p>{t("launchAtLoginDescription")}</p></div></div><button aria-checked={launchAtLogin} className={styles.switch} onClick={() => void toggleLaunchAtLogin()} role="switch" type="button"><span /></button></div>
-        <div className={styles.behaviorRow}><div className={styles.settingCopy}><span className={`${styles.icon} ${styles.windowIcon}`}><PanelTop aria-hidden="true" size={20} /></span><div><h2>{t("closeToTray")}</h2><p>{t("closeToTrayDescription")}</p></div></div><button aria-checked={closeToTray} className={styles.switch} onClick={toggleCloseToTray} role="switch" type="button"><span /></button></div>
+    <Tabs.Root className={styles.layout} defaultValue="general" orientation="vertical">
+      <Tabs.List aria-label={t("settingsTabs")} className={styles.nav}>
+        <Tabs.Trigger className={styles.tab} value="general">{t("settingsTabGeneral")}</Tabs.Trigger>
+        <Tabs.Trigger className={styles.tab} value="local">{t("settingsTabLocal")}</Tabs.Trigger>
+        <Tabs.Trigger className={styles.tab} value="about">{t("settingsTabAbout")}</Tabs.Trigger>
+      </Tabs.List>
+      <div className={styles.stage}>
+      <Tabs.Content className={styles.pane} forceMount value="general">
+        <div className={styles.stack}>
+          <div className={styles.sectionTitle}><PanelTop aria-hidden="true" size={20} /><h2>{t("windowBehavior")}</h2></div>
+          <div className={styles.behaviorList}>
+            <div className={styles.row}><div className={styles.settingCopy}><span className={`${styles.icon} ${styles.powerIcon}`}><Power aria-hidden="true" size={20} /></span><div><h2>{t("launchAtLogin")}</h2><p>{t("launchAtLoginDescription")}</p></div></div><button aria-checked={launchAtLogin} className={styles.switch} onClick={() => void toggleLaunchAtLogin()} role="switch" type="button"><span /></button></div>
+            <div className={styles.row}><div className={styles.settingCopy}><span className={`${styles.icon} ${styles.windowIcon}`}><PanelTop aria-hidden="true" size={20} /></span><div><h2>{t("closeToTray")}</h2><p>{t("closeToTrayDescription")}</p></div></div><button aria-checked={closeToTray} className={styles.switch} onClick={toggleCloseToTray} role="switch" type="button"><span /></button></div>
+          </div>
+          <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><Languages aria-hidden="true" size={20} /></span><div><h2>{t("language")}</h2><p>{t("languageDescription")}</p></div></div>
+            <DropdownMenu.Root><DropdownMenu.Trigger className={styles.languageTrigger}><span>{t(current.key)}</span><ChevronDown aria-hidden="true" size={16} /></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" className={styles.menu} sideOffset={6}>
+              {languages.map((item) => <DropdownMenu.Item className={styles.menuItem} key={item.code} onSelect={() => void selectLanguage(item.code)}><span>{t(item.key)}</span>{item.code === language && <Check aria-hidden="true" size={16} />}</DropdownMenu.Item>)}
+            </DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+          </div>
+          <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><FolderSync aria-hidden="true" size={20} /></span><div><h2>{t("database")}</h2><p className={styles.databasePath}>{databasePath || t("databaseLoading")}</p></div></div>
+            <button className={styles.databaseButton} disabled={movingDatabase} onClick={() => void chooseDatabaseDirectory()} type="button">{t("databaseMove")}</button>
+          </div>
+        </div>
+      </Tabs.Content>
+      <Tabs.Content className={styles.pane} value="local">
+        <LocalEnvPanel onNotice={(message, status) => { setNoticeStatus(status ?? "success"); setNotice(message); }} />
+      </Tabs.Content>
+      <Tabs.Content className={styles.pane} forceMount value="about" />
       </div>
-      <div className={styles.settingRow}><div className={styles.settingCopy}><span className={styles.icon}><Languages aria-hidden="true" size={20} /></span><div><h2>{t("language")}</h2><p>{t("languageDescription")}</p></div></div>
-        <DropdownMenu.Root><DropdownMenu.Trigger className={styles.languageTrigger}><span>{t(current.key)}</span><ChevronDown aria-hidden="true" size={16} /></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" className={styles.menu} sideOffset={6}>
-          {languages.map((item) => <DropdownMenu.Item className={styles.menuItem} key={item.code} onSelect={() => void selectLanguage(item.code)}><span>{t(item.key)}</span>{item.code === language && <Check aria-hidden="true" size={16} />}</DropdownMenu.Item>)}
-        </DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
-      </div>
-      <div className={styles.settingRow}><div className={styles.settingCopy}><span className={styles.icon}><FolderSync aria-hidden="true" size={20} /></span><div><h2>{t("database")}</h2><p className={styles.databasePath}>{databasePath || t("databaseLoading")}</p></div></div>
-        <button className={styles.databaseButton} disabled={movingDatabase} onClick={() => void chooseDatabaseDirectory()} type="button">{t("databaseMove")}</button>
-      </div>
-    </section>
-  </main><ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
+    </Tabs.Root>
+  </main><ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} status={noticeStatus} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
 }
 
 createRoot(document.getElementById("root")!).render(<SettingsPage />);

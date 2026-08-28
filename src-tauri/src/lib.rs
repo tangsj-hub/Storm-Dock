@@ -6,6 +6,7 @@ mod cursor_sessions;
 mod error;
 mod models;
 mod store;
+mod tools;
 mod tray;
 
 use std::sync::{
@@ -104,7 +105,10 @@ pub fn run() {
             commands::delete_account,
             commands::switch_account,
             commands::force_restart_cursor,
-            set_close_to_tray
+            set_close_to_tray,
+            tools::get_tool_versions,
+            tools::run_tool_lifecycle_action,
+            tools::probe_tool_installations
         ])
         .run(tauri::generate_context!())
         .expect("error while running storm-dock");

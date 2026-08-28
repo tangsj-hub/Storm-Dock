@@ -52,8 +52,46 @@ const resources = {
 
 resources.zh.translation.sessionsEmptyDescription = "本机 {{application}} 会话将在这里按项目显示。";
 resources.en.translation.sessionsEmptyDescription = "Local {{application}} sessions will appear here, grouped by project.";
-Object.assign(resources.zh.translation, { windowBehavior: "窗口行为", launchAtLogin: "开机自启", launchAtLoginDescription: "随系统启动自动运行 Storm Dock", closeToTray: "关闭时最小化到托盘", closeToTrayDescription: "勾选后点击关闭按钮会隐藏到系统托盘，取消则直接退出应用。" });
-Object.assign(resources.en.translation, { windowBehavior: "Window behavior", launchAtLogin: "Launch at login", launchAtLoginDescription: "Automatically run Storm Dock when you sign in", closeToTray: "Minimize to tray on close", closeToTrayDescription: "Hide the app in the system tray when closed instead of exiting." });
+Object.assign(resources.zh.translation, {
+  settingsTabs: "设置分类", settingsTabGeneral: "通用", settingsTabLocal: "本地环境", settingsTabAbout: "关于",
+  windowBehavior: "窗口行为", launchAtLogin: "开机自启", launchAtLoginDescription: "随系统启动自动运行 Storm Dock", closeToTray: "关闭时最小化到托盘", closeToTrayDescription: "勾选后点击关闭按钮会隐藏到系统托盘，取消则直接退出应用。",
+  loading: "加载中...", unknown: "未知", notInstalled: "未安装", auto: "自动", copy: "复制",
+  localEnvCheck: "本地环境检查", currentVersion: "当前版本", latestVersion: "最新版本", installedNotRunnable: "已安装·无法运行",
+  toolInstall: "安装", toolUpdate: "升级", toolUninstall: "卸载", toolReady: "已就绪", toolCheckEnv: "请检查运行环境",
+  toolDiagnose: "诊断安装冲突", toolDiagnosing: "诊断中…", toolDiagnoseFailed: "诊断失败", toolDiagnoseNoConflict: "未发现安装冲突",
+  toolConflictTitle: "检测到多处安装", toolConflictHint: "命令行实际使用标「默认」的那处；升级可能写到了别处。", toolConflictNotRunnable: "无法运行", toolConflictDefault: "默认",
+  updateAllTools: "全部升级（{{count}}）", updateAvailableShort: "可升级",
+  manualInstallCommands: "手动安装命令", oneClickInstallHint: "安装或升级 Claude Code / Codex / Gemini CLI / OpenCode / OpenClaw / Hermes / Pi",
+  installCommandsCopied: "安装命令已复制", installCommandsCopyFailed: "复制失败，请手动复制。",
+  toolActionDone: "{{count}} 个工具{{action}}完成", toolActionFailed: "安装/升级命令执行失败", toolActionPartial: "{{succeeded}} 个{{action}}成功，{{failed}} 个失败",
+  toolActionInstalledNotRunnable: "已安装，但当前环境无法运行，请检查", toolActionVersionUnchanged: "仍是 {{version}}（最新：{{latest}}）。上游升级器可能报告成功但没有实际更新。",
+  toolActionVersionUnchangedTitle: "版本没有变化", toolNotRunnable: "已安装但无法运行（未探测到版本）",
+  toolUpgradeConfirmTitle: "确认升级位置", toolUpgradeConfirmHint: "检测到多处安装。本次升级不会全部更新，具体作用的位置以下方各项为准。",
+  toolUpgradeConfirmBtn: "确认升级", toolUpgradeUnanchoredHint: "无法确定命令行实际使用哪处，将执行默认升级命令（可能装到 PATH 上第一个 npm）。", toolUpgradeWillRun: "将执行：",
+  toolUninstallConfirmTitle: "确认卸载", toolUninstallConfirmHint: "只会卸载 {{name}} 在命令行 PATH 中实际命中的那一份，其它副本不会改动。",
+  toolUninstallConfirmBtn: "确认卸载", toolUninstallUnsupported: "该安装方式无法从本应用安全卸载。",
+  envBadge: { wsl: "WSL", windows: "Win", macos: "macOS", linux: "Linux" }
+});
+Object.assign(resources.en.translation, {
+  settingsTabs: "Settings sections", settingsTabGeneral: "General", settingsTabLocal: "Local", settingsTabAbout: "About",
+  windowBehavior: "Window behavior", launchAtLogin: "Launch at login", launchAtLoginDescription: "Automatically run Storm Dock when you sign in", closeToTray: "Minimize to tray on close", closeToTrayDescription: "Hide the app in the system tray when closed instead of exiting.",
+  loading: "Loading...", unknown: "Unknown", notInstalled: "Not installed", auto: "Auto", copy: "Copy",
+  localEnvCheck: "Local environment check", currentVersion: "Current version", latestVersion: "Latest version", installedNotRunnable: "Installed · can't run",
+  toolInstall: "Install", toolUpdate: "Update", toolUninstall: "Uninstall", toolReady: "Ready", toolCheckEnv: "Check environment",
+  toolDiagnose: "Diagnose installs", toolDiagnosing: "Diagnosing…", toolDiagnoseFailed: "Diagnosis failed", toolDiagnoseNoConflict: "No conflicting installations found",
+  toolConflictTitle: "Multiple installations detected", toolConflictHint: "The command line uses the one marked Default; an upgrade may have written to another.", toolConflictNotRunnable: "Can't run", toolConflictDefault: "Default",
+  updateAllTools: "Update all ({{count}})", updateAvailableShort: "Update",
+  manualInstallCommands: "Manual install commands", oneClickInstallHint: "Install or upgrade Claude Code / Codex / Gemini CLI / OpenCode / OpenClaw / Hermes / Pi",
+  installCommandsCopied: "Install commands copied", installCommandsCopyFailed: "Copy failed, please copy manually.",
+  toolActionDone: "{{action}} completed for {{count}} tool(s)", toolActionFailed: "Install/update command failed", toolActionPartial: "{{action}} succeeded for {{succeeded}}, failed for {{failed}}",
+  toolActionInstalledNotRunnable: "Installed, but it can't run in the current environment — please check", toolActionVersionUnchanged: "Still on {{version}} (latest: {{latest}}). The updater may have reported success without applying the update.",
+  toolActionVersionUnchangedTitle: "Version did not change", toolNotRunnable: "Installed but not runnable (no version detected)",
+  toolUpgradeConfirmTitle: "Confirm upgrade target", toolUpgradeConfirmHint: "Multiple installations detected. This upgrade won't update all of them; refer to each tool below for what it actually targets.",
+  toolUpgradeConfirmBtn: "Confirm upgrade", toolUpgradeUnanchoredHint: "Can't determine which install your command line uses; will run the default upgrade command (may install to the first npm on PATH).", toolUpgradeWillRun: "Will run:",
+  toolUninstallConfirmTitle: "Confirm uninstall", toolUninstallConfirmHint: "This removes only the {{name}} copy your PATH actually runs. Other copies are left alone.",
+  toolUninstallConfirmBtn: "Uninstall", toolUninstallUnsupported: "This install can't be uninstalled safely from the app.",
+  envBadge: { wsl: "WSL", windows: "Win", macos: "macOS", linux: "Linux" }
+});
 
 void i18n.use(initReactI18next).init({
   resources,

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, McpServer, Plugin } from "./types";
+import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, LocalSession, LocalSessionMessage, McpServer, Plugin, SessionDeleteBatchResult } from "./types";
 
 export const listApplications = () => invoke<ApplicationStatus[]>("list_applications");
 export const listAccounts = (kind: ApplicationKind) => invoke<Account[]>("list_accounts", { kind });
@@ -9,8 +9,13 @@ export const listCursorPlugins = () => invoke<Plugin[]>("list_cursor_plugins");
 export const listCodexPlugins = () => invoke<Plugin[]>("list_codex_plugins");
 export const listCodexSessions = () => invoke<CodexSession[]>("list_codex_sessions");
 export const getCodexSessionMessages = (id: string) => invoke<CodexSessionMessage[]>("get_codex_session_messages", { id });
-export const deleteCodexSession = (id: string) => invoke("delete_codex_session", { id });
+export const deleteCodexSession = (id: string) => invoke<void>("delete_codex_session", { id });
+export const deleteCodexSessions = (ids: string[]) => invoke<SessionDeleteBatchResult>("delete_codex_sessions", { ids });
 export const launchCodexSession = (id: string) => invoke("launch_codex_session", { id });
+export const listCursorSessions = () => invoke<LocalSession[]>("list_cursor_sessions");
+export const getCursorSessionMessages = (id: string) => invoke<LocalSessionMessage[]>("get_cursor_session_messages", { id });
+export const deleteCursorSession = (id: string) => invoke<void>("delete_cursor_session", { id });
+export const deleteCursorSessions = (ids: string[]) => invoke<SessionDeleteBatchResult>("delete_cursor_sessions", { ids });
 export const setCodexPluginEnabled = (id: string, enabled: boolean) => invoke("set_codex_plugin_enabled", { id, enabled });
 export const setCodexPluginCapabilityEnabled = (pluginId: string, capabilityId: string, kind: "skill" | "mcp", enabled: boolean) => invoke("set_codex_plugin_capability_enabled", { pluginId, capabilityId, kind, enabled });
 export const deleteCodexPlugin = (id: string) => invoke("delete_codex_plugin", { id });

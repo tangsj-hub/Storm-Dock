@@ -1,12 +1,16 @@
 export type ApplicationKind = "cursor" | "codex";
+
 /** Host-neutral plugin contract. New integrations map their native format here. */
 export type PluginCapability = { id: string; name: string; description?: string; kind: "skill" | "mcp" | "hook"; enabled: boolean };
 export type PluginSource = "local" | "marketplace" | "claude" | "codex" | "other";
 export type Plugin = { id: string; name: string; description?: string; icon?: string; source: PluginSource; enabled: boolean; teamRequired: boolean; capabilities: PluginCapability[] };
 export type McpServer = { id: string; name: string };
 
-export type CodexSession = { id: string; title: string; projectDir?: string; sourcePath: string; updatedAt: number };
-export type CodexSessionMessage = { role: "user" | "assistant"; content: string; timestamp?: number };
+export type LocalSession = { id: string; title: string; projectDir?: string; sourcePath: string; updatedAt: number };
+export type LocalSessionMessage = { role: "user" | "assistant"; content: string; timestamp?: number };
+export type SessionDeleteBatchResult = { deletedIds: string[]; failedIds: string[] };
+export type CodexSession = LocalSession;
+export type CodexSessionMessage = LocalSessionMessage;
 
 export type ApplicationStatus = {
   kind: ApplicationKind;

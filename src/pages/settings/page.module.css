@@ -5,6 +5,17 @@
 .back { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; font-size: 22px; height: 34px; justify-content: center; text-decoration: none; width: 34px; }
 .back:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
 .workspace { align-content: start; display: grid; flex: 1; gap: 12px; margin: 38px auto 0; max-width: var(--page-content-width); min-height: 0; overflow-y: auto; width: 100%; }
+.sectionTitle { align-items: center; border-bottom: 1px solid #e1e5eb; color: #20242c; display: flex; gap: 10px; padding: 0 0 14px; }
+.sectionTitle svg { color: #377ef0; }
+.sectionTitle h2 { font-size: 18px; font-weight: 720; }
+.behaviorList { display: grid; gap: 12px; }
+.behaviorRow { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: flex; justify-content: space-between; min-height: 86px; padding: 18px 20px; }
+.powerIcon { color: #f06b2f; }
+.windowIcon { color: #377ef0; }
+.switch { background: #dfe2e7; border: 0; border-radius: 999px; cursor: pointer; height: 30px; padding: 3px; width: 58px; }
+.switch span { background: #fff; border-radius: 50%; box-shadow: 0 1px 3px rgb(0 0 0 / 18%); display: block; height: 24px; transform: translateX(0); transition: transform .18s; width: 24px; }
+.switch[aria-checked="true"] { background: #10b981; }
+.switch[aria-checked="true"] span { transform: translateX(28px); }
 .settingRow { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: flex; justify-content: space-between; min-height: 86px; padding: 18px 20px; }
 .settingCopy { align-items: center; display: flex; gap: 13px; }
 .icon { align-items: center; background: #fff0e8; border-radius: 5px; color: #c9573d; display: inline-flex; height: 38px; justify-content: center; width: 38px; }

@@ -122,6 +122,7 @@
 .sessionMessage header { align-items: center; display: flex; justify-content: space-between; gap: 12px; }
 .sessionMessageUser header strong { color: #2464c3; }
 .sessionMessageAssistant header strong { color: #337453; }
+.sessionMessageAppIcon { display: block; height: 16px; width: 16px; }
 .sessionMessage time { color: #7b8693; flex: 0 0 auto; font-size: 10px; }
 .sessionMessage p { color: #343b45; font-size: 13px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .sessionDetailEmpty { align-items: center; color: #7b8693; display: flex; flex: 1; flex-direction: column; font-size: 13px; gap: 9px; justify-content: center; min-height: 180px; text-align: center; }

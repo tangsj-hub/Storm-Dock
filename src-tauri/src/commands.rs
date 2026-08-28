@@ -17,8 +17,9 @@ use crate::cursor::oauth::{complete_cursor_oauth, open_browser, OauthLoginState}
 use crate::cursor::usage::{fetch_cursor_usage, usage_pools};
 use crate::error::AppError;
 use crate::models::{
-    import_type, Account, AccountSummary, ApplicationKind, ApplicationStatus, Plugin,
-    CursorUsageDetails, McpServer, PluginCapability, Session, SwitchOutcome, SwitchProgress, MEMBERSHIP_TYPE_KEY,
+    import_type, Account, AccountSummary, ApplicationKind, ApplicationStatus, CursorUsageDetails,
+    McpServer, Plugin, PluginCapability, Session, SwitchOutcome, SwitchProgress,
+    MEMBERSHIP_TYPE_KEY,
 };
 use crate::store::AppState;
 use crate::tray::refresh_tray;
@@ -73,7 +74,9 @@ pub(crate) async fn list_cursor_plugins(
 
 #[tauri::command]
 pub(crate) async fn list_codex_plugins() -> Vec<Plugin> {
-    tauri::async_runtime::spawn_blocking(collect_codex_plugins).await.unwrap_or_default()
+    tauri::async_runtime::spawn_blocking(collect_codex_plugins)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -91,19 +94,101 @@ pub(crate) async fn get_codex_session_messages(id: String) -> Vec<CodexSessionMe
 }
 
 #[tauri::command]
-pub(crate) async fn delete_codex_session(id: String) -> std::result::Result<(), String> { tauri::async_runtime::spawn_blocking(move || crate::codex_sessions::delete_session(&id)).await.map_err(|error| error.to_string())? }
+pub(crate) async fn delete_codex_session(id: String) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::codex_sessions::delete_session(&id))
+        .await
+        .map_err(|error| error.to_string())?
+}
 
-#[tauri::command]
-pub(crate) async fn launch_codex_session(id: String) -> std::result::Result<(), String> { tauri::async_runtime::spawn_blocking(move || crate::codex_sessions::launch_session(&id)).await.map_err(|error| error.to_string())? }
-
-#[tauri::command]
-pub(crate) fn set_codex_plugin_enabled(id: String, enabled: bool) -> std::result::Result<(), String> {
-    let home = std::env::var_os("HOME").ok_or_else(|| "无法读取用户目录。".to_string())?;
-    update_codex_plugin_enabled(&PathBuf::from(home).join(".codex/config.toml"), &id, enabled)
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SessionDeleteBatchResult {
+    deleted_ids: Vec<String>,
+    failed_ids: Vec<String>,
 }
 
 #[tauri::command]
-pub(crate) fn set_codex_plugin_capability_enabled(plugin_id: String, capability_id: String, kind: String, enabled: bool) -> std::result::Result<(), String> {
+pub(crate) async fn delete_codex_sessions(ids: Vec<String>) -> SessionDeleteBatchResult {
+    let fallback_ids = ids.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (deleted_ids, failed_ids) = crate::codex_sessions::delete_sessions(&ids);
+        SessionDeleteBatchResult {
+            deleted_ids,
+            failed_ids,
+        }
+    })
+    .await
+    .unwrap_or(SessionDeleteBatchResult {
+        deleted_ids: Vec::new(),
+        failed_ids: fallback_ids,
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn launch_codex_session(id: String) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::codex_sessions::launch_session(&id))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn list_cursor_sessions() -> Vec<CodexSession> {
+    tauri::async_runtime::spawn_blocking(crate::cursor_sessions::list_sessions)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn get_cursor_session_messages(id: String) -> Vec<CodexSessionMessage> {
+    tauri::async_runtime::spawn_blocking(move || crate::cursor_sessions::load_messages(&id))
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn delete_cursor_session(id: String) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::cursor_sessions::delete_session(&id))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn delete_cursor_sessions(ids: Vec<String>) -> SessionDeleteBatchResult {
+    let fallback_ids = ids.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (deleted_ids, failed_ids) = crate::cursor_sessions::delete_sessions(&ids);
+        SessionDeleteBatchResult {
+            deleted_ids,
+            failed_ids,
+        }
+    })
+    .await
+    .unwrap_or(SessionDeleteBatchResult {
+        deleted_ids: Vec::new(),
+        failed_ids: fallback_ids,
+    })
+}
+
+#[tauri::command]
+pub(crate) fn set_codex_plugin_enabled(
+    id: String,
+    enabled: bool,
+) -> std::result::Result<(), String> {
+    let home = std::env::var_os("HOME").ok_or_else(|| "无法读取用户目录。".to_string())?;
+    update_codex_plugin_enabled(
+        &PathBuf::from(home).join(".codex/config.toml"),
+        &id,
+        enabled,
+    )
+}
+
+#[tauri::command]
+pub(crate) fn set_codex_plugin_capability_enabled(
+    plugin_id: String,
+    capability_id: String,
+    kind: String,
+    enabled: bool,
+) -> std::result::Result<(), String> {
     let home = std::env::var_os("HOME").ok_or_else(|| "无法读取用户目录。".to_string())?;
     let path = PathBuf::from(home).join(".codex/config.toml");
     match kind.as_str() {
@@ -127,48 +212,124 @@ pub(crate) async fn delete_codex_plugin(id: String) -> std::result::Result<(), S
             return Ok(());
         }
         let message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        Err(if message.is_empty() { "Codex 插件删除失败。".into() } else { message })
-    }).await.map_err(|error| error.to_string())?
+        Err(if message.is_empty() {
+            "Codex 插件删除失败。".into()
+        } else {
+            message
+        })
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 pub(crate) async fn list_mcp_servers(kind: ApplicationKind) -> Vec<McpServer> {
-    tauri::async_runtime::spawn_blocking(move || collect_mcp_servers(kind)).await.unwrap_or_default()
+    tauri::async_runtime::spawn_blocking(move || collect_mcp_servers(kind))
+        .await
+        .unwrap_or_default()
 }
 
 fn collect_codex_plugins() -> Vec<Plugin> {
-    let Some(home) = std::env::var_os("HOME") else { return Vec::new(); };
+    let Some(home) = std::env::var_os("HOME") else {
+        return Vec::new();
+    };
     let codex_root = PathBuf::from(home).join(".codex");
-    let config = fs::read_to_string(codex_root.join("config.toml")).ok()
+    let config = fs::read_to_string(codex_root.join("config.toml"))
+        .ok()
         .and_then(|content| content.parse::<toml::Value>().ok())
         .unwrap_or(toml::Value::Table(toml::map::Map::new()));
-    let enabled = config.get("plugins").and_then(toml::Value::as_table).cloned().unwrap_or_default();
+    let enabled = config
+        .get("plugins")
+        .and_then(toml::Value::as_table)
+        .cloned()
+        .unwrap_or_default();
     let root = codex_root.join("plugins/cache");
     let mut plugins = std::collections::BTreeMap::new();
     for marketplace in fs::read_dir(root).into_iter().flatten().flatten() {
-        for plugin in fs::read_dir(marketplace.path()).into_iter().flatten().flatten() {
-            let Some(version) = fs::read_dir(plugin.path()).into_iter().flatten().flatten().filter(|entry| entry.path().is_dir()).max_by_key(|entry| entry.file_name()) else { continue; };
-            let id = format!("{}@{}", plugin.file_name().to_string_lossy(), marketplace.file_name().to_string_lossy());
+        for plugin in fs::read_dir(marketplace.path())
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let Some(version) = fs::read_dir(plugin.path())
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|entry| entry.path().is_dir())
+                .max_by_key(|entry| entry.file_name())
+            else {
+                continue;
+            };
+            let id = format!(
+                "{}@{}",
+                plugin.file_name().to_string_lossy(),
+                marketplace.file_name().to_string_lossy()
+            );
             // Absence from config means that the desktop app's default applies,
             // which is enabled for an installed plugin.
-            let is_enabled = enabled.get(&id).and_then(|plugin| plugin.get("enabled")).and_then(toml::Value::as_bool).unwrap_or(true);
-            add_codex_plugin_metadata(&mut plugins, id, &version.path(), is_enabled, &enabled, &config);
+            let is_enabled = enabled
+                .get(&id)
+                .and_then(|plugin| plugin.get("enabled"))
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(true);
+            add_codex_plugin_metadata(
+                &mut plugins,
+                id,
+                &version.path(),
+                is_enabled,
+                &enabled,
+                &config,
+            );
         }
     }
-    plugins.into_iter().map(|(id, (name, description, icon, source, enabled, team_required, capabilities))| Plugin { id, name, description, icon, source, enabled, team_required, capabilities }).collect()
+    plugins
+        .into_iter()
+        .map(
+            |(id, (name, description, icon, source, enabled, team_required, capabilities))| {
+                Plugin {
+                    id,
+                    name,
+                    description,
+                    icon,
+                    source,
+                    enabled,
+                    team_required,
+                    capabilities,
+                }
+            },
+        )
+        .collect()
 }
 
-fn update_codex_plugin_enabled(path: &PathBuf, id: &str, enabled: bool) -> std::result::Result<(), String> {
+fn update_codex_plugin_enabled(
+    path: &PathBuf,
+    id: &str,
+    enabled: bool,
+) -> std::result::Result<(), String> {
     let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
     let header = format!("[plugins.\"{id}\"]");
     let Some(start) = content.lines().position(|line| line.trim() == header) else {
-        let separator = if content.is_empty() || content.ends_with('\n') { "" } else { "\n" };
-        return fs::write(path, format!("{content}{separator}\n{header}\nenabled = {enabled}\n"))
-            .map_err(|error| error.to_string());
+        let separator = if content.is_empty() || content.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
+        return fs::write(
+            path,
+            format!("{content}{separator}\n{header}\nenabled = {enabled}\n"),
+        )
+        .map_err(|error| error.to_string());
     };
     let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
-    let end = lines.iter().enumerate().skip(start + 1).find_map(|(index, line)| line.trim_start().starts_with('[').then_some(index)).unwrap_or(lines.len());
-    if let Some(index) = (start + 1..end).find(|index| lines[*index].trim_start().starts_with("enabled")) {
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find_map(|(index, line)| line.trim_start().starts_with('[').then_some(index))
+        .unwrap_or(lines.len());
+    if let Some(index) =
+        (start + 1..end).find(|index| lines[*index].trim_start().starts_with("enabled"))
+    {
         lines[index] = format!("enabled = {enabled}");
     } else {
         lines.insert(end, format!("enabled = {enabled}"));
@@ -176,51 +337,127 @@ fn update_codex_plugin_enabled(path: &PathBuf, id: &str, enabled: bool) -> std::
     fs::write(path, format!("{}\n", lines.join("\n"))).map_err(|error| error.to_string())
 }
 
-fn update_codex_plugin_mcp_enabled(path: &PathBuf, plugin_id: &str, server_id: &str, enabled: bool) -> std::result::Result<(), String> {
-    let header = format!("[plugins.{}.mcp_servers.{}]", toml_key(plugin_id), toml_key(server_id));
+fn update_codex_plugin_mcp_enabled(
+    path: &PathBuf,
+    plugin_id: &str,
+    server_id: &str,
+    enabled: bool,
+) -> std::result::Result<(), String> {
+    let header = format!(
+        "[plugins.{}.mcp_servers.{}]",
+        toml_key(plugin_id),
+        toml_key(server_id)
+    );
     update_toml_enabled(path, &header, enabled)
 }
 
-fn update_codex_skill_enabled(path: &PathBuf, skill_path: &str, enabled: bool) -> std::result::Result<(), String> {
+fn update_codex_skill_enabled(
+    path: &PathBuf,
+    skill_path: &str,
+    enabled: bool,
+) -> std::result::Result<(), String> {
     let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
     let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
     let quoted_path = toml_value(skill_path);
     let mut index = 0;
     while index < lines.len() {
         if lines[index].trim() == "[[skills.config]]" {
-            let end = lines.iter().enumerate().skip(index + 1).find_map(|(position, line)| line.trim_start().starts_with('[').then_some(position)).unwrap_or(lines.len());
-            if lines[index + 1..end].iter().any(|line| line.trim_start().starts_with("path") && line.split_once('=').is_some_and(|(_, value)| value.trim() == quoted_path)) {
-                if let Some(position) = (index + 1..end).find(|position| lines[*position].trim_start().starts_with("enabled")) {
+            let end = lines
+                .iter()
+                .enumerate()
+                .skip(index + 1)
+                .find_map(|(position, line)| line.trim_start().starts_with('[').then_some(position))
+                .unwrap_or(lines.len());
+            if lines[index + 1..end].iter().any(|line| {
+                line.trim_start().starts_with("path")
+                    && line
+                        .split_once('=')
+                        .is_some_and(|(_, value)| value.trim() == quoted_path)
+            }) {
+                if let Some(position) = (index + 1..end)
+                    .find(|position| lines[*position].trim_start().starts_with("enabled"))
+                {
                     lines[position] = format!("enabled = {enabled}");
                 } else {
                     lines.insert(end, format!("enabled = {enabled}"));
                 }
-                return fs::write(path, format!("{}\n", lines.join("\n"))).map_err(|error| error.to_string());
+                return fs::write(path, format!("{}\n", lines.join("\n")))
+                    .map_err(|error| error.to_string());
             }
             index = end;
-        } else { index += 1; }
+        } else {
+            index += 1;
+        }
     }
-    let separator = if content.is_empty() || content.ends_with('\n') { "" } else { "\n" };
-    fs::write(path, format!("{content}{separator}\n[[skills.config]]\npath = {quoted_path}\nenabled = {enabled}\n")).map_err(|error| error.to_string())
+    let separator = if content.is_empty() || content.ends_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    fs::write(
+        path,
+        format!(
+            "{content}{separator}\n[[skills.config]]\npath = {quoted_path}\nenabled = {enabled}\n"
+        ),
+    )
+    .map_err(|error| error.to_string())
 }
 
-fn update_toml_enabled(path: &PathBuf, header: &str, enabled: bool) -> std::result::Result<(), String> {
+fn update_toml_enabled(
+    path: &PathBuf,
+    header: &str,
+    enabled: bool,
+) -> std::result::Result<(), String> {
     let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
     let Some(start) = content.lines().position(|line| line.trim() == header) else {
-        let separator = if content.is_empty() || content.ends_with('\n') { "" } else { "\n" };
-        return fs::write(path, format!("{content}{separator}\n{header}\nenabled = {enabled}\n")).map_err(|error| error.to_string());
+        let separator = if content.is_empty() || content.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
+        return fs::write(
+            path,
+            format!("{content}{separator}\n{header}\nenabled = {enabled}\n"),
+        )
+        .map_err(|error| error.to_string());
     };
     let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
-    let end = lines.iter().enumerate().skip(start + 1).find_map(|(index, line)| line.trim_start().starts_with('[').then_some(index)).unwrap_or(lines.len());
-    if let Some(index) = (start + 1..end).find(|index| lines[*index].trim_start().starts_with("enabled")) { lines[index] = format!("enabled = {enabled}"); } else { lines.insert(end, format!("enabled = {enabled}")); }
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find_map(|(index, line)| line.trim_start().starts_with('[').then_some(index))
+        .unwrap_or(lines.len());
+    if let Some(index) =
+        (start + 1..end).find(|index| lines[*index].trim_start().starts_with("enabled"))
+    {
+        lines[index] = format!("enabled = {enabled}");
+    } else {
+        lines.insert(end, format!("enabled = {enabled}"));
+    }
     fs::write(path, format!("{}\n", lines.join("\n"))).map_err(|error| error.to_string())
 }
 
-fn toml_key(value: &str) -> String { toml_value(value) }
-fn toml_value(value: &str) -> String { toml::Value::String(value.into()).to_string() }
+fn toml_key(value: &str) -> String {
+    toml_value(value)
+}
+fn toml_value(value: &str) -> String {
+    toml::Value::String(value.into()).to_string()
+}
 
 fn add_codex_plugin_metadata(
-    plugins: &mut std::collections::BTreeMap<String, (String, Option<String>, Option<String>, String, bool, bool, Vec<PluginCapability>)>,
+    plugins: &mut std::collections::BTreeMap<
+        String,
+        (
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            bool,
+            bool,
+            Vec<PluginCapability>,
+        ),
+    >,
     id: String,
     path: &PathBuf,
     enabled: bool,
@@ -233,42 +470,150 @@ fn add_codex_plugin_metadata(
     let mut capabilities = collect_codex_plugin_skills(path, config);
     capabilities.extend(collect_codex_plugin_mcp(path, plugin_config));
     capabilities.extend(collect_codex_plugin_hooks(path, manifest.as_ref()));
-    plugins.insert(id, (name, description, icon, "codex".into(), enabled, false, capabilities));
+    plugins.insert(
+        id,
+        (
+            name,
+            description,
+            icon,
+            "codex".into(),
+            enabled,
+            false,
+            capabilities,
+        ),
+    );
 }
 
 fn collect_codex_plugin_skills(path: &PathBuf, config: &toml::Value) -> Vec<PluginCapability> {
-    let overrides = config.get("skills").and_then(toml::Value::as_table).and_then(|skills| skills.get("config")).and_then(toml::Value::as_array);
+    let overrides = config
+        .get("skills")
+        .and_then(toml::Value::as_table)
+        .and_then(|skills| skills.get("config"))
+        .and_then(toml::Value::as_array);
     let skills = path.join("skills");
-    fs::read_dir(skills).into_iter().flatten().flatten().filter_map(|entry| {
-        let skill = entry.path();
-        let id = skill.to_string_lossy().into_owned();
-        skill.join("SKILL.md").is_file().then(|| PluginCapability { name: entry.file_name().to_string_lossy().into_owned(), description: skill_description(&skill.join("SKILL.md")), enabled: overrides.and_then(|items| items.iter().find(|item| item.get("path").and_then(toml::Value::as_str) == Some(&id))).and_then(|item| item.get("enabled")).and_then(toml::Value::as_bool).unwrap_or(true), id, kind: "skill".into() })
-    }).collect()
+    fs::read_dir(skills)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let skill = entry.path();
+            let id = skill.to_string_lossy().into_owned();
+            skill.join("SKILL.md").is_file().then(|| PluginCapability {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                description: skill_description(&skill.join("SKILL.md")),
+                enabled: overrides
+                    .and_then(|items| {
+                        items.iter().find(|item| {
+                            item.get("path").and_then(toml::Value::as_str) == Some(&id)
+                        })
+                    })
+                    .and_then(|item| item.get("enabled"))
+                    .and_then(toml::Value::as_bool)
+                    .unwrap_or(true),
+                id,
+                kind: "skill".into(),
+            })
+        })
+        .collect()
 }
 
-fn collect_codex_plugin_mcp(path: &PathBuf, plugin_config: Option<&toml::map::Map<String, toml::Value>>) -> Vec<PluginCapability> {
-    let Some(mcp) = fs::read(path.join(".mcp.json")).ok().and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()) else { return Vec::new(); };
-    let Some(servers) = mcp.get("mcp_servers").or(Some(&mcp)).and_then(serde_json::Value::as_object) else { return Vec::new(); };
-    servers.iter().map(|(id, server)| PluginCapability { id: id.clone(), name: id.clone(), description: server.get("description").and_then(serde_json::Value::as_str).map(str::to_owned), kind: "mcp".into(), enabled: plugin_config.and_then(|config| config.get("mcp_servers")).and_then(toml::Value::as_table).and_then(|servers| servers.get(id)).and_then(toml::Value::as_table).and_then(|server| server.get("enabled")).and_then(toml::Value::as_bool).unwrap_or(true) }).collect()
+fn collect_codex_plugin_mcp(
+    path: &PathBuf,
+    plugin_config: Option<&toml::map::Map<String, toml::Value>>,
+) -> Vec<PluginCapability> {
+    let Some(mcp) = fs::read(path.join(".mcp.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+    else {
+        return Vec::new();
+    };
+    let Some(servers) = mcp
+        .get("mcp_servers")
+        .or(Some(&mcp))
+        .and_then(serde_json::Value::as_object)
+    else {
+        return Vec::new();
+    };
+    servers
+        .iter()
+        .map(|(id, server)| PluginCapability {
+            id: id.clone(),
+            name: id.clone(),
+            description: server
+                .get("description")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+            kind: "mcp".into(),
+            enabled: plugin_config
+                .and_then(|config| config.get("mcp_servers"))
+                .and_then(toml::Value::as_table)
+                .and_then(|servers| servers.get(id))
+                .and_then(toml::Value::as_table)
+                .and_then(|server| server.get("enabled"))
+                .and_then(toml::Value::as_bool)
+                .unwrap_or(true),
+        })
+        .collect()
 }
 
-fn collect_codex_plugin_hooks(path: &PathBuf, manifest: Option<&serde_json::Value>) -> Vec<PluginCapability> {
-    let hook_files = manifest.and_then(|value| value.get("hooks")).map(|hooks| match hooks {
-        serde_json::Value::String(value) => vec![value.as_str()],
-        serde_json::Value::Array(values) => values.iter().filter_map(serde_json::Value::as_str).collect(),
-        _ => Vec::new(),
-    }).unwrap_or_else(|| vec!["./hooks/hooks.json"]);
+fn collect_codex_plugin_hooks(
+    path: &PathBuf,
+    manifest: Option<&serde_json::Value>,
+) -> Vec<PluginCapability> {
+    let hook_files = manifest
+        .and_then(|value| value.get("hooks"))
+        .map(|hooks| match hooks {
+            serde_json::Value::String(value) => vec![value.as_str()],
+            serde_json::Value::Array(values) => values
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect(),
+            _ => Vec::new(),
+        })
+        .unwrap_or_else(|| vec!["./hooks/hooks.json"]);
     let root = path.canonicalize().ok();
-    hook_files.into_iter().flat_map(|hook_file| {
-        let candidate = path.join(hook_file).canonicalize().ok();
-        let Some(candidate) = candidate.filter(|candidate| root.as_ref().is_some_and(|root| candidate.starts_with(root))) else { return Vec::new(); };
-        let Some(value) = fs::read(&candidate).ok().and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()) else { return Vec::new(); };
-        let label = candidate.file_name().and_then(|name| name.to_str()).unwrap_or("hooks.json").to_owned();
-        value.get("hooks").and_then(serde_json::Value::as_object).into_iter().flat_map(|hooks| hooks.iter()).map(|(event, definitions)| PluginCapability {
-            id: format!("{label}:{event}"), name: event.clone(), kind: "hook".into(), enabled: true,
-            description: definitions.as_array().map(|items| format!("{label} - {} handler{}", items.len(), if items.len() == 1 { "" } else { "s" })),
-        }).collect()
-    }).collect()
+    hook_files
+        .into_iter()
+        .flat_map(|hook_file| {
+            let candidate = path.join(hook_file).canonicalize().ok();
+            let Some(candidate) = candidate.filter(|candidate| {
+                root.as_ref()
+                    .is_some_and(|root| candidate.starts_with(root))
+            }) else {
+                return Vec::new();
+            };
+            let Some(value) = fs::read(&candidate)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            else {
+                return Vec::new();
+            };
+            let label = candidate
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("hooks.json")
+                .to_owned();
+            value
+                .get("hooks")
+                .and_then(serde_json::Value::as_object)
+                .into_iter()
+                .flat_map(|hooks| hooks.iter())
+                .map(|(event, definitions)| PluginCapability {
+                    id: format!("{label}:{event}"),
+                    name: event.clone(),
+                    kind: "hook".into(),
+                    enabled: true,
+                    description: definitions.as_array().map(|items| {
+                        format!(
+                            "{label} - {} handler{}",
+                            items.len(),
+                            if items.len() == 1 { "" } else { "s" }
+                        )
+                    }),
+                })
+                .collect()
+        })
+        .collect()
 }
 
 fn codex_plugin_manifest(path: &PathBuf) -> Option<serde_json::Value> {
@@ -276,12 +621,17 @@ fn codex_plugin_manifest(path: &PathBuf) -> Option<serde_json::Value> {
 }
 
 fn plugin_manifest(path: &PathBuf) -> Option<serde_json::Value> {
-    [".codex-plugin/plugin.json", ".cursor-plugin/plugin.json", ".claude-plugin/plugin.json", "plugin.json"]
-        .into_iter()
-        .map(|file| path.join(file))
-        .find(|file| file.is_file())
-        .and_then(|file| fs::read(file).ok())
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    [
+        ".codex-plugin/plugin.json",
+        ".cursor-plugin/plugin.json",
+        ".claude-plugin/plugin.json",
+        "plugin.json",
+    ]
+    .into_iter()
+    .map(|file| path.join(file))
+    .find(|file| file.is_file())
+    .and_then(|file| fs::read(file).ok())
+    .and_then(|bytes| serde_json::from_slice(&bytes).ok())
 }
 
 fn skill_description(path: &PathBuf) -> Option<String> {
@@ -289,8 +639,12 @@ fn skill_description(path: &PathBuf) -> Option<String> {
     let mut lines = content.lines();
     (lines.next()?.trim() == "---").then_some(())?;
     let frontmatter: Vec<&str> = lines.take_while(|line| line.trim() != "---").collect();
-    let description_index = frontmatter.iter().position(|line| line.starts_with("description:"))?;
-    let value = frontmatter[description_index].strip_prefix("description:")?.trim();
+    let description_index = frontmatter
+        .iter()
+        .position(|line| line.starts_with("description:"))?;
+    let value = frontmatter[description_index]
+        .strip_prefix("description:")?
+        .trim();
     if value == ">" || value == "|" {
         let description = frontmatter[description_index + 1..]
             .iter()
@@ -304,12 +658,32 @@ fn skill_description(path: &PathBuf) -> Option<String> {
 }
 
 fn collect_mcp_servers(kind: ApplicationKind) -> Vec<McpServer> {
-    let Some(home) = std::env::var_os("HOME") else { return Vec::new(); };
+    let Some(home) = std::env::var_os("HOME") else {
+        return Vec::new();
+    };
     match kind {
-        ApplicationKind::Codex => fs::read_to_string(PathBuf::from(home).join(".codex/config.toml")).ok()
-            .and_then(|content| content.parse::<toml::Value>().ok())
-            .and_then(|value| value.get("mcp_servers").and_then(toml::Value::as_table).cloned())
-            .map(|servers| servers.keys().cloned().map(|id| McpServer { name: id.clone(), id }).collect()).unwrap_or_default(),
+        ApplicationKind::Codex => {
+            fs::read_to_string(PathBuf::from(home).join(".codex/config.toml"))
+                .ok()
+                .and_then(|content| content.parse::<toml::Value>().ok())
+                .and_then(|value| {
+                    value
+                        .get("mcp_servers")
+                        .and_then(toml::Value::as_table)
+                        .cloned()
+                })
+                .map(|servers| {
+                    servers
+                        .keys()
+                        .cloned()
+                        .map(|id| McpServer {
+                            name: id.clone(),
+                            id,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
         ApplicationKind::Cursor => Vec::new(),
     }
 }
@@ -324,17 +698,26 @@ fn collect_cursor_plugins(session: Option<Session>) -> Vec<Plugin> {
         if let Ok(marketplace_plugins) = cursor_marketplace_plugins(&session) {
             for plugin in marketplace_plugins {
                 let cached = marketplace_plugin_cache(&home, &plugin.slug);
-                let metadata = cached.as_ref().map(|path| read_plugin_metadata(path, &plugin.name));
+                let metadata = cached
+                    .as_ref()
+                    .map(|path| read_plugin_metadata(path, &plugin.name));
                 plugins.insert(
                     plugin.id.to_string(),
                     (
                         plugin.name,
-                        metadata.as_ref().and_then(|(_, description, _)| description.clone()),
-                        plugin.icon.or_else(|| metadata.as_ref().and_then(|(_, _, icon)| icon.clone())),
+                        metadata
+                            .as_ref()
+                            .and_then(|(_, description, _)| description.clone()),
+                        plugin
+                            .icon
+                            .or_else(|| metadata.as_ref().and_then(|(_, _, icon)| icon.clone())),
                         "marketplace".into(),
                         plugin.enabled,
                         plugin.team_required,
-                        cached.as_ref().map(collect_plugin_capabilities).unwrap_or_default(),
+                        cached
+                            .as_ref()
+                            .map(collect_plugin_capabilities)
+                            .unwrap_or_default(),
                     ),
                 );
             }
@@ -408,15 +791,17 @@ fn collect_cursor_plugins(session: Option<Session>) -> Vec<Plugin> {
     plugins
         .into_iter()
         .map(
-            |(id, (name, description, icon, source, enabled, team_required, capabilities))| Plugin {
-                id,
-                name,
-                description,
-                icon,
-                source,
-                enabled,
-                team_required,
-                capabilities,
+            |(id, (name, description, icon, source, enabled, team_required, capabilities))| {
+                Plugin {
+                    id,
+                    name,
+                    description,
+                    icon,
+                    source,
+                    enabled,
+                    team_required,
+                    capabilities,
+                }
             },
         )
         .collect()
@@ -427,7 +812,12 @@ fn marketplace_plugin_cache(home: &PathBuf, slug: &str) -> Option<PathBuf> {
         return None;
     }
     let root = home.join(".cursor/plugins/cache").join(slug).join(slug);
-    fs::read_dir(root).ok()?.flatten().filter(|entry| entry.path().is_dir()).max_by_key(|entry| entry.file_name()).map(|entry| entry.path())
+    fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .filter(|entry| entry.path().is_dir())
+        .max_by_key(|entry| entry.file_name())
+        .map(|entry| entry.path())
 }
 
 fn read_json(path: PathBuf) -> Option<serde_json::Value> {
@@ -437,14 +827,36 @@ fn read_json(path: PathBuf) -> Option<serde_json::Value> {
 }
 
 fn add_plugin_metadata(
-    plugins: &mut std::collections::BTreeMap<String, (String, Option<String>, Option<String>, String, bool, bool, Vec<PluginCapability>)>,
+    plugins: &mut std::collections::BTreeMap<
+        String,
+        (
+            String,
+            Option<String>,
+            Option<String>,
+            String,
+            bool,
+            bool,
+            Vec<PluginCapability>,
+        ),
+    >,
     id: String,
     path: &PathBuf,
     source: &str,
     enabled: bool,
 ) {
     let (name, description, icon) = read_plugin_metadata(path, &id);
-    plugins.insert(id, (name, description, icon, source.into(), enabled, false, collect_plugin_capabilities(path)));
+    plugins.insert(
+        id,
+        (
+            name,
+            description,
+            icon,
+            source.into(),
+            enabled,
+            false,
+            collect_plugin_capabilities(path),
+        ),
+    );
 }
 
 // Cursor and Claude expose plugin bundle metadata but not per-capability
@@ -452,31 +864,59 @@ fn add_plugin_metadata(
 fn collect_plugin_capabilities(path: &PathBuf) -> Vec<PluginCapability> {
     let mut capabilities = collect_plugin_skills(path);
     capabilities.extend(collect_plugin_mcp(path));
-    capabilities.extend(collect_codex_plugin_hooks(path, plugin_manifest(path).as_ref()));
+    capabilities.extend(collect_codex_plugin_hooks(
+        path,
+        plugin_manifest(path).as_ref(),
+    ));
     capabilities
 }
 
 fn collect_plugin_skills(path: &PathBuf) -> Vec<PluginCapability> {
-    fs::read_dir(path.join("skills")).into_iter().flatten().flatten().filter_map(|entry| {
-        let skill = entry.path();
-        let skill_file = skill.join("SKILL.md");
-        skill_file.is_file().then(|| PluginCapability {
-            id: skill.to_string_lossy().into_owned(),
-            name: entry.file_name().to_string_lossy().into_owned(),
-            description: skill_description(&skill_file),
-            kind: "skill".into(),
-            enabled: true,
+    fs::read_dir(path.join("skills"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let skill = entry.path();
+            let skill_file = skill.join("SKILL.md");
+            skill_file.is_file().then(|| PluginCapability {
+                id: skill.to_string_lossy().into_owned(),
+                name: entry.file_name().to_string_lossy().into_owned(),
+                description: skill_description(&skill_file),
+                kind: "skill".into(),
+                enabled: true,
+            })
         })
-    }).collect()
+        .collect()
 }
 
 fn collect_plugin_mcp(path: &PathBuf) -> Vec<PluginCapability> {
-    let Some(mcp) = fs::read(path.join(".mcp.json")).ok().and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok()) else { return Vec::new(); };
-    let Some(servers) = mcp.get("mcp_servers").or(Some(&mcp)).and_then(serde_json::Value::as_object) else { return Vec::new(); };
-    servers.iter().map(|(id, server)| PluginCapability {
-        id: id.clone(), name: id.clone(), kind: "mcp".into(), enabled: true,
-        description: server.get("description").and_then(serde_json::Value::as_str).map(str::to_owned),
-    }).collect()
+    let Some(mcp) = fs::read(path.join(".mcp.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+    else {
+        return Vec::new();
+    };
+    let Some(servers) = mcp
+        .get("mcp_servers")
+        .or(Some(&mcp))
+        .and_then(serde_json::Value::as_object)
+    else {
+        return Vec::new();
+    };
+    servers
+        .iter()
+        .map(|(id, server)| PluginCapability {
+            id: id.clone(),
+            name: id.clone(),
+            kind: "mcp".into(),
+            enabled: true,
+            description: server
+                .get("description")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        })
+        .collect()
 }
 
 fn read_plugin_metadata(path: &PathBuf, id: &str) -> (String, Option<String>, Option<String>) {
@@ -498,15 +938,26 @@ fn read_plugin_metadata(path: &PathBuf, id: &str) -> (String, Option<String>, Op
             value
                 .get("displayName")
                 .or_else(|| value.get("name"))
-                .or_else(|| value.get("interface").and_then(|interface| interface.get("displayName")))
+                .or_else(|| {
+                    value
+                        .get("interface")
+                        .and_then(|interface| interface.get("displayName"))
+                })
                 .and_then(serde_json::Value::as_str)
                 .map(str::to_owned)
         })
         .unwrap_or_else(|| id.to_owned());
-    let icon = metadata.as_ref().and_then(|value| plugin_manifest_icon(path, value));
+    let icon = metadata
+        .as_ref()
+        .and_then(|value| plugin_manifest_icon(path, value));
     let description = metadata.as_ref().and_then(|value| {
-        value.get("interface")
-            .and_then(|interface| interface.get("shortDescription").or_else(|| interface.get("longDescription")))
+        value
+            .get("interface")
+            .and_then(|interface| {
+                interface
+                    .get("shortDescription")
+                    .or_else(|| interface.get("longDescription"))
+            })
             .or_else(|| value.get("description"))
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned)
@@ -519,20 +970,32 @@ fn plugin_manifest_icon(plugin_root: &PathBuf, manifest: &serde_json::Value) -> 
         .get("icon")
         .or_else(|| manifest.get("iconPath"))
         .or_else(|| manifest.get("logo"))
-        .or_else(|| manifest.get("interface").and_then(|interface| interface.get("logo")))
-        .or_else(|| manifest.get("interface").and_then(|interface| interface.get("composerIcon")))
+        .or_else(|| {
+            manifest
+                .get("interface")
+                .and_then(|interface| interface.get("logo"))
+        })
+        .or_else(|| {
+            manifest
+                .get("interface")
+                .and_then(|interface| interface.get("composerIcon"))
+        })
         .and_then(serde_json::Value::as_str)?;
     if icon.starts_with("https://") {
         return Some(icon.to_owned());
     }
     let root = plugin_root.canonicalize().ok()?;
     let candidate = root.join(icon).canonicalize().ok()?;
-    (candidate.starts_with(&root) && is_plugin_image(&candidate)).then(|| candidate.to_string_lossy().into_owned())
+    (candidate.starts_with(&root) && is_plugin_image(&candidate))
+        .then(|| candidate.to_string_lossy().into_owned())
 }
 
 fn is_plugin_image(path: &std::path::Path) -> bool {
     matches!(
-        path.extension().and_then(|extension| extension.to_str()).map(str::to_ascii_lowercase).as_deref(),
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
         Some("avif" | "gif" | "ico" | "jpeg" | "jpg" | "png" | "svg" | "webp")
     )
 }

@@ -74,13 +74,18 @@ import "../../i18n";
 import {
   deleteCodexPlugin,
   deleteCodexSession,
+  deleteCodexSessions,
+  deleteCursorSession,
+  deleteCursorSessions,
   deleteCursorPlugin,
   getCodexSessionMessages,
+  getCursorSessionMessages,
   launchCodexSession,
   listAccounts,
   listApplications,
   listCodexPlugins,
   listCodexSessions,
+  listCursorSessions,
   listCursorPlugins,
   listMcpServers,
   setCodexPluginCapabilityEnabled,
@@ -112,6 +117,7 @@ import {
 import { useLatestRequest } from "./hooks/useLatestRequest";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { AccountList } from "./components/AccountList";
+import { SessionWorkspace, type SessionProvider } from "./components/SessionWorkspace";
 import type { WorkspaceSection, SwitchProgress } from "./types";
 
 type SwitchOutcome = { restartRequired: boolean };
@@ -494,6 +500,7 @@ export function HomePage() {
     string[] | undefined
   >();
   const [sessionsDeleting, setSessionsDeleting] = useState(false);
+  const [sessionRefreshKey, setSessionRefreshKey] = useState(0);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -550,17 +557,15 @@ export function HomePage() {
   const loadCodexSessions = useCallback(async () => {
     setSessionsRefreshing(true);
     try {
-      setCodexSessions(await listCodexSessions());
+      setCodexSessions(
+        selected === "codex" ? await listCodexSessions() : await listCursorSessions(),
+      );
     } catch (error) {
       showError(error);
     } finally {
       setSessionsRefreshing(false);
     }
-  }, [showError]);
-  useEffect(() => {
-    if (selected === "codex" && workspaceSection === "sessions")
-      void loadCodexSessions();
-  }, [loadCodexSessions, selected, workspaceSection]);
+  }, [selected, showError]);
   useEffect(() => {
     const projects = new Set(
       codexSessions.map(
@@ -590,7 +595,9 @@ export function HomePage() {
     }
     const isCurrent = beginSessionMessageRequest();
     setSessionMessagesLoading(true);
-    void getCodexSessionMessages(selectedCodexSessionId)
+    void (selected === "codex"
+      ? getCodexSessionMessages(selectedCodexSessionId)
+      : getCursorSessionMessages(selectedCodexSessionId))
       .then((messages) => {
         if (isCurrent())
           setCodexSessionMessages(messages);
@@ -600,7 +607,7 @@ export function HomePage() {
         if (isCurrent())
           setSessionMessagesLoading(false);
       });
-  }, [beginSessionMessageRequest, selectedCodexSessionId, showError]);
+  }, [beginSessionMessageRequest, selected, selectedCodexSessionId, showError]);
   useEffect(() => {
     if (window.location.search) window.history.replaceState({}, "", "/");
     let unlisten: () => void = () => {};
@@ -879,6 +886,12 @@ export function HomePage() {
       ),
     [selected, t],
   );
+  const sessionProvider = useMemo<SessionProvider>(
+    () => selected === "codex"
+      ? { id: "codex", label: t("codex"), icon: codexIcon, list: listCodexSessions, loadMessages: getCodexSessionMessages, remove: deleteCodexSession, removeMany: deleteCodexSessions, launch: launchCodexSession }
+      : { id: "cursor", label: t("cursor"), icon: cursorIcon, list: listCursorSessions, loadMessages: getCursorSessionMessages, remove: deleteCursorSession, removeMany: deleteCursorSessions },
+    [selected, t],
+  );
   const visibleCodexSessions = useMemo(
     () => filterSessions(codexSessions, sessionSearch),
     [codexSessions, sessionSearch],
@@ -926,15 +939,9 @@ export function HomePage() {
             <p>{t("mcpDescription")}</p>
           </div>
         );
+      if (workspaceSection === "sessions")
+        return <SessionWorkspace key={sessionProvider.id} onError={showError} onNotice={setNotice} onRefreshingChange={setSessionsRefreshing} provider={sessionProvider} refreshKey={sessionRefreshKey} />;
       if (workspaceSection === "sessions") {
-        if (selected !== "codex")
-          return (
-            <div className={styles.empty}>
-              <MessageSquareText aria-hidden="true" size={32} />
-              <h2>{t("sessionsTitle")}</h2>
-              <p>{t("sessionsCodexOnly")}</p>
-            </div>
-          );
         if (sessionsRefreshing && codexSessions.length === 0)
           return (
             <div className={styles.empty}>
@@ -1051,12 +1058,8 @@ export function HomePage() {
                             <ChevronsDownUp aria-hidden="true" size={16} />
                           </button>
                         </Tooltip>
-                        <Tooltip
-                          content={
-                            sessionSelectionMode
-                              ? t("exitSessionBatch")
-                              : t("manageSessionBatch")
-                          }
+                        {selected === "codex" && <Tooltip
+                          content={sessionSelectionMode ? t("exitSessionBatch") : t("manageSessionBatch")}
                         >
                           <button
                             aria-pressed={sessionSelectionMode}
@@ -1072,7 +1075,7 @@ export function HomePage() {
                           >
                             <CheckSquare aria-hidden="true" size={16} />
                           </button>
-                        </Tooltip>
+                        </Tooltip>}
                         <Tooltip content={t("searchSessions")}>
                           <button
                             onClick={() => setSessionSearchOpen(true)}
@@ -1085,7 +1088,7 @@ export function HomePage() {
                     </>
                   )}
                 </header>
-                {sessionSelectionMode && (
+                {selected === "codex" && sessionSelectionMode && (
                   <div className={styles.sessionBatchBar}>
                     <span>
                       {t("sessionsSelected", {
@@ -1134,7 +1137,7 @@ export function HomePage() {
                     return (
                       <section className={styles.sessionProject} key={project}>
                         <div className={styles.sessionProjectHeader}>
-                          {sessionSelectionMode && (
+                          {selected === "codex" && sessionSelectionMode && (
                             <input
                               aria-label={t("selectSessionProject", { project: label })}
                               checked={allProjectSessionsSelected}
@@ -1186,7 +1189,7 @@ export function HomePage() {
                                 className={`${styles.sessionCard} ${session.id === selectedCodexSessionId ? styles.sessionCardActive : ""}`}
                                 key={session.id}
                               >
-                                {sessionSelectionMode && (
+                                {selected === "codex" && sessionSelectionMode && (
                                   <input
                                     aria-label={t("selectSession", {
                                       session: session.title,
@@ -1244,7 +1247,7 @@ export function HomePage() {
                       <div className={styles.sessionDetailTop}>
                         <h2>{selectedSession.title}</h2>
                         <div className={styles.sessionDetailActions}>
-                          <Tooltip content={t("launchSession")}>
+                          {selected === "codex" && <Tooltip content={t("launchSession")}>
                             <button
                               aria-label={t("launchSession")}
                               onClick={() =>
@@ -1254,8 +1257,8 @@ export function HomePage() {
                             >
                               <Play aria-hidden="true" size={17} />
                             </button>
-                          </Tooltip>
-                          <Tooltip content={t("deleteSession")}>
+                          </Tooltip>}
+                          {selected === "codex" && <Tooltip content={t("deleteSession")}>
                             <button
                               aria-label={t("deleteSession")}
                               onClick={() => {
@@ -1276,7 +1279,7 @@ export function HomePage() {
                             >
                               <Trash2 aria-hidden="true" size={17} />
                             </button>
-                          </Tooltip>
+                          </Tooltip>}
                         </div>
                       </div>
                       <div className={styles.sessionDetailMeta}>
@@ -1301,10 +1304,10 @@ export function HomePage() {
                           <dt>{t("sessionsSourcePath")}</dt>
                           <dd><code>{selectedSession.sourcePath}</code><Tooltip content={t("copy")}><button aria-label={t("copy")} onClick={() => void copySessionText(selectedSession.sourcePath)} type="button"><Copy aria-hidden="true" size={14} /></button></Tooltip></dd>
                         </div>
-                        <div>
+                        {selected === "codex" && <div>
                           <dt>{t("sessionsResumeCommand")}</dt>
                           <dd><code>{`codex resume ${selectedSession.id}`}</code><Tooltip content={t("copy")}><button aria-label={t("copy")} onClick={() => void copySessionText(`codex resume ${selectedSession.id}`)} type="button"><Copy aria-hidden="true" size={14} /></button></Tooltip></dd>
-                        </div>
+                        </div>}
                       </dl>
                     </header>
                     <div className={styles.sessionMessages}>
@@ -1472,7 +1475,7 @@ export function HomePage() {
             onExport={() => void exportAccounts()}
             onPluginsExpandedChange={setPluginsExpanded}
             onRefresh={() => void refresh()}
-            onSessionsRefresh={() => void loadCodexSessions()}
+            onSessionsRefresh={() => setSessionRefreshKey((current) => current + 1)}
             pluginsExpanded={pluginsExpanded}
             refreshing={refreshing}
             sessionsRefreshing={sessionsRefreshing}

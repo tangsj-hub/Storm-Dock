@@ -1,24 +1,44 @@
 mod apps;
-mod commands;
 mod codex_sessions;
+mod commands;
 mod cursor;
+mod cursor_sessions;
 mod error;
 mod models;
 mod store;
 mod tray;
 
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 
-use tauri::{menu::Menu, tray::TrayIconBuilder, Emitter, Manager};
+use tauri::{menu::Menu, tray::TrayIconBuilder, Manager};
 
 use crate::cursor::oauth::OauthLoginState;
 use crate::error::AppError;
 use crate::store::{AppState, Controller};
-use crate::tray::{build_tray_menu, refresh_tray};
+use crate::tray::build_tray_menu;
+
+static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(true);
+
+#[tauri::command]
+fn set_close_to_tray(enabled: bool) {
+    CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
+}
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if CLOSE_TO_TRAY.load(Ordering::Relaxed) {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .menu(Menu::default)
         .setup(|app| {
             let data_dir = app
@@ -42,19 +62,6 @@ pub fn run() {
                         }
                     } else if id == "quit" {
                         app.exit(0);
-                    } else if let Some(account_id) = id.strip_prefix("switch:") {
-                        let result =
-                            app.state::<AppState>()
-                                .0
-                                .lock()
-                                .ok()
-                                .and_then(|mut controller| {
-                                    controller.switch_account(account_id, |_, _| {}).ok()
-                                });
-                        if result.is_some() {
-                            refresh_tray(app);
-                            let _ = app.emit("accounts-changed", ());
-                        }
                     }
                 })
                 .build(app)?;
@@ -67,7 +74,12 @@ pub fn run() {
             commands::list_codex_sessions,
             commands::get_codex_session_messages,
             commands::delete_codex_session,
+            commands::delete_codex_sessions,
             commands::launch_codex_session,
+            commands::list_cursor_sessions,
+            commands::get_cursor_session_messages,
+            commands::delete_cursor_session,
+            commands::delete_cursor_sessions,
             commands::set_codex_plugin_enabled,
             commands::set_codex_plugin_capability_enabled,
             commands::delete_codex_plugin,
@@ -91,7 +103,8 @@ pub fn run() {
             commands::open_official_login_url,
             commands::delete_account,
             commands::switch_account,
-            commands::force_restart_cursor
+            commands::force_restart_cursor,
+            set_close_to_tray
         ])
         .run(tauri::generate_context!())
         .expect("error while running storm-dock");

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { CodexSession } from "../../../lib/types";
+import type { LocalSession } from "../../../lib/types";
 import { filterSessions, groupSessions, removeSelectedIds, toggleSelectedIds } from "./sessionPresentation";
 
-const sessions: CodexSession[] = [
+const sessions: LocalSession[] = [
   { id: "one", title: "Fix login", projectDir: "/work/dock", sourcePath: "/one.jsonl", updatedAt: 1 },
   { id: "two", title: "Review", projectDir: "/work/app", sourcePath: "/two.jsonl", updatedAt: 2 },
   { id: "three", title: "Untitled", sourcePath: "/three.jsonl", updatedAt: 3 },

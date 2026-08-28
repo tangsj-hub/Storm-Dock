@@ -1,4 +1,4 @@
-import type { CodexSession } from "../../../lib/types";
+import type { LocalSession } from "../../../lib/types";
 import type { Translate } from "./accountPresentation";
 
 export const UNKNOWN_PROJECT = "__unknown__";
@@ -15,7 +15,7 @@ export function formatRelativeSessionTime(timestamp: number, t: Translate) {
   return new Date(timestamp).toLocaleDateString();
 }
 
-export function filterSessions(sessions: CodexSession[], query: string) {
+export function filterSessions(sessions: LocalSession[], query: string) {
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return sessions;
   return sessions.filter((session) =>
@@ -25,8 +25,8 @@ export function filterSessions(sessions: CodexSession[], query: string) {
   );
 }
 
-export function groupSessions(sessions: CodexSession[]) {
-  const groups = new Map<string, CodexSession[]>();
+export function groupSessions(sessions: LocalSession[]) {
+  const groups = new Map<string, LocalSession[]>();
   for (const session of sessions) {
     const project = session.projectDir?.trim() || UNKNOWN_PROJECT;
     groups.set(project, [...(groups.get(project) ?? []), session]);

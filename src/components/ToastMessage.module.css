@@ -1,9 +1,9 @@
 .viewport { bottom: 24px; display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }
-.toast { align-items: center; animation: enter .18s ease-out; background: #202b38; border: 1px solid #344559; border-radius: 6px; box-shadow: 0 10px 24px rgb(20 29 40 / 18%); color: #fff; display: flex; font-size: 13px; gap: 8px; line-height: 1.4; padding: 11px 13px; }
-.success svg { color: #74d39a; }
-.error { background: #482a2d; border-color: #80434b; }
-.error svg { color: #ff9a9a; }
-.loading svg { color: #9fc3ff; }
+.toast { align-items: center; animation: enter .18s ease-out; background: var(--toast-bg); border: 1px solid var(--toast-border); border-radius: 6px; box-shadow: 0 10px 24px var(--shadow); color: var(--tooltip-fg); display: flex; font-size: 13px; gap: 8px; line-height: 1.4; padding: 11px 13px; }
+.success svg { color: var(--toast-ok); }
+.error { background: var(--toast-error-bg); border-color: var(--toast-error-border); }
+.error svg { color: var(--toast-error); }
+.loading svg { color: var(--toast-info); }
 .spinning { animation: spin .8s linear infinite; }
 .toast[data-state="closed"] { animation: exit .15s ease-in; }
 @keyframes enter { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }

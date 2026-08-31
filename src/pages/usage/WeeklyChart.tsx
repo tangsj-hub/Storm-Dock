@@ -28,7 +28,7 @@ export function WeeklyChart({ days, events }: { days: CursorUsageDetails["weekly
       const cents = spends[index];
       const zero = cents <= 0;
       const tooltip = money(cents);
-      const fill = zero ? "#d5dce4" : heat[weekHeat(cents, weeklyMax)];
+      const fill = zero ? "var(--chart-zero)" : heat[weekHeat(cents, weeklyMax)];
       return <Tooltip content={tooltip} key={day.date}>
         <button aria-label={tooltip} className={styles.day} type="button">
           <span className={`${styles.value} ${isToday ? styles.valueToday : ""}`}>{zero ? "" : money(cents)}</span>

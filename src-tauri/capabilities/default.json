@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default desktop capability",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-start-dragging", "dialog:allow-open", "dialog:allow-save", "autostart:default"]
+  "permissions": ["core:default", "core:window:allow-start-dragging", "core:window:allow-set-theme", "dialog:allow-open", "dialog:allow-save", "autostart:default"]
 }

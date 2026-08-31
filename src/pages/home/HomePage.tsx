@@ -1492,6 +1492,7 @@ export function HomePage() {
                 <Tabs.Trigger className={styles.appTab} key={kind} value={kind}>
                   <img
                     alt=""
+                    className="ink"
                     src={kind === "cursor" ? cursorIcon : codexIcon}
                   />
                   {kind === "codex"

@@ -1,7 +1,7 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tabs from "@radix-ui/react-tabs";
-import { Check, ChevronDown, Database, FolderSync, KeyRound, Languages, PanelTop, Power } from "lucide-react";
+import { Check, ChevronDown, Database, FolderSync, KeyRound, Languages, Monitor, PanelTop, Power } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,6 +12,7 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import i18n from "../../i18n";
 import { exportDatabase, getDatabasePath, getPreserveCodexOfficialAuth, importDatabase, moveDatabase, setPreserveCodexOfficialAuth } from "../../lib/api";
+import { getPreference, setPreference, type ThemePreference } from "../../lib/theme";
 import { applicationKindFromQuery, homePath, syncDocumentAppKind } from "../../lib/types";
 import { LocalEnvPanel } from "./LocalEnvPanel";
 import "../../styles/global.css";
@@ -22,11 +23,18 @@ const languages = [
   { code: "en", key: "english" }
 ] as const;
 
+const themes = [
+  { code: "light", key: "themeLight" },
+  { code: "dark", key: "themeDark" },
+  { code: "system", key: "themeSystem" }
+] as const;
+
 const sqlFilters = [{ name: "SQL", extensions: ["sql"] }];
 
 function SettingsPage() {
   const { t } = useTranslation();
   const [language, setLanguage] = useState(i18n.language);
+  const [theme, setTheme] = useState<ThemePreference>(getPreference);
   const [notice, setNotice] = useState<string>();
   const [noticeStatus, setNoticeStatus] = useState<"success" | "error">("success");
   const [databasePath, setDatabasePath] = useState("");
@@ -37,6 +45,11 @@ function SettingsPage() {
   const [preserveCodexAuth, setPreserveCodexAuth] = useState(true);
   useEffect(() => { void invoke("set_close_to_tray", { enabled: closeToTray }); }, [closeToTray]);
   const current = languages.find((item) => item.code === language) ?? languages[0];
+  const currentTheme = themes.find((item) => item.code === theme) ?? themes[2];
+  const selectTheme = (pref: ThemePreference) => {
+    setPreference(pref);
+    setTheme(pref);
+  };
   const selectLanguage = async (code: "zh" | "en") => {
     localStorage.setItem("language", code);
     await i18n.changeLanguage(code);
@@ -125,6 +138,11 @@ function SettingsPage() {
           <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><Languages aria-hidden="true" size={20} /></span><div><h2>{t("language")}</h2><p>{t("languageDescription")}</p></div></div>
             <DropdownMenu.Root><DropdownMenu.Trigger className={styles.languageTrigger}><span>{t(current.key)}</span><ChevronDown aria-hidden="true" size={16} /></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" className={styles.menu} sideOffset={6}>
               {languages.map((item) => <DropdownMenu.Item className={styles.menuItem} key={item.code} onSelect={() => void selectLanguage(item.code)}><span>{t(item.key)}</span>{item.code === language && <Check aria-hidden="true" size={16} />}</DropdownMenu.Item>)}
+            </DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+          </div>
+          <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><Monitor aria-hidden="true" size={20} /></span><div><h2>{t("theme")}</h2><p>{t("themeDescription")}</p></div></div>
+            <DropdownMenu.Root><DropdownMenu.Trigger className={styles.languageTrigger}><span>{t(currentTheme.key)}</span><ChevronDown aria-hidden="true" size={16} /></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" className={styles.menu} sideOffset={6}>
+              {themes.map((item) => <DropdownMenu.Item className={styles.menuItem} key={item.code} onSelect={() => selectTheme(item.code)}><span>{t(item.key)}</span>{item.code === theme && <Check aria-hidden="true" size={16} />}</DropdownMenu.Item>)}
             </DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
           </div>
           <div className={styles.sectionTitle}><PanelTop aria-hidden="true" size={20} /><h2>{t("windowBehavior")}</h2></div>

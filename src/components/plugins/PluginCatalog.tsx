@@ -43,7 +43,7 @@ function iconSource(icon?: string) {
 function PluginIcon({ icon }: Pick<Plugin, "icon">) {
   const [failed, setFailed] = useState(false);
   const src = iconSource(icon);
-  return <span className={styles.icon}>{src && !failed ? <img alt="" decoding="async" loading="lazy" onError={() => setFailed(true)} src={src} /> : <Puzzle aria-hidden="true" size={20} />}</span>;
+  return <span className={styles.icon}>{src && !failed ? <img alt="" className="ink" decoding="async" loading="lazy" onError={() => setFailed(true)} src={src} /> : <Puzzle aria-hidden="true" size={20} />}</span>;
 }
 
 export function PluginCatalog({ host, disabled = false, expanded = false, onError, onChanged, onPluginsChange }: { host: PluginHost; disabled?: boolean; expanded?: boolean; onError(error: unknown): void; onChanged(): void; onPluginsChange?(plugins: Plugin[]): void }) {

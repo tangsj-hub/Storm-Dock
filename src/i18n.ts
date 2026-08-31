@@ -1,5 +1,6 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { applyTheme } from "./lib/theme";
 
 const resources = {
   zh: { translation: {
@@ -19,7 +20,7 @@ const resources = {
     importCurrentTitle: "导入当前账号", importCurrentDescription: "读取当前 Cursor 的登录账号并加入列表。", cursorNotReady: "Cursor 未就绪。",
     tokenImportTitle: "Token / JSON 导入", tokenImportDescription: "粘贴 Access Token、JWT、user_01…::token 会话凭证或导出的 Cursor JSON。Token / JWT 账号可以查询用量，但不能切换登录 Cursor 桌面端。", tokenExampleTitle: "示例格式", tokenExampleSession: "会话凭证", tokenExampleJwt: "JWT / Access Token", tokenExampleJson: "JSON", credential: "凭证内容", cancel: "取消", import: "导入账号",
     imported: "已导入 {{account}}。", deleted: "账号已删除。本机当前登录状态未被修改。", reordered: "账号顺序已更新。",
-    settingsTitle: "设置", language: "语言", languageDescription: "选择应用界面显示语言。", chinese: "简体中文", english: "English", languageSaved: "语言已切换为 {{language}}。", database: "账号数据库", databaseLoading: "正在读取数据库位置...", databaseMove: "迁移到同步目录", databaseMoved: "账号数据库已迁移。", databaseChooseDirectory: "选择同步目录",
+    settingsTitle: "设置", language: "语言", languageDescription: "选择应用界面显示语言。", chinese: "简体中文", english: "English", languageSaved: "语言已切换为 {{language}}。", theme: "主题", themeDescription: "选择应用外观。", themeLight: "浅色", themeDark: "深色", themeSystem: "跟随系统", database: "账号数据库", databaseLoading: "正在读取数据库位置...", databaseMove: "迁移到同步目录", databaseMoved: "账号数据库已迁移。", databaseChooseDirectory: "选择同步目录",
     switchProgress: "账号切换进度", cursorLaunched: "账号已切换，Cursor 已启动。", cursorRestarted: "账号已切换，Cursor 已重新启动。", restartRequired: "账号已切换。需要重启 Cursor 才生效。",
     restartDialogTitle: "Cursor 正在运行", restartDialogDescription: "当前 Cursor 仍在使用旧登录状态。确认后将强制结束并重新启动 Cursor。", restartDialogWarning: "强制终止会丢失 Cursor 中未保存的内容。", cancelCountdown: "取消 ({{seconds}})", forceRestart: "强制终止并启动",
     switchStages: { loading: "读取账号凭证", applying: "写入并验证登录会话", persisting: "保存账号状态", launching: "启动应用", terminating: "正在结束应用", restartRequired: "等待重启确认", complete: "切换完成", error: "切换失败" },
@@ -42,7 +43,7 @@ const resources = {
     importCurrentTitle: "Import current account", importCurrentDescription: "Read the active Cursor account and add it to the list.", cursorNotReady: "Cursor is not ready.",
     tokenImportTitle: "Import Token / JSON", tokenImportDescription: "Paste an access token, JWT, user_01…::token session credential, or exported Cursor JSON. Token / JWT accounts can query usage, but cannot switch into the Cursor desktop app.", tokenExampleTitle: "Example formats", tokenExampleSession: "Session token", tokenExampleJwt: "JWT / Access Token", tokenExampleJson: "JSON", credential: "Credential", cancel: "Cancel", import: "Import account",
     imported: "Imported {{account}}.", deleted: "Account deleted. The local sign-in state was not changed.", reordered: "Account order updated.",
-    settingsTitle: "Settings", language: "Language", languageDescription: "Choose the display language for the application.", chinese: "Simplified Chinese", english: "English", languageSaved: "Language changed to {{language}}.", database: "Account database", databaseLoading: "Reading database location...", databaseMove: "Move to sync folder", databaseMoved: "Account database moved.", databaseChooseDirectory: "Choose sync folder",
+    settingsTitle: "Settings", language: "Language", languageDescription: "Choose the display language for the application.", chinese: "Simplified Chinese", english: "English", languageSaved: "Language changed to {{language}}.", theme: "Theme", themeDescription: "Choose the application appearance.", themeLight: "Light", themeDark: "Dark", themeSystem: "System", database: "Account database", databaseLoading: "Reading database location...", databaseMove: "Move to sync folder", databaseMoved: "Account database moved.", databaseChooseDirectory: "Choose sync folder",
     switchProgress: "Account switch progress", cursorLaunched: "Account switched and Cursor started.", cursorRestarted: "Account switched and Cursor restarted.", restartRequired: "Account switched. Restart Cursor for the change to take effect.",
     restartDialogTitle: "Cursor is running", restartDialogDescription: "Cursor is still using the previous sign-in state. Confirm to force quit and restart it.", restartDialogWarning: "Force quitting may lose unsaved work in Cursor.", cancelCountdown: "Cancel ({{seconds}})", forceRestart: "Force quit and start",
     switchStages: { loading: "Reading account credentials", applying: "Writing and verifying the sign-in session", persisting: "Saving account state", launching: "Starting the app", terminating: "Quitting the app", restartRequired: "Waiting for restart confirmation", complete: "Switch complete", error: "Switch failed" },
@@ -161,5 +162,7 @@ void i18n.use(initReactI18next).init({
   fallbackLng: "zh",
   interpolation: { escapeValue: false }
 });
+
+applyTheme();
 
 export default i18n;

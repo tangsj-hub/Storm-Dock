@@ -18,6 +18,6 @@ export default defineConfig({
     }
   },
   test: {
-    include: ["src/pages/home/**/*.test.ts"],
+    include: ["src/**/*.test.ts"],
   },
 });

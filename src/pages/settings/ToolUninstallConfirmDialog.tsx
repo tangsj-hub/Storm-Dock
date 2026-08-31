@@ -34,7 +34,7 @@ export function ToolUninstallConfirmDialog({
         </div> : null}
         <div className={styles.dialogActions}>
           <AlertDialog.Cancel asChild><button className={styles.dialogCancel} type="button">{t("cancel")}</button></AlertDialog.Cancel>
-          <AlertDialog.Action asChild><button autoFocus className={styles.databaseButton} onClick={onConfirm} type="button">{t("toolUninstallConfirmBtn")}</button></AlertDialog.Action>
+          <AlertDialog.Action asChild><button autoFocus className={styles.danger} onClick={onConfirm} type="button">{t("toolUninstallConfirmBtn")}</button></AlertDialog.Action>
         </div>
       </AlertDialog.Content>
     </AlertDialog.Portal>

@@ -1,5 +1,17 @@
 #![allow(dead_code)]
 
+mod adapter;
+mod claude;
+mod codex;
+mod gemini;
+mod grok;
+mod hermes;
+mod opencode;
+mod openclaw;
+mod pi;
+mod uninstall;
+
+use adapter::ToolAdapter;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use std::collections::HashMap;
@@ -497,7 +509,7 @@ fn normalize_requested_tools(tools: &[String]) -> Vec<&'static str> {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum ToolLifecycleAction {
+pub(crate) enum ToolLifecycleAction {
     Install,
     Update,
     Uninstall,
@@ -563,45 +575,8 @@ fn build_tool_lifecycle_command(
 }
 
 fn tool_display_name(tool: &str) -> &'static str {
-    match tool {
-        "claude" => "Claude Code",
-        "codex" => "Codex",
-        "gemini" => "Gemini CLI",
-        "grok" => "Grok Build",
-        "opencode" => "OpenCode",
-        "openclaw" => "OpenClaw",
-        "hermes" => "Hermes",
-        "pi" => "Pi",
-        _ => "Unknown",
-    }
+    adapter::display_name(tool)
 }
-
-/// 官方 shell installer 都不用 `curl | bash` 这种 pipe 形式（仍然用 curl 下载，
-/// 只是先落到临时文件再交给 bash 执行）:WSL 分支会在
-/// `wsl.exe ... -- sh -c "<cmd>"` 子 shell 里执行命令,外层脚本的 `set -o pipefail`
-/// 不会继承进去;而 WSL 默认 shell 可能是 dash/ash,也不能假设支持 `set -o pipefail`。
-/// 先下载到 mktemp 文件再交给 bash,能让 curl 失败稳定变成整条命令失败。
-const CLAUDE_INSTALL_UNIX: &str =
-    "bash -c 'tmp=$(mktemp) && curl -fsSL https://claude.ai/install.sh -o $tmp && bash $tmp; status=$?; rm -f $tmp; exit $status'";
-const OPENCODE_INSTALL_UNIX: &str =
-    "bash -c 'tmp=$(mktemp) && curl -fsSL https://opencode.ai/install -o $tmp && bash $tmp; status=$?; rm -f $tmp; exit $status'";
-const GROK_INSTALL_UNIX: &str =
-    "bash -c 'tmp=$(mktemp) && curl -fsSL https://x.ai/cli/install.sh -o $tmp && bash $tmp; status=$?; rm -f $tmp; exit $status'";
-
-/// Hermes 官方安装器会自带/选择合适的 Python 运行时。不要再用
-/// `python3 -m pip ... || python -m pip ...`:Hermes PyPI 包要求 Python >=3.11,
-/// 但 macOS 系统 `python3` 常是 3.9,而 pyenv 下 `python` shim 还可能不存在,会把
-/// 真正的 Python 版本问题盖成 "python command exists in these Python versions"。
-const HERMES_INSTALL_UNIX: &str =
-    "bash -c 'tmp=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh -o $tmp && bash $tmp; status=$?; rm -f $tmp; exit $status'";
-const HERMES_UPDATE_UNIX: &str =
-    "hermes update || bash -c 'tmp=$(mktemp) && curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh -o $tmp && bash $tmp; status=$?; rm -f $tmp; exit $status'";
-
-#[cfg(target_os = "windows")]
-const HERMES_INSTALL_WINDOWS_SCRIPT: &str =
-    "irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1 | iex";
-#[cfg(target_os = "windows")]
-const GROK_INSTALL_WINDOWS_SCRIPT: &str = "irm https://x.ai/cli/install.ps1 | iex";
 
 #[cfg(target_os = "windows")]
 fn powershell_encoded_command(script: &str) -> String {
@@ -615,46 +590,18 @@ fn powershell_encoded_command(script: &str) -> String {
 }
 
 #[cfg(target_os = "windows")]
-fn hermes_install_windows_command() -> String {
+pub(crate) fn powershell_irm_install(script: &str) -> String {
     format!(
         "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand {}",
-        powershell_encoded_command(HERMES_INSTALL_WINDOWS_SCRIPT)
+        powershell_encoded_command(script)
     )
-}
-
-#[cfg(target_os = "windows")]
-fn grok_install_windows_command() -> String {
-    format!(
-        "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand {}",
-        powershell_encoded_command(GROK_INSTALL_WINDOWS_SCRIPT)
-    )
-}
-
-#[cfg(target_os = "windows")]
-fn hermes_update_windows_command() -> String {
-    // fallback 是 powershell.exe，不是 .cmd/.bat；这里不需要 `call`。PowerShell 的
-    // `irm | iex` 已被 EncodedCommand 收进单一参数,避免 `cmd.exe` 解析管道符。
-    format!("hermes update || {}", hermes_install_windows_command())
 }
 
 #[derive(Debug, Clone, Copy)]
-enum LifecycleCommandShell {
+pub(crate) enum LifecycleCommandShell {
     Posix,
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     WindowsBatch,
-}
-
-fn npm_install_command_for(tool: &str) -> Option<&'static str> {
-    match tool {
-        "claude" => Some("npm i -g @anthropic-ai/claude-code@latest"),
-        "codex" => Some("npm i -g @openai/codex@latest"),
-        "gemini" => Some("npm i -g @google/gemini-cli@latest"),
-        "grok" => Some("npm i -g @xai-official/grok@latest"),
-        "opencode" => Some("npm i -g opencode-ai@latest"),
-        "openclaw" => Some("npm i -g openclaw@latest"),
-        "pi" => Some("npm i -g @earendil-works/pi-coding-agent@latest"),
-        _ => None,
-    }
 }
 
 fn official_update_args(tool: &str) -> Option<&'static str> {
@@ -670,7 +617,7 @@ fn bare_official_update_command(tool: &str) -> Option<String> {
     official_update_args(tool).map(|args| format!("{tool} {args}"))
 }
 
-fn chain_update_commands(
+pub(crate) fn chain_update_commands(
     primary: String,
     fallback: String,
     shell: LifecycleCommandShell,
@@ -691,51 +638,24 @@ fn tool_action_shell_command_for_shell(
     action: ToolLifecycleAction,
     shell: LifecycleCommandShell,
 ) -> Option<String> {
-    // xAI's primary Windows distribution is the native PowerShell installer.
-    // Keep npm as the network/policy fallback, matching the POSIX installer chain.
-    #[cfg(target_os = "windows")]
-    if tool == "grok"
-        && matches!(action, ToolLifecycleAction::Install)
-        && matches!(shell, LifecycleCommandShell::WindowsBatch)
-    {
-        return Some(chain_update_commands(
-            grok_install_windows_command(),
-            npm_install_command_for(tool)?.to_string(),
-            shell,
-        ));
+    if let Some(cmd) = adapter::static_action_command(tool, action, shell) {
+        return Some(cmd);
     }
-
-    if tool == "hermes" {
-        return Some(
-            match (action, shell) {
-                (ToolLifecycleAction::Install, LifecycleCommandShell::Posix) => HERMES_INSTALL_UNIX,
-                (ToolLifecycleAction::Update, LifecycleCommandShell::Posix) => HERMES_UPDATE_UNIX,
-                #[cfg(target_os = "windows")]
-                (ToolLifecycleAction::Install, LifecycleCommandShell::WindowsBatch) => {
-                    return Some(hermes_install_windows_command());
-                }
-                #[cfg(target_os = "windows")]
-                (ToolLifecycleAction::Update, LifecycleCommandShell::WindowsBatch) => {
-                    return Some(hermes_update_windows_command());
-                }
-                #[cfg(not(target_os = "windows"))]
-                (_, LifecycleCommandShell::WindowsBatch) => return None,
-                (ToolLifecycleAction::Uninstall, _) => return None,
-            }
-            .to_string(),
-        );
-    }
-
-    let install = npm_install_command_for(tool)?;
     match action {
-        ToolLifecycleAction::Install => Some(install.to_string()),
-        ToolLifecycleAction::Update => match prefers_official_update(tool, shell)
-            .then(|| bare_official_update_command(tool))
-            .flatten()
-        {
-            Some(update) => Some(chain_update_commands(update, install.to_string(), shell)),
-            None => Some(install.to_string()),
-        },
+        ToolLifecycleAction::Install => {
+            let cmd = adapter::install_command(tool, shell);
+            (!cmd.is_empty()).then_some(cmd)
+        }
+        ToolLifecycleAction::Update => {
+            let install = adapter::adapter(tool)?.npm_install_command()?;
+            match prefers_official_update(tool, shell)
+                .then(|| bare_official_update_command(tool))
+                .flatten()
+            {
+                Some(update) => Some(chain_update_commands(update, install, shell)),
+                None => Some(install),
+            }
+        }
         ToolLifecycleAction::Uninstall => None,
     }
 }
@@ -787,11 +707,17 @@ fn build_tool_action_line(
         //    后者在 Windows target 给 hermes 返回 PowerShell installer,且 Windows batch
         //    语义也不适合跨 wsl.exe;这里统一替换为 POSIX 版安装/更新命令。
         if let Some(distro) = wsl_distro_for_tool(tool) {
-            if matches!(action, ToolLifecycleAction::Uninstall) {
-                return Err(UNINSTALL_UNANCHORED.to_string());
-            }
-            let command = wsl_tool_action_shell_command(tool, action)
-                .ok_or_else(|| format!("Unsupported tool action target: {tool}"))?;
+            let command = match action {
+                ToolLifecycleAction::Uninstall => wsl_posix_uninstall_command(
+                    tool,
+                    &distro,
+                    wsl_shell,
+                    wsl_shell_flag,
+                )
+                .ok_or_else(|| UNINSTALL_UNANCHORED.to_string())?,
+                _ => wsl_tool_action_shell_command(tool, action)
+                    .ok_or_else(|| format!("Unsupported tool action target: {tool}"))?,
+            };
             return build_wsl_tool_action_line(&distro, &command, wsl_shell, wsl_shell_flag);
         }
         // ② Windows 原生 update 锚定;install 走静态(install.sh 是 bash 脚本,Windows
@@ -2291,7 +2217,7 @@ pub struct ToolInstallation {
 
 /// 由可执行文件路径前缀推断安装来源。纯字符串匹配、无副作用。
 /// 顺序敏感：Homebrew 的 Cellar 真身要先于通用规则命中。
-fn infer_install_source(path: &Path) -> &'static str {
+pub(crate) fn infer_install_source(path: &Path) -> &'static str {
     let s = path
         .to_string_lossy()
         .replace('\\', "/")
@@ -2324,6 +2250,34 @@ fn infer_install_source(path: &Path) -> &'static str {
     } else {
         "system"
     }
+}
+
+fn npm_package_layout_source(tool: &str, real: &str) -> Option<&'static str> {
+    let pkg = adapter::npm_package_for(tool)?;
+    let n = slash_path(real).to_ascii_lowercase();
+    let needle = format!("/node_modules/{}/", pkg.to_ascii_lowercase());
+    let needle_end = format!("/node_modules/{}", pkg.to_ascii_lowercase());
+    (n.contains(&needle) || n.ends_with(&needle_end)).then_some("npm")
+}
+
+fn installer_metadata_source(tool: &str, bin_path: &str, real_target: &str) -> Option<String> {
+    adapter::adapter(tool)?.source_label(bin_path, real_target)
+}
+
+fn install_source_for(tool: &str, bin_path: &Path, real: &Path) -> String {
+    let bin = bin_path.to_string_lossy();
+    let real_s = real.to_string_lossy();
+    if let Some(source) = installer_metadata_source(tool, &bin, &real_s) {
+        return source;
+    }
+    if let Some(source) = npm_package_layout_source(tool, &real_s) {
+        return source.to_string();
+    }
+    let from_real = infer_install_source(real);
+    if from_real != "system" {
+        return from_real.to_string();
+    }
+    infer_install_source(bin_path).to_string()
 }
 
 /// 从 shell 输出里挑出第一个绝对路径行（trim 后以 `/` 开头），跳过交互式登录 shell
@@ -2629,7 +2583,7 @@ fn enumerate_tool_installations(tool: &str) -> Vec<ToolInstallation> {
 
             let is_path_default = path_default.as_ref() == Some(&real);
             let path_str = tool_path.display().to_string();
-            let source = infer_install_source(&tool_path);
+            let source = install_source_for(tool, &tool_path, &real);
 
             installs.push(ToolInstallation {
                 path: path_str,
@@ -2653,16 +2607,7 @@ fn enumerate_tool_installations(tool: &str) -> Vec<ToolInstallation> {
 /// 工具对应的 npm 包名（hermes 走自己的 CLI/installer，不在此表）。锚定升级据此拼 `npm i -g`。
 /// 全平台共用一张表——Windows 锚定层(`anchored_command_from_paths` 的 windows 版)也读这里。
 fn npm_package_for(tool: &str) -> Option<&'static str> {
-    match tool {
-        "claude" => Some("@anthropic-ai/claude-code"),
-        "codex" => Some("@openai/codex"),
-        "gemini" => Some("@google/gemini-cli"),
-        "grok" => Some("@xai-official/grok"),
-        "opencode" => Some("opencode-ai"),
-        "openclaw" => Some("openclaw"),
-        "pi" => Some("@earendil-works/pi-coding-agent"),
-        _ => None,
-    }
+    adapter::npm_package_for(tool)
 }
 
 /// 取路径的父目录(纯字符串截断,不碰 fs):`/a/b/npm` → `/a/b`、`C:\a\b\npm.cmd`
@@ -2674,7 +2619,7 @@ fn npm_package_for(tool: &str) -> Option<&'static str> {
 /// 跨平台 fs separator 在两侧均接受,使 macOS/Linux 上的 cargo test 也能跑 Windows
 /// 路径用例(`parent_dir_cases::mixed_separators_takes_rightmost`)。空串语义由上游
 /// `sibling_bin` 的 `is_empty()` 检查转成 None → 锚定整体退化到静态兜底。
-fn parent_dir(p: &str) -> String {
+pub(crate) fn parent_dir(p: &str) -> String {
     match p.rfind('\\').max(p.rfind('/')) {
         Some(i) if i > 0 => p[..i].to_string(),
         _ => String::new(),
@@ -2686,9 +2631,9 @@ fn parent_dir(p: &str) -> String {
 /// 非 Cellar 路径（= 不是 formula，可能是 Homebrew 的 node 装的 npm 全局包）返回 None。
 /// 关键区分：formula 即便内部用 node，真身也落在 `Cellar/<formula>/` 下；而 Homebrew
 /// npm 全局包落在 `/opt/homebrew/lib/node_modules`（不含 Cellar）。两者升级命令不同。
-#[cfg(not(target_os = "windows"))]
-fn brew_formula_from_path(real: &str) -> Option<String> {
-    let mut segs = real.split('/');
+pub(crate) fn brew_formula_from_path(real: &str) -> Option<String> {
+    let n = slash_path(real);
+    let mut segs = n.split('/');
     while let Some(seg) = segs.next() {
         if seg.eq_ignore_ascii_case("Cellar") {
             return segs.next().filter(|s| !s.is_empty()).map(|s| s.to_string());
@@ -2704,10 +2649,11 @@ fn brew_formula_from_path(real: &str) -> Option<String> {
 /// a custom `$GROK_BIN_DIR` on POSIX, whose launcher still points into the
 /// standard downloads directory.
 fn is_grok_native_install(bin_path: &str, real_target: &str) -> bool {
-    [bin_path, real_target].iter().any(|path| {
-        let normalized = path.replace('\\', "/").to_ascii_lowercase();
-        normalized.contains("/.grok/bin/") || normalized.contains("/.grok/downloads/grok-")
-    })
+    grok::is_native(bin_path, real_target)
+}
+
+pub(crate) fn slash_path(path: &str) -> String {
+    path.replace('\\', "/")
 }
 
 /// 含空格才用 POSIX 单引号包一层,否则保持裸路径——命令展示更干净。
@@ -2719,8 +2665,7 @@ fn is_grok_native_install(bin_path: &str, real_target: &str) -> bool {
 /// npm/brew/volta/bun 也不会装到含这类字符的路径,与 diff 前内联在 npm 分支里的
 /// `if npm.contains(' ')` 实现等价。若未来要扩广,改成 `shell_single_quote` 无条件
 /// 包裹即可,但会失去"无空格时的清洁展示"。
-#[cfg(not(target_os = "windows"))]
-fn quote_path_if_spaced(p: &str) -> String {
+pub(crate) fn quote_path_if_spaced(p: &str) -> String {
     if p.contains(' ') {
         shell_single_quote(p)
     } else {
@@ -2750,7 +2695,7 @@ fn quote_path_if_spaced(p: &str) -> String {
 /// 镜像 POSIX `quote_path_if_spaced` 的"轻量条件包装"语义:不含任何特殊字符就保持
 /// 裸路径(命令展示更干净),否则用 `win_double_quote` 包并做必要转义。
 #[cfg(target_os = "windows")]
-fn win_quote_path_for_batch(p: &str) -> String {
+pub(crate) fn win_quote_path_for_batch(p: &str) -> String {
     // `%` 经历两轮 expansion:.bat parser 一轮 + `call` 二轮(Microsoft `call /?`:
     // "percent (%) expansion is performed on each parameter")。要让 call 最终看到
     // 字面 `%` 需要 4 个 → `%%%%`(batch 一轮 → `%%`,call 二轮 → `%` 字面)。
@@ -2795,7 +2740,7 @@ fn win_quote_path_for_batch(p: &str) -> String {
 ///
 /// 空 dir 或所有候选都不存在 → None,上游退化到静态命令,与 POSIX 路径同款语义。
 #[cfg(target_os = "windows")]
-fn sibling_bin_with_ext(
+pub(crate) fn sibling_bin_with_ext(
     bin_path: &str,
     exe_basename: &str,
     ext_candidates: &[&str],
@@ -2825,8 +2770,7 @@ fn sibling_bin_with_ext(
 /// 悄悄拼出 `npm i -g <pkg>` 这种依赖 PATH 的指令,违背"必须绝对路径"不变量。
 /// 实际从 `enumerate_tool_installations` 走的 bin_path 都是 `Path::display()` 出
 /// 来的绝对路径,这条防线不期望被触发,但闭合了 helper 与函数文档的语义一致。
-#[cfg(not(target_os = "windows"))]
-fn sibling_bin(bin_path: &str, exe: &str) -> Option<String> {
+pub(crate) fn sibling_bin(bin_path: &str, exe: &str) -> Option<String> {
     let dir = parent_dir(bin_path);
     if dir.is_empty() {
         None
@@ -2843,8 +2787,7 @@ fn sibling_bin(bin_path: &str, exe: &str) -> Option<String> {
 /// commonly inherit only the system PATH, while nvm/fnm/mise keep Node in a
 /// user directory. Prefixing npm's sibling directory makes both npm and its
 /// transitive Node interpreter resolve to the installation we selected.
-#[cfg(not(target_os = "windows"))]
-fn anchored_npm_command(bin_path: &str, args: &str) -> Option<String> {
+pub(crate) fn anchored_npm_command(bin_path: &str, args: &str) -> Option<String> {
     let dir = parent_dir(bin_path);
     if dir.is_empty() {
         return None;
@@ -2911,7 +2854,7 @@ fn anchored_official_update_command(tool: &str, bin_path: &str) -> Option<String
 fn grok_native_update_command(update: String) -> String {
     chain_update_commands(
         update,
-        GROK_INSTALL_UNIX.to_string(),
+        grok::ADAPTER.posix_installer().unwrap_or_default().to_string(),
         LifecycleCommandShell::Posix,
     )
 }
@@ -2922,7 +2865,10 @@ fn grok_native_update_command(update: String) -> String {
 /// 同一理由。
 #[cfg(target_os = "windows")]
 fn grok_native_update_command(update: String) -> String {
-    format!("{update} || {}", grok_install_windows_command())
+    format!(
+        "{update} || {}",
+        grok::ADAPTER.windows_install_command().unwrap_or_default()
+    )
 }
 
 /// 哪些工具的"官方 self-update"优先于包管理器升级（生成 `<tool> update || <pkg-mgr>`）。
@@ -3038,53 +2984,27 @@ fn package_manager_anchored_command_from_paths(
 }
 
 fn is_native_installer_install(tool: &str, bin_path: &str, real_target: &str) -> bool {
-    if tool == "hermes" {
-        return true;
-    }
-    let real_lower = real_target.replace('\\', "/").to_ascii_lowercase();
-    if tool == "claude"
-        && (real_lower.contains("/.local/share/claude/")
-            || real_lower.contains("/claude/versions/"))
-    {
-        return true;
-    }
-    tool == "grok" && is_grok_native_install(bin_path, real_target)
+    adapter::adapter(tool)
+        .map(|a| a.is_native_layout(bin_path, real_target))
+        .unwrap_or(false)
 }
 
-#[cfg(not(target_os = "windows"))]
+fn posix_anchored_uninstall_command_from_paths(
+    tool: &str,
+    bin_path: &str,
+    real_target: &str,
+) -> Option<String> {
+    uninstall::posix_command_from_paths(tool, bin_path, real_target)
+}
+
 fn anchored_uninstall_command_from_paths(
     tool: &str,
     bin_path: &str,
     real_target: &str,
 ) -> Option<String> {
-    if is_native_installer_install(tool, bin_path, real_target) {
-        return None;
-    }
-    if let Some(formula) = brew_formula_from_path(real_target) {
-        let brew = sibling_bin(bin_path, "brew")?;
-        return Some(format!(
-            "{} uninstall {formula}",
-            quote_path_if_spaced(&brew)
-        ));
-    }
-    let pkg = npm_package_for(tool)?;
-    match infer_install_source(Path::new(bin_path)) {
-        "volta" => {
-            let volta = sibling_bin(bin_path, "volta")?;
-            Some(format!("{} uninstall {pkg}", quote_path_if_spaced(&volta)))
-        }
-        "bun" => {
-            let bun = sibling_bin(bin_path, "bun")?;
-            Some(format!("{} remove -g {pkg}", quote_path_if_spaced(&bun)))
-        }
-        "nvm" | "fnm" | "mise" | "homebrew" => {
-            anchored_npm_command(bin_path, &format!("uninstall -g {pkg}"))
-        }
-        _ => None,
-    }
+    uninstall::command_from_paths(tool, bin_path, real_target)
 }
 
-/// 给定工具、原始 bin 路径（命令行命中的入口）、canonicalize 后的真身路径，
 /// 推断"写回同一处"的锚定升级命令。**POSIX 版是纯函数（不碰 FS）**——真实 canonicalize
 /// 由调用方做（`installs_anchored_command` 复用 enumerate 时算出的 `inst.real`),
 /// 便于单测覆盖各包管理器分支。Windows 版同名函数因 sibling 扩展名歧义必须读 fs,
@@ -3169,41 +3089,6 @@ fn package_manager_anchored_command_from_paths(tool: &str, bin_path: &str) -> Op
             let npm = sibling_bin_with_ext(bin_path, "npm", &["cmd", "exe"])?;
             Some(format!(
                 "{} i -g {pkg}@latest",
-                win_quote_path_for_batch(&npm)
-            ))
-        }
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn anchored_uninstall_command_from_paths(
-    tool: &str,
-    bin_path: &str,
-    real_target: &str,
-) -> Option<String> {
-    if is_native_installer_install(tool, bin_path, real_target) {
-        return None;
-    }
-    let pkg = npm_package_for(tool)?;
-    match infer_install_source(Path::new(bin_path)) {
-        "volta" => {
-            let volta = sibling_bin_with_ext(bin_path, "volta", &["exe", "cmd"])?;
-            Some(format!(
-                "{} uninstall {pkg}",
-                win_quote_path_for_batch(&volta)
-            ))
-        }
-        "pnpm" => {
-            let pnpm = sibling_bin_with_ext(bin_path, "pnpm", &["cmd", "exe"])?;
-            Some(format!(
-                "{} remove -g {pkg}",
-                win_quote_path_for_batch(&pnpm)
-            ))
-        }
-        _ => {
-            let npm = sibling_bin_with_ext(bin_path, "npm", &["cmd", "exe"])?;
-            Some(format!(
-                "{} uninstall -g {pkg}",
                 win_quote_path_for_batch(&npm)
             ))
         }
@@ -3809,30 +3694,8 @@ fn static_fallback_command(tool: &str) -> String {
 /// - Windows 上 Claude/OpenCode 原生不启用（对应 installer 都是 bash 脚本）；Grok
 ///   使用官方 PowerShell installer，并同样保留 npm fallback。WSL 作为 Linux 环境
 ///   复用这套 POSIX 安装优先级。
-fn installer_with_npm_fallback(installer: &str, tool: &str) -> String {
-    match npm_install_command_for(tool) {
-        Some(npm) => chain_update_commands(
-            installer.to_string(),
-            npm.to_string(),
-            LifecycleCommandShell::Posix,
-        ),
-        None => installer.to_string(),
-    }
-}
-
 fn posix_install_command_for(tool: &str) -> String {
-    match tool {
-        "claude" => installer_with_npm_fallback(CLAUDE_INSTALL_UNIX, tool),
-        // Grok 的 npm fallback **会切换用户的分发模式**（该包 postinstall 把
-        // `~/.grok/config.toml` 的 `[cli] installer` 写成 `npm`，此后 `grok update` 一律走
-        // npm、隐式依赖 node）。仍然保留它：官方 installer 不可达（防火墙 / x.ai 被拦）时
-        // 这是唯一退路，而副作用可自愈——`grok_native_update_command` 的 `||` 官方 installer
-        // 会在 npm 路径出问题时把 `installer` 覆写回 `internal`（见该函数 doc 的实测记录）。
-        "grok" => installer_with_npm_fallback(GROK_INSTALL_UNIX, tool),
-        "opencode" => installer_with_npm_fallback(OPENCODE_INSTALL_UNIX, tool),
-        "hermes" => HERMES_INSTALL_UNIX.to_string(),
-        _ => static_fallback_command_for(tool, ToolLifecycleAction::Install),
-    }
+    adapter::install_command(tool, LifecycleCommandShell::Posix)
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -3921,8 +3784,7 @@ pub async fn probe_tool_installations(
                 .map(|tool| {
                     scope.spawn(move || {
                         let installs = enumerate_tool_installations(tool);
-                        let uninstall_command =
-                            installs_anchored_uninstall_command(tool, &installs);
+                        let uninstall_command = probe_uninstall_command(tool, &installs);
                         let (command, needs_confirmation, anchored) =
                             plan_command_for(tool, &installs);
                         ToolInstallationReport {
@@ -3948,8 +3810,177 @@ pub async fn probe_tool_installations(
 }
 
 #[cfg(target_os = "windows")]
-fn wsl_distro_for_tool(_tool: &str) -> Option<String> {
-    None
+fn decode_wsl_utf16_output(bytes: &[u8]) -> String {
+    let bytes = if bytes.starts_with(&[0xFF, 0xFE]) {
+        &bytes[2..]
+    } else {
+        bytes
+    };
+    if bytes.len() >= 2 && bytes.iter().skip(1).step_by(2).all(|b| *b == 0) {
+        let units: Vec<u16> = bytes
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .collect();
+        String::from_utf16_lossy(&units)
+    } else {
+        decode_command_output(bytes)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn wsl_spawn_output(
+    distro: &str,
+    shell: &str,
+    flag: &str,
+    script: &str,
+) -> Result<std::process::Output, String> {
+    use std::process::{Command, Stdio};
+    let mut cmd = Command::new("wsl.exe");
+    cmd.args(["-d", distro, "--", shell, flag, script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let child = cmd.spawn().map_err(|e| e.to_string())?;
+    wait_child_output(
+        child,
+        CommandDeadline::from_timeout(Some(INSTALL_PROBE_TIMEOUT)),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn default_wsl_distro() -> Option<String> {
+    static CACHED: OnceLock<Option<String>> = OnceLock::new();
+    CACHED.get_or_init(default_wsl_distro_uncached).clone()
+}
+
+#[cfg(target_os = "windows")]
+fn default_wsl_distro_uncached() -> Option<String> {
+    use std::process::{Command, Stdio};
+    let mut cmd = Command::new("wsl.exe");
+    cmd.args(["-l", "-q"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let child = cmd.spawn().ok()?;
+    let out = wait_child_output(
+        child,
+        CommandDeadline::from_timeout(Some(INSTALL_PROBE_TIMEOUT)),
+    )
+    .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    decode_wsl_utf16_output(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .find(|line| is_valid_wsl_distro_name(line))
+        .map(str::to_string)
+}
+
+#[cfg(target_os = "windows")]
+fn wsl_distro_has_tool(distro: &str, tool: &str) -> bool {
+    static CACHE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = format!("{distro}\0{tool}");
+    if let Some(hit) = lock_map(cache).get(&key).copied() {
+        return hit;
+    }
+    let ok = wsl_spawn_output(distro, "sh", "-c", &format!("command -v {tool}"))
+        .map(|out| out.status.success() && !decode_command_output(&out.stdout).trim().is_empty())
+        .unwrap_or(false);
+    lock_map(cache).insert(key, ok);
+    ok
+}
+
+#[cfg(target_os = "windows")]
+fn wsl_locate_linux_tool(
+    tool: &str,
+    distro: &str,
+    force_shell: Option<&str>,
+    force_shell_flag: Option<&str>,
+) -> Option<(String, String)> {
+    if !VALID_TOOLS.contains(&tool) || !is_valid_wsl_distro_name(distro) {
+        return None;
+    }
+    let script = format!(
+        r#"bin=$(command -v {tool}) || exit 127; real=$(readlink -f "$bin" 2>/dev/null || printf %s "$bin"); printf %s\0%s "$bin" "$real""#
+    );
+    let (shell, flag, cmd) = if let Some(shell) = force_shell {
+        if !is_valid_shell(shell) {
+            return None;
+        }
+        let shell = shell.rsplit('/').next().unwrap_or(shell);
+        let flag = if let Some(flag) = force_shell_flag {
+            if !is_valid_shell_flag(flag) {
+                return None;
+            }
+            flag
+        } else {
+            default_flag_for_shell(shell)
+        };
+        (shell.to_string(), flag, script)
+    } else {
+        ("sh".to_string(), "-c", script)
+    };
+    let out = wsl_spawn_output(distro, &shell, flag, &cmd).ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let raw = decode_command_output(&out.stdout);
+    let (bin, real) = raw.split_once('\0')?;
+    let bin = bin.trim();
+    let real = real.trim();
+    if bin.is_empty() || !bin.starts_with('/') {
+        return None;
+    }
+    Some((
+        bin.to_string(),
+        if real.starts_with('/') {
+            real.to_string()
+        } else {
+            bin.to_string()
+        },
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn wsl_posix_uninstall_command(
+    tool: &str,
+    distro: &str,
+    force_shell: Option<&str>,
+    force_shell_flag: Option<&str>,
+) -> Option<String> {
+    let (bin, real) = wsl_locate_linux_tool(tool, distro, force_shell, force_shell_flag)?;
+    posix_anchored_uninstall_command_from_paths(tool, &bin, &real)
+}
+
+fn probe_uninstall_command(tool: &str, installs: &[ToolInstallation]) -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(distro) = wsl_distro_for_tool(tool) {
+            return wsl_posix_uninstall_command(tool, &distro, None, None);
+        }
+    }
+    installs_anchored_uninstall_command(tool, installs)
+}
+
+#[cfg(target_os = "windows")]
+fn wsl_distro_for_tool(tool: &str) -> Option<String> {
+    let deadline = CommandDeadline::from_timeout(Some(INSTALL_PROBE_TIMEOUT));
+    match resolve_path_default(tool, deadline) {
+        Ok(Some(path)) => {
+            if let Some(distro) = wsl_distro_from_path(&path) {
+                return Some(distro);
+            }
+            None
+        }
+        _ => {
+            let distro = default_wsl_distro()?;
+            wsl_distro_has_tool(&distro, tool).then_some(distro)
+        }
+    }
 }
 
 /// 从 UNC 路径中提取 WSL 发行版名称
@@ -3978,7 +4009,7 @@ fn wsl_distro_from_path(path: &Path) -> Option<String> {
 }
 
 #[cfg_attr(windows, allow(dead_code))]
-fn shell_single_quote(value: &str) -> String {
+pub(crate) fn shell_single_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
@@ -3993,6 +4024,82 @@ mod tests {
         assert!(!is_update_available(Some("1.0.0"), Some("1.0.0")));
         assert!(!is_update_available(None, Some("1.0.0")));
         assert!(is_update_available(Some("1.0.0-beta.1"), Some("1.0.0")));
+    }
+
+    #[test]
+    fn claude_payload_dir_from_versions() {
+        assert_eq!(
+            super::claude::payload_dir("/Users/me/.local/share/claude/versions/2.1.0/claude")
+                .as_deref(),
+            Some("/Users/me/.local/share/claude")
+        );
+    }
+
+    #[test]
+    fn grok_downloads_dir_from_bin() {
+        assert_eq!(
+            super::grok::downloads_dir("/Users/a/.grok/bin/grok", "/Users/a/.grok/bin/grok")
+                .as_deref(),
+            Some("/Users/a/.grok/downloads")
+        );
+    }
+
+    #[test]
+    fn claude_json_install_method() {
+        assert_eq!(
+            super::claude::install_method_from_json(r#"{"installMethod":"native"}"#).as_deref(),
+            Some("native")
+        );
+    }
+
+    #[test]
+    fn grok_toml_installer_field() {
+        assert_eq!(
+            super::grok::installer_from_toml("[cli]\ninstaller = \"internal\"\n").as_deref(),
+            Some("internal")
+        );
+    }
+
+    #[test]
+    fn claude_native_layout_labeled_native() {
+        let source = super::install_source_for(
+            "claude",
+            std::path::Path::new("/Users/me/.local/bin/claude"),
+            std::path::Path::new("/Users/me/.local/share/claude/versions/2.1.0/claude"),
+        );
+        assert_eq!(source, "native");
+    }
+
+    #[test]
+    fn opencode_curl_layout_labeled_curl() {
+        let source = super::install_source_for(
+            "opencode",
+            std::path::Path::new("/Users/me/.opencode/bin/opencode"),
+            std::path::Path::new("/Users/me/.opencode/bin/opencode"),
+        );
+        assert_eq!(source, "curl");
+    }
+
+    #[test]
+    fn npm_package_layout_labeled_npm() {
+        let source = super::install_source_for(
+            "codex",
+            std::path::Path::new("/Users/me/.nvm/versions/node/v22.14.0/bin/codex"),
+            std::path::Path::new(
+                "/Users/me/.nvm/versions/node/v22.14.0/lib/node_modules/@openai/codex/bin/codex.js",
+            ),
+        );
+        assert_eq!(source, "npm");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn wsl_distro_from_unc_share() {
+        let path = std::path::Path::new(r"\\wsl$\Ubuntu-22.04\home\me\.local\bin\claude");
+        assert_eq!(
+            super::wsl_distro_from_path(path).as_deref(),
+            Some("Ubuntu-22.04")
+        );
     }
 }
 

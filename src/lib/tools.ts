@@ -73,6 +73,10 @@ export function probeToolInstallations(tools: string[]) {
   return invoke<ToolInstallationReport[]>("probe_tool_installations", { tools });
 }
 
+export function pathDefaultSource(installs: ToolInstallation[]): string | undefined {
+  return (installs.find((inst) => inst.is_path_default) ?? installs[0])?.source;
+}
+
 export function mergeToolVersions(prev: ToolVersion[], updated: ToolVersion[]) {
   if (prev.length === 0) return updated;
   const byName = new Map(prev.map((tool) => [tool.name, tool]));

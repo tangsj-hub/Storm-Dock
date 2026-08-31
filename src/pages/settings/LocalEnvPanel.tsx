@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import {
   getToolVersions,
   mergeToolVersions,
+  pathDefaultSource,
   probeToolInstallations,
   runToolLifecycleAction,
   TOOL_DISPLAY_NAMES,
@@ -23,6 +24,7 @@ import { ToolUpgradeConfirmDialog } from "./ToolUpgradeConfirmDialog";
 import styles from "./page.module.css";
 
 let lastToolVersions: ToolVersion[] = [];
+let lastToolSources: Partial<Record<ToolName, string>> = {};
 const WSL_SHELL_OPTIONS = ["sh", "bash", "zsh", "fish", "dash"] as const;
 const WSL_SHELL_FLAG_OPTIONS = ["-lic", "-lc", "-c"] as const;
 const posixScriptInstallCommand = (url: string) =>
@@ -79,7 +81,9 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
   const [wslShellByTool, setWslShellByTool] = useState<Record<string, WslShellPreference>>({});
   const [loadingTools, setLoadingTools] = useState<Record<string, boolean>>({});
   const [toolDiagnostics, setToolDiagnostics] = useState<Partial<Record<ToolName, ToolInstallation[]>>>({});
+  const [toolSources, setToolSources] = useState<Partial<Record<ToolName, string>>>(() => lastToolSources);
   const [isDiagnosingAll, setIsDiagnosingAll] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingUpgrade, setPendingUpgrade] = useState<{ toolNames: ToolName[]; plans: ToolInstallationReport[]; fromBatchEntry: boolean } | null>(null);
   const [pendingUninstall, setPendingUninstall] = useState<ToolInstallationReport | null>(null);
   const [preflightTools, setPreflightTools] = useState<Set<ToolName>>(() => new Set());
@@ -88,6 +92,27 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
     () => TOOL_NAMES.filter((name) => toolVersionByName.get(name)?.update_available),
     [toolVersionByName]
   );
+
+  const applySources = useCallback((reports: ToolInstallationReport[]) => {
+    setToolSources((prev) => {
+      const next = { ...prev };
+      for (const report of reports) {
+        const source = pathDefaultSource(report.installs);
+        if (source) next[report.tool as ToolName] = source;
+        else delete next[report.tool as ToolName];
+      }
+      lastToolSources = next;
+      return next;
+    });
+  }, []);
+
+  const refreshToolSources = useCallback(async (tools?: string[]) => {
+    try {
+      applySources(await probeToolInstallations(tools ?? [...TOOL_NAMES]));
+    } catch {
+      /* silent */
+    }
+  }, [applySources]);
 
   const refreshToolVersions = useCallback(async (toolNames: ToolName[], wslOverrides?: Record<string, WslShellPreference>) => {
     if (toolNames.length === 0) return [];
@@ -101,6 +126,7 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
       const next = mergeToolVersions(lastToolVersions, updated);
       lastToolVersions = next;
       setToolVersions(next);
+      void refreshToolSources(toolNames);
       return updated;
     } catch (error) {
       onNotice(noticeText(error), "error");
@@ -112,20 +138,25 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
         return next;
       });
     }
-  }, [onNotice]);
+  }, [onNotice, refreshToolSources]);
 
   const loadAllToolVersions = useCallback(async (options?: { force?: boolean }) => {
-    setIsLoadingTools(lastToolVersions.length === 0);
+    const fromUser = Boolean(options?.force);
+    if (fromUser) setIsRefreshing(true);
+    else if (lastToolVersions.length === 0) setIsLoadingTools(true);
     try {
-      const data = await getToolVersions(undefined, wslShellByTool, options?.force);
+      const data = await getToolVersions(undefined, wslShellByTool, fromUser);
       lastToolVersions = mergeToolVersions(lastToolVersions, data);
       setToolVersions(lastToolVersions);
+      void refreshToolSources();
+      if (fromUser) onNotice(t("toolRefreshed"));
     } catch (error) {
       onNotice(noticeText(error), "error");
     } finally {
+      setIsRefreshing(false);
       setIsLoadingTools(false);
     }
-  }, [onNotice, wslShellByTool]);
+  }, [onNotice, t, wslShellByTool, refreshToolSources]);
 
   useEffect(() => {
     let disposed = false;
@@ -158,7 +189,9 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
 
   const diagnoseToolSilently = useCallback(async (toolName: ToolName) => {
     try {
-      const [report] = await probeToolInstallations([toolName]);
+      const reports = await probeToolInstallations([toolName]);
+      applySources(reports);
+      const [report] = reports;
       setToolDiagnostics((prev) => {
         if (report?.is_conflict) return { ...prev, [toolName]: report.installs };
         if (!(toolName in prev)) return prev;
@@ -169,12 +202,13 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
     } catch {
       /* silent */
     }
-  }, []);
+  }, [applySources]);
 
   const handleDiagnoseAll = useCallback(async () => {
     setIsDiagnosingAll(true);
     try {
       const reports = await probeToolInstallations([...TOOL_NAMES]);
+      applySources(reports);
       const next: Partial<Record<ToolName, ToolInstallation[]>> = {};
       let conflicts = 0;
       for (const report of reports) {
@@ -190,7 +224,7 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
     } finally {
       setIsDiagnosingAll(false);
     }
-  }, [onNotice, t]);
+  }, [applySources, onNotice, t]);
 
   const executeRun = useCallback(async (toolNames: ToolName[], action: ToolLifecycleAction) => {
     const isBatch = toolNames.length > 1;
@@ -260,6 +294,7 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
       }
       try {
         const reports = await probeToolInstallations(toolNames);
+        applySources(reports);
         const needConfirm = reports.filter((report) => report.needs_confirmation);
         if (needConfirm.length === 0) await executeRun(toolNames, action);
         else setPendingUpgrade({ toolNames, plans: needConfirm, fromBatchEntry });
@@ -274,13 +309,14 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
         return next;
       });
     }
-  }, [executeRun, preflightTools, toolActions]);
+  }, [applySources, executeRun, preflightTools, toolActions]);
 
   const handleUninstall = useCallback(async (toolName: ToolName) => {
     if (preflightTools.has(toolName) || toolActions[toolName] !== undefined) return;
     setPreflightTools((prev) => new Set(prev).add(toolName));
     try {
       const [report] = await probeToolInstallations([toolName]);
+      if (report) applySources([report]);
       if (!report?.uninstall_command) {
         onNotice(t("toolUninstallUnsupported"), "error");
         return;
@@ -295,7 +331,7 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
         return next;
       });
     }
-  }, [onNotice, preflightTools, t, toolActions]);
+  }, [applySources, onNotice, preflightTools, t, toolActions]);
 
   const isAnyBusy = Boolean(batchAction) || Object.keys(toolActions).length > 0 || preflightTools.size > 0;
 
@@ -303,15 +339,21 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
     <div className={styles.envHead}>
       <h2>{t("localEnvCheck")}</h2>
       <div className={styles.envActions}>
-        <button className={styles.ghost} disabled={isLoadingTools || isAnyBusy || isDiagnosingAll} onClick={() => void handleDiagnoseAll()} type="button">
+        <button className={styles.ghost} disabled={isLoadingTools || isRefreshing || isAnyBusy || isDiagnosingAll} onClick={() => void handleDiagnoseAll()} type="button">
           {isDiagnosingAll ? <Loader2 className={styles.spin} size={14} /> : <Stethoscope size={14} />}
-          {isDiagnosingAll ? t("toolDiagnosing") : t("toolDiagnose")}
+          <span className={styles.labelSwap}>
+            <span aria-hidden={isDiagnosingAll}>{t("toolDiagnose")}</span>
+            <span aria-hidden={!isDiagnosingAll}>{t("toolDiagnosing")}</span>
+          </span>
         </button>
-        <button className={styles.ghost} disabled={isLoadingTools || isAnyBusy} onClick={() => void loadAllToolVersions({ force: true })} type="button">
-          <RefreshCw className={isLoadingTools ? styles.spin : undefined} size={14} />
-          {isLoadingTools ? t("refreshing") : t("refresh")}
+        <button className={styles.ghost} disabled={isLoadingTools || isRefreshing || isAnyBusy} onClick={() => void loadAllToolVersions({ force: true })} type="button">
+          <RefreshCw className={isRefreshing || isLoadingTools ? styles.spin : undefined} size={14} />
+          <span className={styles.labelSwap}>
+            <span aria-hidden={isRefreshing || isLoadingTools}>{t("toolRefresh")}</span>
+            <span aria-hidden={!(isRefreshing || isLoadingTools)}>{t("toolRefreshing")}</span>
+          </span>
         </button>
-        <button className={styles.databaseButton} disabled={isLoadingTools || isAnyBusy || updatableToolNames.length === 0} onClick={() => void handleRunToolAction(updatableToolNames, "update", { fromBatchEntry: true })} type="button">
+        <button className={styles.databaseButton} disabled={isLoadingTools || isRefreshing || isAnyBusy || updatableToolNames.length === 0} onClick={() => void handleRunToolAction(updatableToolNames, "update", { fromBatchEntry: true })} type="button">
           {batchAction === "update" ? <Loader2 className={styles.spin} size={14} /> : <ArrowUpCircle size={14} />}
           {t("updateAllTools", { count: updatableToolNames.length })}
         </button>
@@ -327,6 +369,8 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
         const runningAction = toolActions[toolName];
         const title = tool?.version || tool?.error || t("unknown");
         const conflicts = toolDiagnostics[toolName];
+        const source = toolSources[toolName];
+        const showSource = Boolean(source) && (isToolVersionLoading || Boolean(tool?.version) || installedButBroken);
         return <article className={styles.toolCard} key={toolName}>
           <div className={styles.toolTop}>
             <div className={styles.toolIdentity}>
@@ -359,16 +403,19 @@ export function LocalEnvPanel({ onNotice }: { onNotice: (message: string, status
             <ul className={styles.installList}>{conflicts.map((inst) => <li key={inst.path}><ToolInstallRow inst={inst} /></li>)}</ul>
           </div> : null}
           <div className={styles.toolFooter}>
-            {isToolVersionLoading ? <span>{t("loading")}</span> : <>
-              {tool?.version || installedButBroken ? <button className={styles.ghost} disabled={isAnyBusy} onClick={() => void handleUninstall(toolName)} type="button">
-                {runningAction === "uninstall" ? <Loader2 className={styles.spin} size={14} /> : <Trash2 size={14} />}
-                {t("toolUninstall")}
-              </button> : null}
-              {installedButBroken ? <span className={styles.warnText}>{t("toolCheckEnv")}</span> : action ? <button className={action === "install" ? styles.ghost : styles.databaseButton} disabled={isAnyBusy} onClick={() => void handleRunToolAction([toolName], action)} type="button">
-                {runningAction || preflightTools.has(toolName) ? <Loader2 className={styles.spin} size={14} /> : action === "install" ? <Download size={14} /> : <ArrowUpCircle size={14} />}
-                {action === "install" ? t("toolInstall") : t("toolUpdate")}
-              </button> : <span>{t("toolReady")}</span>}
-            </>}
+            {showSource ? <span className={styles.sourceBadge}>{t("toolSourcePrefix")}{t(`toolSource.${source}`, { defaultValue: source })}</span> : null}
+            <div className={styles.toolFooterActions}>
+              {isToolVersionLoading ? <span className={styles.toolStatus}>{t("loading")}</span> : <>
+                {tool?.version || installedButBroken ? <button className={styles.danger} disabled={isAnyBusy} onClick={() => void handleUninstall(toolName)} type="button">
+                  {runningAction === "uninstall" ? <Loader2 className={styles.spin} size={14} /> : <Trash2 size={14} />}
+                  {t("toolUninstall")}
+                </button> : null}
+                {installedButBroken ? <span className={styles.warnText}>{t("toolCheckEnv")}</span> : action ? <button className={action === "install" ? styles.ghost : styles.databaseButton} disabled={isAnyBusy} onClick={() => void handleRunToolAction([toolName], action)} type="button">
+                  {runningAction || preflightTools.has(toolName) ? <Loader2 className={styles.spin} size={14} /> : action === "install" ? <Download size={14} /> : <ArrowUpCircle size={14} />}
+                  {action === "install" ? t("toolInstall") : t("toolUpdate")}
+                </button> : <span className={styles.toolStatus}>{t("toolReady")}</span>}
+              </>}
+            </div>
           </div>
         </article>;
       })}

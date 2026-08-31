@@ -57,6 +57,7 @@ Object.assign(resources.zh.translation, {
   windowBehavior: "窗口行为", launchAtLogin: "开机自启", launchAtLoginDescription: "随系统启动自动运行 Storm Dock", closeToTray: "关闭时最小化到托盘", closeToTrayDescription: "勾选后点击关闭按钮会隐藏到系统托盘，取消则直接退出应用。",
   loading: "加载中...", unknown: "未知", notInstalled: "未安装", auto: "自动", copy: "复制",
   localEnvCheck: "本地环境检查", currentVersion: "当前版本", latestVersion: "最新版本", installedNotRunnable: "已安装·无法运行",
+  toolRefresh: "刷新本机状态", toolRefreshing: "刷新中…", toolRefreshed: "本机状态已刷新",
   toolInstall: "安装", toolUpdate: "升级", toolUninstall: "卸载", toolReady: "已就绪", toolCheckEnv: "请检查运行环境",
   toolDiagnose: "诊断安装冲突", toolDiagnosing: "诊断中…", toolDiagnoseFailed: "诊断失败", toolDiagnoseNoConflict: "未发现安装冲突",
   toolConflictTitle: "检测到多处安装", toolConflictHint: "命令行实际使用标「默认」的那处；升级可能写到了别处。", toolConflictNotRunnable: "无法运行", toolConflictDefault: "默认",
@@ -68,17 +69,20 @@ Object.assign(resources.zh.translation, {
   toolActionVersionUnchangedTitle: "版本没有变化", toolNotRunnable: "已安装但无法运行（未探测到版本）",
   toolUpgradeConfirmTitle: "确认升级位置", toolUpgradeConfirmHint: "检测到多处安装。本次升级不会全部更新，具体作用的位置以下方各项为准。",
   toolUpgradeConfirmBtn: "确认升级", toolUpgradeUnanchoredHint: "无法确定命令行实际使用哪处，将执行默认升级命令（可能装到 PATH 上第一个 npm）。", toolUpgradeWillRun: "将执行：",
-  toolUninstallConfirmTitle: "确认卸载", toolUninstallConfirmHint: "只会卸载 {{name}} 在命令行 PATH 中实际命中的那一份，其它副本不会改动。",
+  toolUninstallConfirmTitle: "确认卸载", toolUninstallConfirmHint: "只会卸载 {{name}} 在命令行 PATH 中实际命中的那一份，其它副本不会改动。不会删除配置和会话。",
   toolUninstallConfirmBtn: "确认卸载", toolUninstallUnsupported: "该安装方式无法从本应用安全卸载。",
-  envBadge: { wsl: "WSL", windows: "Win", macos: "macOS", linux: "Linux" }
+  envBadge: { wsl: "WSL", windows: "Win", macos: "macOS", linux: "Linux" },
+  toolSourcePrefix: "识别来源：",
+  toolSource: { native: "官方", curl: "curl", npm: "npm", nvm: "nvm", homebrew: "Homebrew", volta: "Volta", fnm: "fnm", mise: "mise", bun: "bun", pnpm: "pnpm", scoop: "Scoop", pip: "pip", system: "系统", local: "本地", internal: "官方" }
 });
 Object.assign(resources.en.translation, {
   settingsTabs: "Settings sections", settingsTabGeneral: "General", settingsTabLocal: "Local", settingsTabAbout: "About",
   windowBehavior: "Window behavior", launchAtLogin: "Launch at login", launchAtLoginDescription: "Automatically run Storm Dock when you sign in", closeToTray: "Minimize to tray on close", closeToTrayDescription: "Hide the app in the system tray when closed instead of exiting.",
   loading: "Loading...", unknown: "Unknown", notInstalled: "Not installed", auto: "Auto", copy: "Copy",
-  localEnvCheck: "Local environment check", currentVersion: "Current version", latestVersion: "Latest version", installedNotRunnable: "Installed · can't run",
+  localEnvCheck: "Local environment", currentVersion: "Current version", latestVersion: "Latest version", installedNotRunnable: "Installed · can't run",
+  toolRefresh: "Refresh", toolRefreshing: "Refreshing…", toolRefreshed: "Local tools refreshed",
   toolInstall: "Install", toolUpdate: "Update", toolUninstall: "Uninstall", toolReady: "Ready", toolCheckEnv: "Check environment",
-  toolDiagnose: "Diagnose installs", toolDiagnosing: "Diagnosing…", toolDiagnoseFailed: "Diagnosis failed", toolDiagnoseNoConflict: "No conflicting installations found",
+  toolDiagnose: "Diagnose", toolDiagnosing: "Diagnosing…", toolDiagnoseFailed: "Diagnosis failed", toolDiagnoseNoConflict: "No conflicting installations found",
   toolConflictTitle: "Multiple installations detected", toolConflictHint: "The command line uses the one marked Default; an upgrade may have written to another.", toolConflictNotRunnable: "Can't run", toolConflictDefault: "Default",
   updateAllTools: "Update all ({{count}})", updateAvailableShort: "Update",
   manualInstallCommands: "Manual install commands", oneClickInstallHint: "Install or upgrade Claude Code / Codex / Gemini CLI / OpenCode / OpenClaw / Hermes / Pi",
@@ -88,9 +92,11 @@ Object.assign(resources.en.translation, {
   toolActionVersionUnchangedTitle: "Version did not change", toolNotRunnable: "Installed but not runnable (no version detected)",
   toolUpgradeConfirmTitle: "Confirm upgrade target", toolUpgradeConfirmHint: "Multiple installations detected. This upgrade won't update all of them; refer to each tool below for what it actually targets.",
   toolUpgradeConfirmBtn: "Confirm upgrade", toolUpgradeUnanchoredHint: "Can't determine which install your command line uses; will run the default upgrade command (may install to the first npm on PATH).", toolUpgradeWillRun: "Will run:",
-  toolUninstallConfirmTitle: "Confirm uninstall", toolUninstallConfirmHint: "This removes only the {{name}} copy your PATH actually runs. Other copies are left alone.",
+  toolUninstallConfirmTitle: "Confirm uninstall", toolUninstallConfirmHint: "This removes only the {{name}} copy your PATH actually runs. Other copies are left alone. Configuration and sessions are kept.",
   toolUninstallConfirmBtn: "Uninstall", toolUninstallUnsupported: "This install can't be uninstalled safely from the app.",
-  envBadge: { wsl: "WSL", windows: "Win", macos: "macOS", linux: "Linux" }
+  envBadge: { wsl: "WSL", windows: "Win", macos: "macOS", linux: "Linux" },
+  toolSourcePrefix: "Source: ",
+  toolSource: { native: "Native", curl: "curl", npm: "npm", nvm: "nvm", homebrew: "Homebrew", volta: "Volta", fnm: "fnm", mise: "mise", bun: "bun", pnpm: "pnpm", scoop: "Scoop", pip: "pip", system: "System", local: "Local", internal: "Native" }
 });
 
 void i18n.use(initReactI18next).init({

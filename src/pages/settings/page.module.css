@@ -223,12 +223,18 @@
 }
 
 .env { display: grid; gap: 14px; align-content: start; }
-.envHead { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
-.envHead h2 { font-size: 18px; font-weight: 720; }
-.envActions { display: flex; flex-wrap: wrap; gap: 8px; }
-.ghost { align-items: center; background: #fff; border: 1px solid #ccd5df; border-radius: 5px; color: #374151; display: inline-flex; font-size: 13px; font-weight: 600; gap: 6px; min-height: 34px; padding: 0 10px; }
+.envHead { align-items: center; display: flex; gap: 12px; }
+.envHead h2 { flex: none; font-size: 18px; font-weight: 720; white-space: nowrap; }
+.envActions { display: flex; flex: 1; flex-wrap: nowrap; gap: 8px; justify-content: flex-end; min-width: 0; }
+.ghost { align-items: center; background: #fff; border: 1px solid #ccd5df; border-radius: 5px; color: #374151; display: inline-flex; flex: none; font-size: 13px; font-weight: 600; gap: 6px; min-height: 34px; padding: 0 10px; white-space: nowrap; }
+.labelSwap { display: grid; justify-items: start; }
+.labelSwap > span { grid-area: 1 / 1; }
+.labelSwap > span[aria-hidden="true"] { visibility: hidden; }
 .ghost:hover:not(:disabled) { background: #f8fafc; border-color: #91a3b7; }
-.databaseButton { align-items: center; display: inline-flex; gap: 6px; }
+.danger { align-items: center; background: #c43f3f; border: 1px solid #c43f3f; border-radius: 5px; color: #fff; display: inline-flex; flex: none; font-size: 13px; font-weight: 600; gap: 6px; min-height: 34px; padding: 0 10px; white-space: nowrap; }
+.danger:hover:not(:disabled) { background: #b13232; border-color: #b13232; }
+.danger:disabled { opacity: .55; }
+.databaseButton { align-items: center; display: inline-flex; flex: none; gap: 6px; white-space: nowrap; }
 .spin { animation: spin .8s linear infinite; }
 .toolGrid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .toolCard { background: #fff; border: 1px solid #dfe4ea; border-radius: 8px; display: flex; flex-direction: column; gap: 12px; min-height: 158px; padding: 14px 15px; }
@@ -265,9 +271,11 @@
 .installVersion { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .installBroken { color: #c27a12; }
 .installDefault { border: 1px solid #c5daf8; border-radius: 999px; color: #2c5d9b; font-size: 10px; padding: 1px 6px; }
-.toolFooter { align-items: center; display: flex; gap: 8px; justify-content: flex-end; margin-top: auto; }
+.toolFooter { align-items: center; display: flex; gap: 8px; justify-content: space-between; margin-top: auto; }
+.toolFooterActions { align-items: center; display: flex; gap: 8px; margin-left: auto; }
+.sourceBadge { background: #f4f5f7; border: 1px solid #dfe4ea; border-radius: 999px; color: #4b5563; display: inline-flex; font-size: 10px; font-weight: 650; padding: 1px 6px; }
 @media (max-width: 720px) { .toolGrid { grid-template-columns: 1fr; } }
-.toolFooter span { color: #697482; font-size: 12px; }
+.toolStatus { color: #697482; font-size: 12px; }
 .fold { align-items: center; background: transparent; border: 0; color: #20242c; display: inline-flex; font-size: 13px; font-weight: 650; gap: 6px; padding: 0; text-align: left; width: fit-content; }
 .foldClosed { transform: rotate(-90deg); }
 .commands { background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: grid; gap: 10px; padding: 14px; }

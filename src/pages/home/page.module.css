@@ -1,5 +1,4 @@
 .shell { --app-header-height: 52px; display: flex; flex-direction: column; height: 100vh; min-height: 0; overflow: hidden; padding: var(--window-titlebar-height) 28px 28px; position: relative; }
-.windowDragSurface { height: calc(var(--window-titlebar-height) + var(--app-header-height)); inset: 0 0 auto; position: absolute; }
 .header { align-items: center; border-bottom: 1px solid #e1e5eb; display: grid; grid-template-columns: 1fr auto 1fr; min-height: var(--app-header-height); padding-bottom: 18px; pointer-events: none; position: relative; z-index: 1; }
 .header button, .header a, .header input, .header [role="tab"] { pointer-events: auto; }
 .brand { align-items: center; display: flex; font-size: 17px; font-weight: 720; gap: 8px; }

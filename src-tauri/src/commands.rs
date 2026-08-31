@@ -1810,12 +1810,18 @@ pub(crate) fn duplicate_codex_api_key_account(
 #[tauri::command]
 pub(crate) async fn test_codex_api_key_account(
     id: String,
+    base_url: Option<String>,
     state: State<'_, AppState>,
 ) -> std::result::Result<CodexConnectionResult, String> {
     let url = {
         let controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
         let (_, session) = controller.require_codex_api_key(&id).map_err(error_text)?;
-        crate::codex::session::effective_base_url(&session)
+        base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+            .unwrap_or_else(|| crate::codex::session::effective_base_url(&session))
     };
     tauri::async_runtime::spawn_blocking(move || probe_codex_endpoint(&url))
         .await

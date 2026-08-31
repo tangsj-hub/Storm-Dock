@@ -1,17 +1,24 @@
 .shell {
+  --app-header-height: 34px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
-  padding: var(--page-shell-padding);
+  padding: var(--window-titlebar-height) 28px 28px;
+  position: relative;
 }
 
 .header {
   align-items: center;
   display: flex;
   gap: 11px;
+  pointer-events: none;
+  position: relative;
+  z-index: 1;
 }
+
+.header a, .header button { pointer-events: auto; }
 
 .header h1 { font-size: 18px; font-weight: 720; }
 

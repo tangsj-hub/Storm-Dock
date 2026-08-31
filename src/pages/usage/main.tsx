@@ -7,6 +7,7 @@ import { ExportDialog } from "../../components/ExportDialog";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import toastStyles from "../../components/ToastMessage.module.css";
 import { Tooltip } from "../../components/Tooltip";
+import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
 import { applicationKindFromQuery, homePath, type CursorUsageDetails } from "../../lib/types";
 import "../../styles/global.css";
@@ -105,6 +106,7 @@ function UsagePage() {
   const checkedAt = data ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.checkedAt * 1000)) : undefined;
   return <Toast.Provider>
     <main className={styles.shell}>
+    <WindowDragSurface />
     <header className={styles.header}>
       <a aria-label={t("back")} className={styles.back} href={homePath(applicationKindFromQuery())}><ArrowLeft aria-hidden="true" size={20} /></a>
       <h1>{t("usageTitle")}</h1>

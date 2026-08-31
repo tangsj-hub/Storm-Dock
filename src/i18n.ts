@@ -94,6 +94,8 @@ Object.assign(resources.zh.translation, {
   duplicate: "复制",
   accountDuplicated: "已复制账号。",
   testConnection: "连通性",
+  showApiKey: "显示 API Key",
+  hideApiKey: "隐藏 API Key",
   apiKeyUpdated: "API Key 已保存。",
   connectionOk: "可达（{{ms}}ms）",
   connectionFail: "不可达：{{error}}"
@@ -140,6 +142,8 @@ Object.assign(resources.en.translation, {
   duplicate: "Duplicate",
   accountDuplicated: "Account duplicated.",
   testConnection: "Connectivity",
+  showApiKey: "Show API Key",
+  hideApiKey: "Hide API Key",
   apiKeyUpdated: "API Key saved.",
   connectionOk: "Reachable ({{ms}}ms)",
   connectionFail: "Unreachable: {{error}}"

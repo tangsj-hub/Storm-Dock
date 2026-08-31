@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
+import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
 import { listApplications } from "../../lib/api";
 import { applicationKindFromQuery, homePath, type ApplicationStatus } from "../../lib/types";
@@ -98,6 +99,7 @@ function AddPage() {
   });
 
   return <Toast.Provider><main className={styles.shell}>
+    <WindowDragSurface />
     <header className={styles.header}><a aria-label={t("back")} className={styles.back} href={home}><ArrowLeft aria-hidden="true" size={20} /></a><h1>{t("addAccountTitle")}</h1></header>
     <section className={styles.workspace}>
       <Tabs.Root className={styles.addPage} onValueChange={(value) => setMethod(value as AddMethod)} value={method}>

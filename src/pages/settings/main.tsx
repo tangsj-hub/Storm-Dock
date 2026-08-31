@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
+import { WindowDragSurface } from "../../components/WindowDragSurface";
 import i18n from "../../i18n";
 import { getDatabasePath, moveDatabase } from "../../lib/api";
 import { applicationKindFromQuery, homePath } from "../../lib/types";
@@ -56,6 +57,7 @@ function SettingsPage() {
   };
 
   return <Toast.Provider><main className={styles.shell}>
+    <WindowDragSurface />
     <header className={styles.header}><a aria-label={t("back")} className={styles.back} href={homePath(applicationKindFromQuery())}>←</a><h1>{t("settingsTitle")}</h1></header>
     <Tabs.Root className={styles.layout} defaultValue="general" orientation="vertical">
       <Tabs.List aria-label={t("settingsTabs")} className={styles.nav}>

@@ -47,7 +47,6 @@ import {
   X,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
   type ComponentType,
@@ -60,6 +59,7 @@ import {
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
+import { WindowDragSurface } from "../../components/WindowDragSurface";
 import { ExportDialog } from "../../components/ExportDialog";
 import { Tooltip } from "../../components/Tooltip";
 import {
@@ -1460,11 +1460,7 @@ export function HomePage() {
   return (
     <Toast.Provider>
       <main className={styles.shell}>
-        <div
-          aria-hidden="true"
-          className={styles.windowDragSurface}
-          onMouseDown={() => void getCurrentWindow().startDragging()}
-        />
+        <WindowDragSurface />
         <header className={styles.header}>
           <div className={styles.brand}>
             <img alt="" src={logo} />

@@ -1,0 +1,1 @@
+.surface { height: calc(var(--window-titlebar-height) + var(--app-header-height, 34px)); inset: 0 0 auto; position: absolute; }

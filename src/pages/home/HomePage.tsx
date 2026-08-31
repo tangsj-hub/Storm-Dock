@@ -52,6 +52,7 @@ import {
   type ComponentType,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -96,6 +97,7 @@ import {
   applicationKindFromQuery,
   canSwitchToDesktop,
   homePath,
+  syncDocumentAppKind,
   type Account,
   type ApplicationKind,
   type ApplicationStatus,
@@ -530,6 +532,9 @@ export function HomePage() {
     }),
   );
   const isCursor = selected === "cursor";
+  useLayoutEffect(() => {
+    syncDocumentAppKind(selected);
+  }, [selected]);
   const showError = useCallback(
     (error: unknown) =>
       setNotice(error instanceof Error ? error.message : String(error)),

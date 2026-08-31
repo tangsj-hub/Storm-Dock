@@ -12,7 +12,7 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import i18n from "../../i18n";
 import { exportDatabase, getDatabasePath, getPreserveCodexOfficialAuth, importDatabase, moveDatabase, setPreserveCodexOfficialAuth } from "../../lib/api";
-import { applicationKindFromQuery, homePath } from "../../lib/types";
+import { applicationKindFromQuery, homePath, syncDocumentAppKind } from "../../lib/types";
 import { LocalEnvPanel } from "./LocalEnvPanel";
 import "../../styles/global.css";
 import styles from "./page.module.css";
@@ -174,4 +174,5 @@ function SettingsPage() {
     <ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} status={noticeStatus} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
 }
 
+syncDocumentAppKind();
 createRoot(document.getElementById("root")!).render(<SettingsPage />);

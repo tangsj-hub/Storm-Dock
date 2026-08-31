@@ -7,7 +7,7 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { Tooltip } from "../../components/Tooltip";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
-import { applicationKindFromQuery, homePath } from "../../lib/types";
+import { applicationKindFromQuery, homePath, syncDocumentAppKind } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "./page.module.css";
 
@@ -130,4 +130,5 @@ function EditPage() {
   );
 }
 
+syncDocumentAppKind(applicationKindFromQuery());
 createRoot(document.getElementById("root")!).render(<EditPage />);

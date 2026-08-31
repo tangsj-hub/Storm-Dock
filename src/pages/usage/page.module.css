@@ -18,13 +18,13 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 .workspace, .error { margin: 34px auto 0; max-width: var(--page-content-width); }
 .workspace { flex: 1; min-height: 0; overflow-y: auto; width: 100%; }
-.empty { align-items: center; background: #fff; border: 1px dashed #c8d0da; color: #687482; display: flex; flex-direction: column; justify-content: center; margin: 34px auto 0; max-width: var(--page-content-width); min-height: 270px; text-align: center; }
+.empty { align-items: center; background: var(--panel); border: 1px dashed #c8d0da; color: #687482; display: flex; flex-direction: column; justify-content: center; margin: 34px auto 0; max-width: var(--page-content-width); min-height: 270px; text-align: center; }
 .empty svg { color: #8aaedb; }
 .empty h2 { color: #35404c; font-size: 16px; margin: 15px 0 7px; }
 .empty p { font-size: 13px; margin: 0; max-width: 320px; }
 .muted { color: #66717d; font-size: 13px; }
 .error { background: #fff1f1; border: 1px solid #edc4c4; border-radius: 5px; color: #a33434; font-size: 13px; padding: 11px 12px; }
-.workspace { background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; overflow-x: hidden; overflow-y: auto; padding: 22px 24px 18px; position: relative; }
+.workspace { background: var(--panel); border: 1px solid #dfe4ea; border-radius: 6px; overflow-x: hidden; overflow-y: auto; padding: 22px 24px 18px; position: relative; }
 .indeterminate { height: 2px; left: 0; overflow: hidden; position: absolute; right: 0; top: 0; }
 .indeterminate span { animation: indeterminate 1.15s ease-in-out infinite; background: #286fdd; display: block; height: 100%; width: 38%; }
 @keyframes indeterminate { 0% { transform: translateX(-120%); } 100% { transform: translateX(360%); } }

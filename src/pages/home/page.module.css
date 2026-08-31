@@ -28,9 +28,10 @@
 .sidebarBadge { align-items: center; background: #e76f51; border: 1px solid #fff; border-radius: 999px; color: #fff; display: inline-flex; font-size: 9px; font-weight: 700; height: 16px; justify-content: center; line-height: 1; min-width: 16px; padding: 0 3px; pointer-events: none; position: absolute; right: -5px; top: -5px; }
 .content { min-width: 0; min-height: 0; overflow-y: auto; }
 .accountList { display: grid; gap: 8px; }
-.accountCard { align-items: center; background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; display: grid; grid-template-columns: 28px 1fr auto; min-height: 72px; padding: 10px 14px; transition: border-color .15s, box-shadow .15s; }
-.accountCard:hover { border-color: #b8c5d4; box-shadow: 0 2px 5px rgb(30 42 58 / 7%); }
-.current { background: #f7faff; border-color: #8bb6f5; }
+.accountCard { align-items: center; background: var(--panel); border: 1px solid #dfe4ea; border-radius: 6px; display: grid; grid-template-columns: 28px 1fr auto; min-height: 72px; padding: 10px 14px; transition: background .15s, border-color .15s, box-shadow .15s; }
+.accountCard:hover { background: rgb(255 255 255 / .86); border-color: #b8c5d4; box-shadow: 0 2px 5px rgb(30 42 58 / 7%); }
+.current { background: rgb(247 250 255 / .76); border-color: #8bb6f5; }
+.current:hover { background: rgb(247 250 255 / .9); }
 .dragging { box-shadow: 0 8px 20px rgb(30 42 58 / 18%); opacity: .78; }
 .dragHandle { color: #9aa5b1; cursor: grab; outline: none; touch-action: none; user-select: none; }
 .dragHandle:focus-visible { color: #377ef0; }
@@ -58,10 +59,10 @@
 .progressIndicator, .progressError { display: block; height: 100%; transition: transform .2s ease; width: 100%; }
 .progressIndicator { background: #286fdd; }
 .progressError { background: #c43f3f; }
-.empty { align-items: center; background: #fff; border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
+.empty { align-items: center; background: var(--panel); border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
 .empty h2 { color: #343b45; font-size: 16px; margin: 14px 0 6px; }
 .empty p { font-size: 13px; }
-.placeholder { align-items: center; background: #fff; border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
+.placeholder { align-items: center; background: var(--panel); border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
 .placeholder h2 { color: #343b45; font-size: 16px; margin: 0 0 6px; }
 .placeholder p { font-size: 13px; }
 .pluginList { display: grid; gap: 8px; }
@@ -130,7 +131,7 @@
 .sessionMessage time { color: #7b8693; flex: 0 0 auto; font-size: 10px; }
 .sessionMessage p { color: #343b45; font-size: 13px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .sessionDetailEmpty { align-items: center; color: #7b8693; display: flex; flex: 1; flex-direction: column; font-size: 13px; gap: 9px; justify-content: center; min-height: 180px; text-align: center; }
-.pluginCard { background: #fff; border: 1px solid #dfe4ea; border-radius: 6px; padding: 10px 14px; }
+.pluginCard { background: var(--panel); border: 1px solid #dfe4ea; border-radius: 6px; padding: 10px 14px; }
 .pluginHeader { align-items: center; display: flex; gap: 12px; min-height: 50px; }
 .pluginCopy { display: grid; flex: 1; min-width: 0; }
 .pluginCopy p { color: #6f7782; font-size: 12px; line-height: 18px; margin: 1px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -160,7 +161,7 @@
 .capabilityCopy p { font-size: 13px; }
 .capabilityRow .pluginSwitch { flex: 0 0 auto; margin-top: 6px; }
 .hookNotice { color: #8b949e; font-size: 12px; line-height: 22px; margin-top: 6px; white-space: nowrap; }
-.placeholder { align-items: center; background: #fff; border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
+.placeholder { align-items: center; background: var(--panel); border: 1px dashed #c8d0da; border-radius: 6px; color: #697482; display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
 .placeholder h2 { color: #343b45; font-size: 16px; margin: 0 0 6px; }
 .placeholder p { font-size: 13px; }
 .toastViewport { bottom: 24px; display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }

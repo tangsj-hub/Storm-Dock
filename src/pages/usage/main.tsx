@@ -9,7 +9,7 @@ import toastStyles from "../../components/ToastMessage.module.css";
 import { Tooltip } from "../../components/Tooltip";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
-import { applicationKindFromQuery, homePath, type CursorUsageDetails } from "../../lib/types";
+import { applicationKindFromQuery, homePath, syncDocumentAppKind, type CursorUsageDetails } from "../../lib/types";
 import "../../styles/global.css";
 import { daysUntil, hasLimit, isOverLimit, metric, spendCents } from "./format";
 import { EventLedger } from "./EventLedger";
@@ -148,4 +148,5 @@ function UsagePage() {
   </Toast.Provider>;
 }
 
+syncDocumentAppKind(applicationKindFromQuery());
 createRoot(document.getElementById("root")!).render(<UsagePage />);

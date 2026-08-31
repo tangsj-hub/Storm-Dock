@@ -9,7 +9,7 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
 import { listApplications } from "../../lib/api";
-import { applicationKindFromQuery, homePath, type ApplicationStatus } from "../../lib/types";
+import { applicationKindFromQuery, homePath, syncDocumentAppKind, type ApplicationStatus } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "./page.module.css";
 
@@ -116,4 +116,5 @@ function AddPage() {
   </main><ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
 }
 
+syncDocumentAppKind(applicationKindFromQuery());
 createRoot(document.getElementById("root")!).render(<AddPage />);

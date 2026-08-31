@@ -4,6 +4,11 @@ export function applicationKindFromQuery(search = window.location.search): Appli
   return new URLSearchParams(search).get("kind") === "codex" ? "codex" : "cursor";
 }
 
+export function syncDocumentAppKind(kind?: ApplicationKind) {
+  if (kind) document.documentElement.dataset.app = kind;
+  else delete document.documentElement.dataset.app;
+}
+
 export function homePath(kind: ApplicationKind, notice?: string) {
   const params = new URLSearchParams({ kind });
   if (notice) params.set("notice", notice);

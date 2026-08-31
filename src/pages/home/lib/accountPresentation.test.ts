@@ -22,7 +22,7 @@ describe("account presentation", () => {
     expect(endpointHost("https://api.example.com/v1")).toBe("api.example.com");
   });
 
-  it("maps ChatGPT import types to Account vs API Key", () => {
+  it("maps ChatGPT import types to sign-in vs API Key", () => {
     expect(accountKindKey(account)).toBe("accountKind.account");
     expect(accountKindKey({ ...account, importType: "api_key" })).toBe("accountKind.apiKey");
   });

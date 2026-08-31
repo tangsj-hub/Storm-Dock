@@ -36,8 +36,12 @@
 .dragHandle:focus-visible { color: #377ef0; }
 .accountCopy strong { display: block; font-size: 14px; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .accountMeta { align-items: center; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
-.accountCopy .metaBadge, .accountCopy .invalidBadge, .accountCopy .missingBadge { border: 0; border-radius: 3px; display: inline-flex; font-size: 10px; font-weight: 650; line-height: 18px; margin: 0; padding: 0 6px; }
+.accountCopy .metaBadge, .accountCopy .kindBadge, .accountCopy .invalidBadge, .accountCopy .missingBadge { border: 0; border-radius: 3px; display: inline-flex; font-size: 10px; font-weight: 650; line-height: 18px; margin: 0; padding: 0 6px; }
 .accountCopy .metaBadge { background: #eaf0f6; color: #526477; }
+.accountCopy .kindBadge { align-items: center; gap: 4px; padding: 0 6px 0 5px; white-space: nowrap; }
+.accountCopy .kindBadge svg { flex: 0 0 auto; }
+.accountCopy .kindAccount { background: #e4ebf2; color: #3d4c5c; }
+.accountCopy .kindApiKey { background: #f3ead8; color: #7a5420; }
 .accountCopy .plan-pro { background: #e8f1ff; color: #2464c3; }
 .accountCopy .plan-team, .accountCopy .plan-enterprise { background: #fff3d9; color: #8b5a12; }
 .accountCopy .plan-free { background: #e7f5ec; color: #337453; }

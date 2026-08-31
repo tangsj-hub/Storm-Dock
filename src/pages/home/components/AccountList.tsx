@@ -2,7 +2,7 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as Progress from "@radix-ui/react-progress";
-import { Activity, Check, ChartNoAxesCombined, Copy, FileOutput, GripVertical, LogIn, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Activity, Check, ChartNoAxesCombined, Copy, FileOutput, GripVertical, KeyRound, LogIn, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "../../../components/Tooltip";
 import { canSwitchToDesktop, editAccountPath, type Account, type ApplicationKind } from "../../../lib/types";
@@ -34,7 +34,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
   return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical aria-label={t("drag", { account: account.label })} className={styles.dragHandle} size={24} {...attributes} {...listeners} />
     <div className={styles.accountCopy}><strong>{account.label}</strong><div className={styles.accountMeta}>
-      {kind === "codex" && <span className={styles.metaBadge}>{t(accountKindKey(account))}</span>}
+      {kind === "codex" && <span className={`${styles.kindBadge} ${isApiKey ? styles.kindApiKey : styles.kindAccount}`}>{isApiKey ? <KeyRound aria-hidden="true" size={11} /> : <UserRound aria-hidden="true" size={11} />}{t(accountKindKey(account))}</span>}
       {subscription && <span className={`${styles.metaBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name} · {subscription.expiry}</span>}
       {usage && <span className={styles.metaBadge}>{usage}</span>}
       {host && <span className={styles.metaBadge}>{host}</span>}

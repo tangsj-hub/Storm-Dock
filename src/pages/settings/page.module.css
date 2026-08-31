@@ -20,7 +20,7 @@
 
 .header a, .header button { pointer-events: auto; }
 
-.header h1 { font-size: 18px; font-weight: 720; }
+.header h1 { font-size: 17px; font-weight: 720; }
 
 .back {
   align-items: center;
@@ -98,9 +98,10 @@
 }
 
 .sectionTitle svg { color: #377ef0; }
-.sectionTitle h2 { font-size: 18px; font-weight: 720; }
+.sectionTitle h2 { font-size: 16px; font-weight: 720; }
 
 .behaviorList { display: grid; gap: 12px; }
+.rowActions { align-items: center; display: flex; flex: none; gap: 8px; }
 
 .row {
   align-items: center;
@@ -231,7 +232,7 @@
 
 .env { display: grid; gap: 14px; align-content: start; }
 .envHead { align-items: center; display: flex; gap: 12px; }
-.envHead h2 { flex: none; font-size: 18px; font-weight: 720; white-space: nowrap; }
+.envHead h2 { flex: none; font-size: 16px; font-weight: 720; white-space: nowrap; }
 .envActions { display: flex; flex: 1; flex-wrap: nowrap; gap: 8px; justify-content: flex-end; min-width: 0; }
 .ghost { align-items: center; background: #fff; border: 1px solid #ccd5df; border-radius: 5px; color: #374151; display: inline-flex; flex: none; font-size: 13px; font-weight: 600; gap: 6px; min-height: 34px; padding: 0 10px; white-space: nowrap; }
 .labelSwap { display: grid; justify-items: start; }
@@ -295,6 +296,6 @@
 .dialogContent [data-description] { color: #5f6b78; font-size: 13px; line-height: 1.55; }
 .dialogPlans { display: grid; gap: 10px; margin: 16px 0; }
 .commandPreview { display: block; font-size: 11px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
-.dialogActions { display: flex; gap: 8px; justify-content: flex-end; }
+.dialogActions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 .dialogCancel { background: #fff; border: 1px solid #ccd5df; border-radius: 5px; color: #374151; font-size: 13px; font-weight: 650; min-height: 34px; padding: 0 12px; }
 @keyframes spin { to { transform: rotate(360deg); } }

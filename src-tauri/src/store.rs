@@ -2,7 +2,7 @@ use rusqlite::{params, Connection};
 use std::{
     collections::BTreeSet,
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -78,6 +78,9 @@ impl Controller {
              );
              CREATE TABLE IF NOT EXISTS application_state (
                application TEXT PRIMARY KEY, current_account_id TEXT
+             );
+             CREATE TABLE IF NOT EXISTS app_kv (
+               key TEXT PRIMARY KEY, value TEXT NOT NULL
              );
              PRAGMA user_version=1;",
         )?;
@@ -228,6 +231,31 @@ impl Controller {
         }
     }
 
+    fn prepare_codex_apply(&mut self) {
+        self.codex.preserve_official_auth = self.preserve_codex_official_auth();
+    }
+
+    pub(crate) fn preserve_codex_official_auth(&self) -> bool {
+        self.database
+            .query_row(
+                "SELECT value FROM app_kv WHERE key=?1",
+                params!["preserve_codex_official_auth"],
+                |row| row.get::<_, String>(0),
+            )
+            .ok()
+            .map(|value| value != "0")
+            .unwrap_or(true)
+    }
+
+    pub(crate) fn set_preserve_codex_official_auth(&mut self, enabled: bool) -> Result<()> {
+        self.database.execute(
+            "INSERT INTO app_kv (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params!["preserve_codex_official_auth", if enabled { "1" } else { "0" }],
+        )?;
+        self.codex.preserve_official_auth = enabled;
+        Ok(())
+    }
+
     pub(crate) fn statuses(&self) -> Vec<ApplicationStatus> {
         vec![self.cursor.detect(), self.codex.detect()]
     }
@@ -237,7 +265,10 @@ impl Controller {
     }
 
     pub(crate) fn accounts(&self, kind: ApplicationKind) -> Vec<AccountSummary> {
-        let current_session = self.adapter(kind).import_current().ok();
+        let current_session = match kind {
+            ApplicationKind::Codex => self.codex.live_match_session().ok(),
+            ApplicationKind::Cursor => self.cursor.import_current().ok(),
+        };
         self.all_accounts()
             .unwrap_or_default()
             .into_iter()
@@ -623,6 +654,7 @@ impl Controller {
         // A running Cursor process can flush its old in-memory state back to
         // state.vscdb. Defer the write until after the restart in that case.
         if !running {
+            self.prepare_codex_apply();
             self.adapter(account.application).apply(&session)?;
         }
         progress("persisting", 75);
@@ -643,6 +675,7 @@ impl Controller {
     pub(crate) fn apply_account(&mut self, id: &str) -> Result<()> {
         let account = self.account(id)?;
         let session = self.load_session(id)?;
+        self.prepare_codex_apply();
         self.adapter(account.application).apply(&session)?;
         self.database.execute("INSERT INTO application_state (application, current_account_id) VALUES (?1, ?2) ON CONFLICT(application) DO UPDATE SET current_account_id=excluded.current_account_id", params![Self::kind_value(account.application), account.id])?;
         Ok(())
@@ -692,6 +725,164 @@ impl Controller {
         self.database_path = target;
         let _ = fs::remove_file(source);
         Ok(self.database_path())
+    }
+
+    fn same_file(left: &Path, right: &Path) -> bool {
+        match (fs::canonicalize(left), fs::canonicalize(right)) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => left == right,
+        }
+    }
+
+    fn assert_importable_database(path: &Path) -> Result<()> {
+        let database = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        let integrity: String = database.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+        if integrity != "ok" {
+            return Err(AppError::Message("数据库校验失败".into()));
+        }
+        let has_accounts: i64 = database.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='accounts'",
+            [],
+            |row| row.get(0),
+        )?;
+        if has_accounts == 0 {
+            return Err(AppError::Message("不是 Storm Dock 数据库".into()));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn export_database(&self, file: PathBuf) -> Result<()> {
+        if Self::same_file(&file, &self.database_path) {
+            return Err(AppError::Message("不能导出到当前正在使用的数据库文件".into()));
+        }
+        if let Some(parent) = file.parent() {
+            if !parent.as_os_str().is_empty() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        let dump = crate::sql_backup::dump_sql(&self.database)?;
+        let temporary = file.with_file_name(format!(
+            ".{}.tmp",
+            file.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("storm-dock.sql")
+        ));
+        fs::write(&temporary, dump.as_bytes())?;
+        if file.exists() {
+            fs::remove_file(&file)?;
+        }
+        fs::rename(&temporary, &file)?;
+        Ok(())
+    }
+
+    pub(crate) fn import_database(&mut self, file: PathBuf) -> Result<String> {
+        if Self::same_file(&file, &self.database_path) {
+            return Err(AppError::Message("不能导入当前正在使用的数据库".into()));
+        }
+        if !file.is_file() {
+            return Err(AppError::Message("请选择有效的数据库文件".into()));
+        }
+        match crate::sql_backup::sniff(&file)? {
+            crate::sql_backup::BackupKind::StormDockSql => {
+                let sql = fs::read_to_string(&file)?;
+                let staging = self.staging_import_path("sql")?;
+                let result = (|| {
+                    let staging_db = Connection::open(&staging)?;
+                    crate::sql_backup::load_sql(&staging_db, &sql)?;
+                    drop(staging_db);
+                    self.replace_with_database_file(staging.clone())
+                })();
+                let _ = fs::remove_file(&staging);
+                result
+            }
+            crate::sql_backup::BackupKind::CcSwitchSql => self.import_cc_switch_sql(&file),
+        }
+    }
+
+    fn staging_import_path(&self, suffix: &str) -> Result<PathBuf> {
+        let parent = self
+            .database_path
+            .parent()
+            .ok_or_else(|| AppError::Message("数据库路径无效".into()))?;
+        let path = parent.join(format!(".{DATABASE_NAME}.{suffix}.import"));
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        Ok(path)
+    }
+
+    fn import_cc_switch_sql(&mut self, file: &Path) -> Result<String> {
+        let sql = fs::read_to_string(file)?;
+        let staging = self.staging_import_path("cc")?;
+        let imported = (|| {
+            let staging_db = Connection::open(&staging)?;
+            crate::sql_backup::load_sql(&staging_db, &sql)?;
+            crate::sql_backup::cc_switch_codex_sessions(&staging_db)
+        })();
+        let _ = fs::remove_file(&staging);
+        let sessions = imported?;
+        if sessions.is_empty() {
+            return Err(AppError::Message(
+                "未找到可导入的 ChatGPT 账号。官方登录凭证不在 CC Switch 的 SQL 备份中。".into(),
+            ));
+        }
+        for (name, session) in sessions {
+            let import_type = crate::codex::session::import_type(&session);
+            self.save_imported_session(
+                ApplicationKind::Codex,
+                Some(name),
+                session,
+                import_type,
+            )?;
+        }
+        Ok(self.database_path())
+    }
+
+    fn replace_with_database_file(&mut self, file: PathBuf) -> Result<String> {
+        Self::assert_importable_database(&file)?;
+        let parent = self
+            .database_path
+            .parent()
+            .ok_or_else(|| AppError::Message("数据库路径无效".into()))?;
+        let temporary = parent.join(format!(".{DATABASE_NAME}.import"));
+        let backup = parent.join(format!(".{DATABASE_NAME}.bak"));
+        if temporary.exists() {
+            fs::remove_file(&temporary)?;
+        }
+        fs::copy(&file, &temporary)?;
+        Self::assert_importable_database(&temporary)?;
+        let live = self.database_path.clone();
+        self.database = Connection::open_in_memory()?;
+        if backup.exists() {
+            let _ = fs::remove_file(&backup);
+        }
+        if let Err(error) = fs::rename(&live, &backup) {
+            self.database = Self::open_database(&live)?;
+            let _ = fs::remove_file(&temporary);
+            return Err(error.into());
+        }
+        if let Err(error) = fs::rename(&temporary, &live) {
+            let _ = fs::rename(&backup, &live);
+            self.database = Self::open_database(&live)?;
+            return Err(error.into());
+        }
+        match Self::open_database(&live) {
+            Ok(database) => {
+                self.database = database;
+                let _ = fs::remove_file(&backup);
+                self.migrate_raw_exports()?;
+                Ok(self.database_path())
+            }
+            Err(error) => {
+                let _ = fs::remove_file(&live);
+                let _ = fs::rename(&backup, &live);
+                self.database = Self::open_database(&live)?;
+                Err(error)
+            }
+        }
     }
 
     pub(crate) fn export_cursor_account(&self, account: &Account) -> Result<serde_json::Value> {
@@ -1067,6 +1258,129 @@ mod tests {
     }
 
     #[test]
+    fn database_export_import_roundtrip_replaces_accounts() {
+        let source_dir = env::temp_dir().join(format!(
+            "storm-dock-export-src-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let dest_dir = env::temp_dir().join(format!(
+            "storm-dock-export-dst-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut source = Controller::new(source_dir.clone()).unwrap();
+        let account = source
+            .save_imported_session(
+                ApplicationKind::Cursor,
+                Some("Backup".into()),
+                Session {
+                    values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "backup-token".into())]),
+                    raw_export: None,
+                },
+                ImportType::Token,
+            )
+            .unwrap();
+        let dump = dest_dir.join("backup.sql");
+        source.export_database(dump.clone()).unwrap();
+        let sql = fs::read_to_string(&dump).unwrap();
+        assert!(sql.starts_with("-- Storm Dock SQLite 导出"));
+        assert!(sql.contains("INSERT INTO \"accounts\""));
+        let mut dest = Controller::new(dest_dir.clone()).unwrap();
+        dest.import_database(dump).unwrap();
+        assert_eq!(dest.accounts(ApplicationKind::Cursor)[0].id, account.id);
+        assert_eq!(
+            dest.load_session(&account.id)
+                .unwrap()
+                .values
+                .get(ACCESS_TOKEN_KEY),
+            Some(&"backup-token".into())
+        );
+        let _ = fs::remove_dir_all(source_dir);
+        let _ = fs::remove_dir_all(dest_dir);
+    }
+
+    #[test]
+    fn database_import_rejects_non_storm_dock_file() {
+        let data_dir = env::temp_dir().join(format!(
+            "storm-dock-import-reject-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        let junk = data_dir.join("not-a-db.txt");
+        fs::write(&junk, "hello").unwrap();
+        assert!(controller.import_database(junk).is_err());
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn cc_switch_sql_import_adds_codex_and_keeps_cursor() {
+        let data_dir = env::temp_dir().join(format!(
+            "storm-dock-cc-switch-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        let cursor = controller
+            .save_imported_session(
+                ApplicationKind::Cursor,
+                Some("Keep Me".into()),
+                Session {
+                    values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "cursor-token".into())]),
+                    raw_export: None,
+                },
+                ImportType::Token,
+            )
+            .unwrap();
+        let dump = data_dir.join("cc-switch.sql");
+        fs::write(
+            &dump,
+            r#"-- CC Switch SQLite 导出
+CREATE TABLE providers (
+  id TEXT NOT NULL,
+  app_type TEXT NOT NULL,
+  name TEXT NOT NULL,
+  settings_config TEXT NOT NULL,
+  meta TEXT NOT NULL DEFAULT '{}',
+  is_current BOOLEAN NOT NULL DEFAULT 0,
+  in_failover_queue BOOLEAN NOT NULL DEFAULT 0,
+  PRIMARY KEY (id, app_type)
+);
+INSERT INTO providers (id, app_type, name, settings_config, meta, is_current, in_failover_queue) VALUES
+('official', 'codex', 'OpenAI Official', '{"auth":{},"config":""}', '{}', 0, 0),
+('key', 'codex', 'Third Party', '{"auth":{"OPENAI_API_KEY":"sk-imported"},"config":"[model_providers.custom]\nbase_url = \"https://example.com/v1\""}', '{}', 1, 0),
+('claude', 'claude', 'Claude', '{"env":{"ANTHROPIC_API_KEY":"sk-ant"}}', '{}', 0, 0);
+"#,
+        )
+        .unwrap();
+        controller.import_database(dump).unwrap();
+        assert_eq!(controller.accounts(ApplicationKind::Cursor)[0].id, cursor.id);
+        let codex = controller.accounts(ApplicationKind::Codex);
+        assert_eq!(codex.len(), 1);
+        assert_eq!(codex[0].label, "Third Party");
+        let session = controller.load_session(&codex[0].id).unwrap();
+        assert_eq!(
+            crate::codex::session::api_key(&crate::codex::session::auth_value(&session).unwrap())
+                .as_deref(),
+            Some("sk-imported")
+        );
+        assert_eq!(
+            crate::codex::session::base_url(&session).as_deref(),
+            Some("https://example.com/v1")
+        );
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
     fn export_preserves_cursor_raw_record_without_frontend_serialization() {
         let data_dir = env::temp_dir().join(format!(
             "storm-dock-export-{}",
@@ -1287,6 +1601,20 @@ mod tests {
         assert_eq!(key, "sk-edited");
         assert_eq!(base_url.as_deref(), Some("https://api.example.com/v1"));
         assert_eq!(controller.accounts(ApplicationKind::Codex).len(), 3);
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn preserve_codex_official_auth_defaults_on_and_persists() {
+        let data_dir =
+            env::temp_dir().join(format!("storm-dock-preserve-{}", uuid::Uuid::new_v4()));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        assert!(controller.preserve_codex_official_auth());
+        controller.set_preserve_codex_official_auth(false).unwrap();
+        assert!(!controller.preserve_codex_official_auth());
+        drop(controller);
+        let controller = Controller::new(data_dir.clone()).unwrap();
+        assert!(!controller.preserve_codex_official_auth());
         let _ = fs::remove_dir_all(data_dir);
     }
 }

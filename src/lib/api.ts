@@ -5,6 +5,10 @@ export const listApplications = () => invoke<ApplicationStatus[]>("list_applicat
 export const listAccounts = (kind: ApplicationKind) => invoke<Account[]>("list_accounts", { kind });
 export const getDatabasePath = () => invoke<string>("get_database_path");
 export const moveDatabase = (directory: string) => invoke<string>("move_database", { directory });
+export const exportDatabase = (file: string) => invoke<void>("export_database", { file });
+export const importDatabase = (file: string) => invoke<string>("import_database", { file });
+export const getPreserveCodexOfficialAuth = () => invoke<boolean>("get_preserve_codex_official_auth");
+export const setPreserveCodexOfficialAuth = (enabled: boolean) => invoke<void>("set_preserve_codex_official_auth", { enabled });
 export const listCursorPlugins = () => invoke<Plugin[]>("list_cursor_plugins");
 export const listCodexPlugins = () => invoke<Plugin[]>("list_codex_plugins");
 export const listCodexSessions = () => invoke<CodexSession[]>("list_codex_sessions");

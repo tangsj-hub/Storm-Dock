@@ -6,6 +6,7 @@ mod cursor;
 mod cursor_sessions;
 mod error;
 mod models;
+mod sql_backup;
 mod store;
 mod tools;
 mod tray;
@@ -91,6 +92,10 @@ pub fn run() {
             commands::list_accounts,
             commands::get_database_path,
             commands::move_database,
+            commands::export_database,
+            commands::import_database,
+            commands::get_preserve_codex_official_auth,
+            commands::set_preserve_codex_official_auth,
             commands::export_cursor_accounts,
             commands::get_cursor_export_record,
             commands::refresh_account_subscription,

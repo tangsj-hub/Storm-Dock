@@ -204,7 +204,19 @@ pub(crate) fn same_identity(left: &Session, right: &Session) -> bool {
 }
 
 pub(crate) fn matches_live(saved: &Session, live: &Session) -> bool {
-    same_identity(saved, live)
+    let Ok(saved_auth) = auth_value(saved) else {
+        return false;
+    };
+    let Ok(live_auth) = auth_value(live) else {
+        return false;
+    };
+    if is_chatgpt_login(&saved_auth) {
+        return is_chatgpt_login(&live_auth)
+            && chatgpt_account_id(&saved_auth) == chatgpt_account_id(&live_auth);
+    }
+    !is_chatgpt_login(&live_auth)
+        && api_key(&saved_auth) == api_key(&live_auth)
+        && effective_base_url(saved) == effective_base_url(live)
 }
 
 fn email_from_jwt(token: &str) -> Option<String> {
@@ -241,5 +253,15 @@ mod tests {
         assert!(same_identity(&key, &from_import("sk-test-key").unwrap()));
         assert_eq!(effective_base_url(&key), DEFAULT_OPENAI_BASE_URL);
         assert_eq!(effective_base_url(&custom), "https://api.example.com/v1");
+
+        let live_default = session_from_auth(
+            api_key_auth_json("sk-test-key"),
+            Some(DEFAULT_OPENAI_BASE_URL.into()),
+        )
+        .unwrap();
+        assert!(matches_live(&key, &live_default));
+        assert!(!matches_live(&oauth, &live_default));
+        assert!(matches_live(&oauth, &oauth));
+        assert!(!matches_live(&custom, &live_default));
     }
 }

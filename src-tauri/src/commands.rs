@@ -1137,6 +1137,30 @@ pub(crate) fn get_database_path(state: State<'_, AppState>) -> std::result::Resu
 }
 
 #[tauri::command]
+pub(crate) fn get_preserve_codex_official_auth(
+    state: State<'_, AppState>,
+) -> std::result::Result<bool, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())
+        .map(|controller| controller.preserve_codex_official_auth())
+}
+
+#[tauri::command]
+pub(crate) fn set_preserve_codex_official_auth(
+    enabled: bool,
+    state: State<'_, AppState>,
+) -> std::result::Result<(), String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())?
+        .set_preserve_codex_official_auth(enabled)
+        .map_err(error_text)
+}
+
+#[tauri::command]
 pub(crate) fn move_database(
     directory: String,
     app: AppHandle,
@@ -1147,6 +1171,36 @@ pub(crate) fn move_database(
         .lock()
         .map_err(|_| "账户存储不可用".to_string())?
         .move_database(PathBuf::from(directory))
+        .map_err(error_text)?;
+    refresh_tray(&app);
+    let _ = app.emit("accounts-changed", ());
+    Ok(path)
+}
+
+#[tauri::command]
+pub(crate) fn export_database(
+    file: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<(), String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())?
+        .export_database(PathBuf::from(file))
+        .map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn import_database(
+    file: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> std::result::Result<String, String> {
+    let path = state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())?
+        .import_database(PathBuf::from(file))
         .map_err(error_text)?;
     refresh_tray(&app);
     let _ = app.emit("accounts-changed", ());

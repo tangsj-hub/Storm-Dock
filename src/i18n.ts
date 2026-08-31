@@ -53,8 +53,11 @@ const resources = {
 resources.zh.translation.sessionsEmptyDescription = "本机 {{application}} 会话将在这里按项目显示。";
 resources.en.translation.sessionsEmptyDescription = "Local {{application}} sessions will appear here, grouped by project.";
 Object.assign(resources.zh.translation, {
-  settingsTabs: "设置分类", settingsTabGeneral: "通用", settingsTabLocal: "本地环境", settingsTabAbout: "关于",
+  settingsTabs: "设置分类", settingsTabGeneral: "通用", settingsTabData: "数据管理", settingsTabLocal: "本地环境", settingsTabAbout: "关于",
+  sqlBackup: "SQL 导入导出", sqlBackupDescription: "导出 Storm Dock 备份（含 Cursor）。可导入本格式，或导入 CC Switch 的 SQL（仅合并 ChatGPT 账号，保留 Cursor）。", sqlExport: "导出", sqlImport: "导入", sqlExported: "数据库已导出。", sqlImported: "数据库已导入。", sqlExportTitle: "导出数据库", sqlChooseFile: "选择 SQL 备份", sqlImportTitle: "导入数据库", sqlImportConfirm: "Storm Dock 备份会替换全部账号。CC Switch 备份会导入 ChatGPT 账号，并保留现有 Cursor 账号。官方登录凭证不在 CC Switch 的 SQL 里。",
   windowBehavior: "窗口行为", launchAtLogin: "开机自启", launchAtLoginDescription: "随系统启动自动运行 Storm Dock", closeToTray: "关闭时最小化到托盘", closeToTrayDescription: "勾选后点击关闭按钮会隐藏到系统托盘，取消则直接退出应用。",
+  codexAppEnhancement: "Codex 应用增强",
+  preserveCodexOfficialAuth: "切换 API Key 时保留 ChatGPT 登录", preserveCodexOfficialAuthDescription: "开启后切到 API Key 不会覆盖官方登录，切回时无需重新授权。",
   loading: "加载中...", unknown: "未知", notInstalled: "未安装", auto: "自动", copy: "复制",
   localEnvCheck: "本地环境检查", currentVersion: "当前版本", latestVersion: "最新版本", installedNotRunnable: "已安装·无法运行",
   toolRefresh: "刷新本机状态", toolRefreshing: "刷新中…", toolRefreshed: "本机状态已刷新",
@@ -101,8 +104,11 @@ Object.assign(resources.zh.translation, {
   connectionFail: "不可达：{{error}}"
 });
 Object.assign(resources.en.translation, {
-  settingsTabs: "Settings sections", settingsTabGeneral: "General", settingsTabLocal: "Local", settingsTabAbout: "About",
+  settingsTabs: "Settings sections", settingsTabGeneral: "General", settingsTabData: "Data", settingsTabLocal: "Local", settingsTabAbout: "About",
+  sqlBackup: "SQL import / export", sqlBackupDescription: "Export a Storm Dock backup (includes Cursor). Import that format, or a CC Switch SQL dump (merges ChatGPT accounts and keeps Cursor).", sqlExport: "Export", sqlImport: "Import", sqlExported: "Database exported.", sqlImported: "Database imported.", sqlExportTitle: "Export database", sqlChooseFile: "Choose SQL backup", sqlImportTitle: "Import database", sqlImportConfirm: "A Storm Dock backup replaces all accounts. A CC Switch backup imports ChatGPT accounts and keeps existing Cursor accounts. Official ChatGPT login tokens are not stored in CC Switch SQL.",
   windowBehavior: "Window behavior", launchAtLogin: "Launch at login", launchAtLoginDescription: "Automatically run Storm Dock when you sign in", closeToTray: "Minimize to tray on close", closeToTrayDescription: "Hide the app in the system tray when closed instead of exiting.",
+  codexAppEnhancement: "Codex app enhancements",
+  preserveCodexOfficialAuth: "Keep ChatGPT login when switching API keys", preserveCodexOfficialAuthDescription: "When on, switching to an API key does not overwrite the official login, so you can switch back without signing in again.",
   loading: "Loading...", unknown: "Unknown", notInstalled: "Not installed", auto: "Auto", copy: "Copy",
   localEnvCheck: "Local environment", currentVersion: "Current version", latestVersion: "Latest version", installedNotRunnable: "Installed · can't run",
   toolRefresh: "Refresh", toolRefreshing: "Refreshing…", toolRefreshed: "Local tools refreshed",

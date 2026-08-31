@@ -48,7 +48,7 @@ impl Controller {
             database_path,
             database,
             cursor: CursorAdapter::default(),
-            codex: CodexAdapter,
+            codex: CodexAdapter::default(),
         };
         controller.migrate_raw_exports()?;
         Ok(controller)
@@ -116,6 +116,7 @@ impl Controller {
             ImportType::Token => "token",
             ImportType::Jwt => "jwt",
             ImportType::Native => "native",
+            ImportType::ApiKey => "api_key",
         }
     }
 
@@ -125,6 +126,7 @@ impl Controller {
             "token" => Ok(ImportType::Token),
             "jwt" => Ok(ImportType::Jwt),
             "native" => Ok(ImportType::Native),
+            "api_key" => Ok(ImportType::ApiKey),
             _ => Err(AppError::Message("数据库中的导入类型无效".into())),
         }
     }
@@ -235,29 +237,25 @@ impl Controller {
     }
 
     pub(crate) fn accounts(&self, kind: ApplicationKind) -> Vec<AccountSummary> {
-        let current_session = if kind == ApplicationKind::Cursor {
-            self.cursor.import_current().ok()
-        } else {
-            None
-        };
+        let current_session = self.adapter(kind).import_current().ok();
         self.all_accounts()
             .unwrap_or_default()
             .into_iter()
             .filter(|account| account.application == kind)
             .map(|account| {
                 let account_session = self.load_session(&account.id).ok();
-                let is_current = current_session
-                    .as_ref()
-                    .zip(account_session.as_ref())
-                    .is_some_and(|(current, saved)| {
-                        [AUTH_ID_KEY, EMAIL_KEY, ACCESS_TOKEN_KEY]
+                let is_current = current_session.as_ref().zip(account_session.as_ref()).is_some_and(
+                    |(current, saved)| match kind {
+                        ApplicationKind::Codex => crate::codex::session::matches_live(saved, current),
+                        ApplicationKind::Cursor => [AUTH_ID_KEY, EMAIL_KEY, ACCESS_TOKEN_KEY]
                             .iter()
                             .any(|key| {
                                 current.values.get(*key).is_some_and(|value| {
                                     !value.is_empty() && saved.values.get(*key) == Some(value)
                                 })
-                            })
-                    });
+                            }),
+                    },
+                );
                 AccountSummary {
                     is_current,
                     id: account.id.clone(),
@@ -288,6 +286,10 @@ impl Controller {
                         .subscription
                         .reset_timestamp(&account.raw_export)
                         .map(|expires_at| days_remaining(expires_at, now())),
+                    base_url: account_session
+                        .as_ref()
+                        .and_then(crate::codex::session::base_url)
+                        .filter(|_| kind == ApplicationKind::Codex),
                 }
             })
             .collect()
@@ -331,40 +333,54 @@ impl Controller {
         let now = now();
         let email = session
             .values
-            .get(EMAIL_KEY)
+            .get(if kind == ApplicationKind::Codex {
+                crate::codex::CODEX_EMAIL_KEY
+            } else {
+                EMAIL_KEY
+            })
             .cloned()
             .filter(|value| !value.is_empty());
-        let display_label = session_display_label(&session);
-        if let Some(email) = email.as_deref() {
-            if let Some(index) = matching_account_index(&self.all_accounts()?, kind, email) {
-                let mut account = self.all_accounts()?[index].clone();
-                if let Some(label) = label.filter(|value| !value.trim().is_empty()) {
-                    account.label = label;
-                } else if let Some(display_label) = display_label.clone() {
-                    account.label = display_label;
-                }
-                account.email = Some(email.to_owned());
-                account.import_type = import_type;
-                let imported_subscription = subscription_from_session(&session);
-                if imported_subscription.plan.is_some() {
-                    account.subscription.merge_from(imported_subscription);
-                }
-                account.updated_at = now;
-                account.last_used_at = now;
-                account.raw_export = raw_export_from_session(
-                    &session,
-                    &account.id,
-                    account.created_at,
-                    now,
-                    now,
-                    self.cursor.telemetry(),
-                );
-                let transaction = self.database.transaction()?;
-                transaction.execute("UPDATE accounts SET label=?1, email=?2, import_type=?3, subscription_json=?4, raw_export_json=?5, updated_at=?6, last_used_at=?7 WHERE id=?8", params![account.label, account.email, Self::import_type_value(&account.import_type), serde_json::to_string(&account.subscription)?, serde_json::to_string(&account.raw_export)?, account.updated_at as i64, account.last_used_at as i64, account.id])?;
-                transaction.execute("INSERT INTO sessions (account_id, session_json) VALUES (?1, ?2) ON CONFLICT(account_id) DO UPDATE SET session_json=excluded.session_json", params![account.id, serde_json::to_string(&session)?])?;
-                transaction.commit()?;
-                return Ok(account);
+        let display_label = if kind == ApplicationKind::Codex {
+            crate::codex::session::display_label(&session)
+        } else {
+            session_display_label(&session)
+        };
+        let existing_id = if kind == ApplicationKind::Codex {
+            self.matching_codex_account_id(&session)?
+        } else if let Some(email) = email.as_deref() {
+            matching_account_index(&self.all_accounts()?, kind, email)
+                .map(|index| self.all_accounts().unwrap()[index].id.clone())
+        } else {
+            None
+        };
+        if let Some(existing_id) = existing_id {
+            let mut account = self.account(&existing_id)?;
+            if let Some(label) = label.filter(|value| !value.trim().is_empty()) {
+                account.label = label;
+            } else if let Some(display_label) = display_label.clone() {
+                account.label = display_label;
             }
+            account.email = email.clone();
+            account.import_type = import_type;
+            let imported_subscription = subscription_from_session(&session);
+            if imported_subscription.plan.is_some() {
+                account.subscription.merge_from(imported_subscription);
+            }
+            account.updated_at = now;
+            account.last_used_at = now;
+            account.raw_export = raw_export_from_session(
+                &session,
+                &account.id,
+                account.created_at,
+                now,
+                now,
+                self.cursor.telemetry(),
+            );
+            let transaction = self.database.transaction()?;
+            transaction.execute("UPDATE accounts SET label=?1, email=?2, import_type=?3, subscription_json=?4, raw_export_json=?5, updated_at=?6, last_used_at=?7 WHERE id=?8", params![account.label, account.email, Self::import_type_value(&account.import_type), serde_json::to_string(&account.subscription)?, serde_json::to_string(&account.raw_export)?, account.updated_at as i64, account.last_used_at as i64, account.id])?;
+            transaction.execute("INSERT INTO sessions (account_id, session_json) VALUES (?1, ?2) ON CONFLICT(account_id) DO UPDATE SET session_json=excluded.session_json", params![account.id, serde_json::to_string(&session)?])?;
+            transaction.commit()?;
+            return Ok(account);
         }
         let id = format!(
             "acc_{:x}",
@@ -417,7 +433,26 @@ impl Controller {
         label: Option<String>,
     ) -> Result<Account> {
         let session = self.adapter(kind).import_current()?;
-        self.save_imported_session(kind, label, session, ImportType::Native)
+        let import_type = if kind == ApplicationKind::Codex {
+            crate::codex::session::import_type(&session)
+        } else {
+            ImportType::Native
+        };
+        self.save_imported_session(kind, label, session, import_type)
+    }
+
+    fn matching_codex_account_id(&self, session: &Session) -> Result<Option<String>> {
+        for account in self.all_accounts()? {
+            if account.application != ApplicationKind::Codex {
+                continue;
+            }
+            if let Ok(saved) = self.load_session(&account.id) {
+                if crate::codex::session::same_identity(&saved, session) {
+                    return Ok(Some(account.id));
+                }
+            }
+        }
+        Ok(None)
     }
 
     #[cfg(test)]
@@ -427,6 +462,11 @@ impl Controller {
         label: Option<String>,
         payload: &str,
     ) -> Result<Account> {
+        if kind == ApplicationKind::Codex {
+            let session = crate::codex::session::from_import(payload)?;
+            let import_type = crate::codex::session::import_type(&session);
+            return self.save_imported_session(kind, label, session, import_type);
+        }
         if kind != ApplicationKind::Cursor {
             return Err(AppError::ComingSoon);
         }
@@ -448,11 +488,7 @@ impl Controller {
     }
 
     pub(crate) fn subscription_session(&mut self, id: &str) -> Result<Session> {
-        let account = self.account(id)?;
-        if account.application != ApplicationKind::Cursor {
-            return Err(AppError::ComingSoon);
-        }
-        self.load_session(&account.id)
+        self.load_session(&self.account(id)?.id)
     }
 
     pub(crate) fn save_subscription(
@@ -578,7 +614,7 @@ impl Controller {
         let account = self.account(id)?;
         if !account.import_type.supports_desktop_switch() {
             return Err(AppError::Message(
-                "Token / JWT 账户只能查询用量，不能切换登录 Cursor 桌面端。".into(),
+                "Token / JWT 账户只能查询用量，不能切换登录。".into(),
             ));
         }
         let session = self.load_session(&account.id)?;
@@ -678,7 +714,145 @@ impl Controller {
         Ok(record)
     }
 
-    pub(crate) fn export_cursor_accounts(&self, file: PathBuf) -> Result<()> {
+    pub(crate) fn require_codex_api_key(&self, id: &str) -> Result<(Account, Session)> {
+        let account = self.account(id)?;
+        if account.application != ApplicationKind::Codex || account.import_type != ImportType::ApiKey
+        {
+            return Err(AppError::Message("不是 API Key 账号".into()));
+        }
+        let session = self.load_session(id)?;
+        Ok((account, session))
+    }
+
+    pub(crate) fn codex_api_key_account(
+        &self,
+        id: &str,
+    ) -> Result<(String, String, Option<String>)> {
+        let (account, session) = self.require_codex_api_key(id)?;
+        let key = crate::codex::session::api_key(&crate::codex::session::auth_value(&session)?)
+            .ok_or(AppError::SecretMissing)?;
+        Ok((
+            account.label,
+            key,
+            crate::codex::session::base_url(&session),
+        ))
+    }
+
+    pub(crate) fn update_codex_api_key(
+        &mut self,
+        id: &str,
+        api_key: &str,
+        base_url: Option<&str>,
+        label: Option<&str>,
+    ) -> Result<Account> {
+        let (mut account, _) = self.require_codex_api_key(id)?;
+        let session = crate::codex::session::session_from_auth(
+            crate::codex::session::api_key_auth_json(api_key.trim()),
+            base_url
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned),
+        )?;
+        let is_current = self
+            .accounts(ApplicationKind::Codex)
+            .iter()
+            .any(|item| item.id == id && item.is_current);
+        let now = now();
+        if let Some(label) = label.map(str::trim).filter(|value| !value.is_empty()) {
+            account.label = label.to_owned();
+        }
+        account.updated_at = now;
+        account.raw_export = session
+            .raw_export
+            .clone()
+            .unwrap_or(serde_json::Value::Null);
+        let transaction = self.database.transaction()?;
+        transaction.execute(
+            "UPDATE accounts SET label=?1, import_type=?2, raw_export_json=?3, updated_at=?4 WHERE id=?5",
+            params![
+                account.label,
+                Self::import_type_value(&ImportType::ApiKey),
+                serde_json::to_string(&account.raw_export)?,
+                now as i64,
+                id
+            ],
+        )?;
+        transaction.execute(
+            "INSERT INTO sessions (account_id, session_json) VALUES (?1, ?2) ON CONFLICT(account_id) DO UPDATE SET session_json=excluded.session_json",
+            params![id, serde_json::to_string(&session)?],
+        )?;
+        transaction.commit()?;
+        if is_current {
+            self.apply_account(id)?;
+        }
+        self.account(id)
+    }
+
+    pub(crate) fn duplicate_codex_api_key(&mut self, id: &str) -> Result<Account> {
+        let (source, session) = self.require_codex_api_key(id)?;
+        let now = now();
+        let new_id = format!(
+            "acc_{:x}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        let account = Account {
+            id: new_id.clone(),
+            application: ApplicationKind::Codex,
+            label: format!("{} copy", source.label),
+            email: source.email.clone(),
+            import_type: ImportType::ApiKey,
+            subscription: source.subscription.clone(),
+            raw_export: raw_export_from_session(
+                &session,
+                &new_id,
+                now,
+                now,
+                now,
+                self.cursor.telemetry(),
+            ),
+            created_at: now,
+            updated_at: now,
+            last_used_at: now,
+        };
+        let transaction = self.database.transaction()?;
+        let sort_order: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM accounts WHERE application=?1",
+            params![Self::kind_value(ApplicationKind::Codex)],
+            |row| row.get(0),
+        )?;
+        transaction.execute("INSERT INTO accounts (id, application, label, email, import_type, subscription_json, usage_json, usage_raw_json, raw_export_json, created_at, updated_at, last_used_at, sort_order) VALUES (?1,?2,?3,?4,?5,?6,NULL,NULL,?7,?8,?9,?10,?11)", params![account.id, Self::kind_value(account.application), account.label, account.email, Self::import_type_value(&account.import_type), serde_json::to_string(&account.subscription)?, serde_json::to_string(&account.raw_export)?, account.created_at as i64, account.updated_at as i64, account.last_used_at as i64, sort_order])?;
+        transaction.execute(
+            "INSERT INTO sessions (account_id, session_json) VALUES (?1, ?2)",
+            params![account.id, serde_json::to_string(&session)?],
+        )?;
+        transaction.commit()?;
+        Ok(account)
+    }
+
+    pub(crate) fn export_account(&self, account: &Account) -> Result<serde_json::Value> {
+        if account.import_type == ImportType::ApiKey {
+            return Err(AppError::Message("API Key 账号不支持导出".into()));
+        }
+        if account.application == ApplicationKind::Codex {
+            if account.raw_export.is_object() {
+                return Ok(account.raw_export.clone());
+            }
+            let session = self.load_session(&account.id)?;
+            if let Some(raw) = session.raw_export.clone() {
+                return Ok(raw);
+            }
+            return Ok(serde_json::json!({
+                "auth": crate::codex::session::auth_value(&session)?,
+                "base_url": crate::codex::session::base_url(&session),
+            }));
+        }
+        self.export_cursor_account(account)
+    }
+
+    pub(crate) fn export_accounts(&self, kind: ApplicationKind, file: PathBuf) -> Result<()> {
         let parent = file
             .parent()
             .ok_or_else(|| AppError::Message("导出路径无效".into()))?;
@@ -686,13 +860,20 @@ impl Controller {
         let accounts = self
             .all_accounts()?
             .into_iter()
-            .filter(|account| account.application == ApplicationKind::Cursor)
-            .map(|account| self.export_cursor_account(&account))
+            .filter(|account| {
+                account.application == kind && account.import_type != ImportType::ApiKey
+            })
+            .map(|account| self.export_account(&account))
             .collect::<Result<Vec<_>>>()?;
         let temporary = file.with_extension("tmp");
         fs::write(&temporary, serde_json::to_vec_pretty(&accounts)?)?;
         fs::rename(temporary, file)?;
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn export_cursor_accounts(&self, file: PathBuf) -> Result<()> {
+        self.export_accounts(ApplicationKind::Cursor, file)
     }
 }
 
@@ -1059,6 +1240,53 @@ mod tests {
             kept.subscription.billing_cycle_end.as_deref(),
             Some("2026-08-27T00:00:00.000Z")
         );
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn codex_api_key_import_dedupes_by_key_and_base_url() {
+        let data_dir =
+            env::temp_dir().join(format!("storm-dock-codex-key-{}", uuid::Uuid::new_v4()));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        let first = controller
+            .import_payload(ApplicationKind::Codex, Some("One".into()), "sk-shared")
+            .unwrap();
+        let again = controller
+            .import_payload(ApplicationKind::Codex, None, "sk-shared")
+            .unwrap();
+        assert_eq!(first.id, again.id);
+        let custom = controller
+            .import_payload(
+                ApplicationKind::Codex,
+                None,
+                r#"{"OPENAI_API_KEY":"sk-shared","base_url":"https://api.example.com/v1"}"#,
+            )
+            .unwrap();
+        assert_ne!(first.id, custom.id);
+        assert_eq!(custom.import_type, ImportType::ApiKey);
+        assert_eq!(controller.accounts(ApplicationKind::Codex).len(), 2);
+        controller
+            .update_codex_api_key(
+                &custom.id,
+                "sk-edited",
+                Some("https://api.example.com/v1"),
+                Some("Renamed"),
+            )
+            .unwrap();
+        let (label, key, base_url) = controller.codex_api_key_account(&custom.id).unwrap();
+        assert_eq!(label, "Renamed");
+        assert_eq!(key, "sk-edited");
+        assert_eq!(base_url.as_deref(), Some("https://api.example.com/v1"));
+        assert!(controller
+            .export_account(&controller.account(&custom.id).unwrap())
+            .is_err());
+        let copy = controller.duplicate_codex_api_key(&custom.id).unwrap();
+        assert_ne!(copy.id, custom.id);
+        assert_eq!(copy.label, "Renamed copy");
+        let (_, key, base_url) = controller.codex_api_key_account(&copy.id).unwrap();
+        assert_eq!(key, "sk-edited");
+        assert_eq!(base_url.as_deref(), Some("https://api.example.com/v1"));
+        assert_eq!(controller.accounts(ApplicationKind::Codex).len(), 3);
         let _ = fs::remove_dir_all(data_dir);
     }
 }

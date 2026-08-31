@@ -30,13 +30,16 @@ const CURSOR_OAUTH_MAX_ERRORS: u32 = 3;
 pub(crate) struct OauthLoginState {
     generation: AtomicU64,
     login_url: Mutex<Option<String>>,
+    user_code: Mutex<Option<String>>,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct OfficialLoginStatus {
-    stage: &'static str,
-    login_url: Option<String>,
+    pub(crate) stage: &'static str,
+    pub(crate) login_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) user_code: Option<String>,
 }
 
 pub(crate) struct CursorOauthHandshake {
@@ -65,6 +68,17 @@ impl OauthLoginState {
         Ok(())
     }
 
+    pub(crate) fn set_user_code(&self, id: u64, code: String) -> Result<()> {
+        if !self.is_active(id) {
+            return Err(AppError::LoginCancelled);
+        }
+        *self
+            .user_code
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(code);
+        Ok(())
+    }
+
     pub(crate) fn url(&self) -> Option<String> {
         self.login_url
             .lock()
@@ -78,12 +92,20 @@ impl OauthLoginState {
             .login_url
             .lock()
             .unwrap_or_else(|error| error.into_inner()) = None;
+        *self
+            .user_code
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = None;
     }
 
     pub(crate) fn finish(&self, id: u64) {
         if self.is_active(id) {
             *self
                 .login_url
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()) = None;
+            *self
+                .user_code
                 .lock()
                 .unwrap_or_else(|error| error.into_inner()) = None;
         }
@@ -125,7 +147,11 @@ pub(crate) fn emit_official_login_status(
 ) {
     let _ = app.emit(
         "official-login-status",
-        OfficialLoginStatus { stage, login_url },
+        OfficialLoginStatus {
+            stage,
+            login_url,
+            user_code: None,
+        },
     );
 }
 

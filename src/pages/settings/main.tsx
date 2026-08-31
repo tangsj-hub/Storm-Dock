@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import i18n from "../../i18n";
 import { getDatabasePath, moveDatabase } from "../../lib/api";
+import { applicationKindFromQuery, homePath } from "../../lib/types";
 import { LocalEnvPanel } from "./LocalEnvPanel";
 import "../../styles/global.css";
 import styles from "./page.module.css";
@@ -55,7 +56,7 @@ function SettingsPage() {
   };
 
   return <Toast.Provider><main className={styles.shell}>
-    <header className={styles.header}><a aria-label={t("back")} className={styles.back} href="/">←</a><h1>{t("settingsTitle")}</h1></header>
+    <header className={styles.header}><a aria-label={t("back")} className={styles.back} href={homePath(applicationKindFromQuery())}>←</a><h1>{t("settingsTitle")}</h1></header>
     <Tabs.Root className={styles.layout} defaultValue="general" orientation="vertical">
       <Tabs.List aria-label={t("settingsTabs")} className={styles.nav}>
         <Tabs.Trigger className={styles.tab} value="general">{t("settingsTabGeneral")}</Tabs.Trigger>

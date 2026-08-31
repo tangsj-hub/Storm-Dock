@@ -8,7 +8,7 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import toastStyles from "../../components/ToastMessage.module.css";
 import { Tooltip } from "../../components/Tooltip";
 import "../../i18n";
-import type { CursorUsageDetails } from "../../lib/types";
+import { applicationKindFromQuery, homePath, type CursorUsageDetails } from "../../lib/types";
 import "../../styles/global.css";
 import { daysUntil, hasLimit, isOverLimit, metric, spendCents } from "./format";
 import { EventLedger } from "./EventLedger";
@@ -106,7 +106,7 @@ function UsagePage() {
   return <Toast.Provider>
     <main className={styles.shell}>
     <header className={styles.header}>
-      <a aria-label={t("back")} className={styles.back} href="/"><ArrowLeft aria-hidden="true" size={20} /></a>
+      <a aria-label={t("back")} className={styles.back} href={homePath(applicationKindFromQuery())}><ArrowLeft aria-hidden="true" size={20} /></a>
       <h1>{t("usageTitle")}</h1>
       <div className={styles.actions}>
         <Tooltip content={t("export")}><button aria-label={t("export")} className={styles.export} disabled={busy} onClick={() => void openExport()} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>

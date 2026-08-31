@@ -93,7 +93,9 @@ import {
   setCursorPluginEnabled,
 } from "../../lib/api";
 import {
+  applicationKindFromQuery,
   canSwitchToDesktop,
+  homePath,
   type Account,
   type ApplicationKind,
   type ApplicationStatus,
@@ -470,12 +472,12 @@ function LegacyWorkspaceToolbar({
 export function HomePage() {
   const { t } = useTranslation();
   const [applications, setApplications] = useState<ApplicationStatus[]>([]);
-  const [selected, setSelected] = useState<ApplicationKind>("cursor");
+  const [selected, setSelected] = useState<ApplicationKind>(applicationKindFromQuery);
   const [workspaceSection, setWorkspaceSection] =
     useState<WorkspaceSection>("accounts");
   const [pluginsExpanded, setPluginsExpanded] = useState(false);
   const [pluginCount, setPluginCount] = useState<number | undefined>(() =>
-    cachedPluginCount("cursor"),
+    cachedPluginCount(applicationKindFromQuery()),
   );
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
@@ -515,6 +517,7 @@ export function HomePage() {
   }>();
   const [exportData, setExportData] = useState<unknown>();
   const [exportTarget, setExportTarget] = useState<Account>();
+  const [testingId, setTestingId] = useState<string>();
   const [countdown, setCountdown] = useState(10);
   const activeOperationId = useRef<string | undefined>(undefined);
   const beginAccountsRequest = useLatestRequest();
@@ -545,7 +548,9 @@ export function HomePage() {
   const selectApplication = (next: ApplicationKind) => {
     if (next === selected) return;
     setMcpServers([]);
+    setAccounts([]);
     setSelected(next);
+    window.history.replaceState({}, "", homePath(next));
   };
   useEffect(() => {
     void loadAccounts().catch(showError);
@@ -609,7 +614,13 @@ export function HomePage() {
       });
   }, [beginSessionMessageRequest, selected, selectedCodexSessionId, showError]);
   useEffect(() => {
-    if (window.location.search) window.history.replaceState({}, "", "/");
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("notice")) {
+      params.delete("notice");
+      window.history.replaceState({}, "", `/?${params}`);
+    }
+  }, []);
+  useEffect(() => {
     let unlisten: () => void = () => {};
     void listen("accounts-changed", () => {
       void loadAccounts().catch(showError);
@@ -685,7 +696,7 @@ export function HomePage() {
         setCountdown(10);
         return;
       }
-      await finishSwitch("cursorLaunched");
+      await finishSwitch(isCursor ? "cursorLaunched" : "accountSwitched");
     } catch (error) {
       showError(error);
       setSwitchProgress({
@@ -759,14 +770,12 @@ export function HomePage() {
     setRefreshFailed(false);
     setNotice(t("refreshing"));
     try {
-      const result = isCursor
-        ? await invoke<{
-            total: number;
-            failed: number;
-            invalid: number;
-            missing: number;
-          }>("refresh_all_cursor_accounts")
-        : { total: 0, failed: 0, invalid: 0, missing: 0 };
+      const result = await invoke<{
+        total: number;
+        failed: number;
+        invalid: number;
+        missing: number;
+      }>(isCursor ? "refresh_all_cursor_accounts" : "refresh_all_codex_accounts");
       const failed = result.failed;
       await loadAccounts();
       const other = failed - result.invalid - result.missing;
@@ -781,11 +790,7 @@ export function HomePage() {
       setNotice(
         failed
           ? t("subscriptionsRefreshIncomplete", { reasons })
-          : t(
-              accounts.length && isCursor
-                ? "subscriptionsRefreshed"
-                : "refreshed",
-            ),
+          : t(accounts.length ? "subscriptionsRefreshed" : "refreshed"),
       );
     } catch (error) {
       setRefreshFailed(true);
@@ -823,12 +828,13 @@ export function HomePage() {
     if (!file) return;
     if (
       await act(async () => {
-        await invoke("export_cursor_accounts", { file });
+        await invoke("export_cursor_accounts", { file, kind: selected });
       })
     )
       setNotice(t("exported"));
   };
   const openAccountExport = async (account: Account) => {
+    if (account.importType === "api_key") return;
     try {
       setExportData(
         await invoke<unknown>("get_cursor_export_record", { id: account.id }),
@@ -836,6 +842,33 @@ export function HomePage() {
       setExportTarget(account);
     } catch (error) {
       showError(error);
+    }
+  };
+  const duplicateAccount = async (account: Account) => {
+    if (
+      await act(async () => {
+        await invoke("duplicate_codex_api_key_account", { id: account.id });
+      })
+    )
+      setNotice(t("accountDuplicated"));
+  };
+  const testApiKey = async (account: Account) => {
+    setTestingId(account.id);
+    try {
+      const result = await invoke<{
+        success: boolean;
+        message: string;
+        responseTimeMs?: number;
+      }>("test_codex_api_key_account", { id: account.id });
+      setNotice(
+        result.success
+          ? t("connectionOk", { ms: result.responseTimeMs ?? 0 })
+          : t("connectionFail", { error: result.message }),
+      );
+    } catch (error) {
+      showError(error);
+    } finally {
+      setTestingId(undefined);
     }
   };
   const currentAccountId = accounts.find((account) => account.isCurrent)?.id;
@@ -1417,10 +1450,10 @@ export function HomePage() {
       <div className={styles.empty}>
         <KeyRound aria-hidden="true" size={32} />
         <h2>{t("emptyTitle")}</h2>
-        <p>{t("emptyDescription")}</p>
+        <p>{t("emptyDescription", { application: t(selected) })}</p>
       </div>
     ) : (
-      <AccountList accounts={accounts} busy={busy} onExport={(account) => void openAccountExport(account)} onRemove={remove} onReorder={(activeId, targetId) => void reorder(activeId, targetId)} onSwitch={switchTo} progress={switchProgress} />
+      <AccountList accounts={accounts} busy={busy} kind={selected} key={selected} onDuplicate={(account) => void duplicateAccount(account)} onExport={(account) => void openAccountExport(account)} onRemove={remove} onReorder={(activeId, targetId) => void reorder(activeId, targetId)} onSwitch={switchTo} onTest={(account) => void testApiKey(account)} progress={switchProgress} testingId={testingId} />
     );
   };
 
@@ -1440,7 +1473,7 @@ export function HomePage() {
               <a
                 aria-label={t("settings")}
                 className={styles.settingsButton}
-                href="/settings.html"
+                href={`/settings.html?kind=${selected}`}
               >
                 <Settings aria-hidden="true" size={16} />
               </a>
@@ -1470,8 +1503,9 @@ export function HomePage() {
           </Tabs.Root>
           <WorkspaceToolbar
             busy={busy}
-            canManageAccounts={isCursor}
-            hasAccounts={accounts.length > 0}
+            canManageAccounts
+            hasAccounts={accounts.some((account) => account.importType !== "api_key")}
+            kind={selected}
             onExport={() => void exportAccounts()}
             onPluginsExpandedChange={setPluginsExpanded}
             onRefresh={() => void refresh()}
@@ -1574,7 +1608,7 @@ export function HomePage() {
       {exportTarget && exportData !== undefined && (
         <ExportDialog
           data={[exportData]}
-          filename={`cursor-account-${exportTarget.id}.json`}
+          filename={`${selected}-account-${exportTarget.id}.json`}
           onOpenChange={(open) => {
             if (!open) setExportTarget(undefined);
           }}

@@ -22,6 +22,8 @@ pub(crate) enum AppError {
     UnsupportedCursor(String),
     #[error("Cursor is not installed or has not been started")]
     CursorNotDetected,
+    #[error("未检测到 ChatGPT 登录")]
+    CodexNotDetected,
     #[error("could not verify the Cursor session; the previous state was restored")]
     VerifyFailed,
     #[error("could not restore the previous Cursor session")]

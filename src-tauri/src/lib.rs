@@ -1,4 +1,5 @@
 mod apps;
+mod codex;
 mod codex_sessions;
 mod commands;
 mod cursor;
@@ -94,6 +95,7 @@ pub fn run() {
             commands::get_cursor_export_record,
             commands::refresh_account_subscription,
             commands::refresh_all_cursor_accounts,
+            commands::refresh_all_codex_accounts,
             commands::get_cursor_usage,
             commands::get_saved_cursor_usage,
             commands::reorder_accounts,
@@ -105,6 +107,10 @@ pub fn run() {
             commands::delete_account,
             commands::switch_account,
             commands::force_restart_cursor,
+            commands::get_codex_api_key_account,
+            commands::update_codex_api_key_account,
+            commands::duplicate_codex_api_key_account,
+            commands::test_codex_api_key_account,
             set_close_to_tray,
             tools::get_tool_versions,
             tools::run_tool_lifecycle_action,

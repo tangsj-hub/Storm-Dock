@@ -1156,13 +1156,14 @@ pub(crate) fn move_database(
 #[tauri::command]
 pub(crate) fn export_cursor_accounts(
     file: String,
+    kind: Option<ApplicationKind>,
     state: State<'_, AppState>,
 ) -> std::result::Result<(), String> {
     state
         .0
         .lock()
         .map_err(|_| "账户存储不可用".to_string())?
-        .export_cursor_accounts(PathBuf::from(file))
+        .export_accounts(kind.unwrap_or(ApplicationKind::Cursor), PathBuf::from(file))
         .map_err(error_text)
 }
 
@@ -1173,12 +1174,7 @@ pub(crate) fn get_cursor_export_record(
 ) -> std::result::Result<serde_json::Value, String> {
     let controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
     let account = controller.account(&id).map_err(error_text)?;
-    if account.application != ApplicationKind::Cursor {
-        return Err(error_text(AppError::ComingSoon));
-    }
-    controller
-        .export_cursor_account(&account)
-        .map_err(error_text)
+    controller.export_account(&account).map_err(error_text)
 }
 
 #[tauri::command]
@@ -1346,6 +1342,93 @@ pub(crate) async fn refresh_all_cursor_accounts(
 }
 
 #[tauri::command]
+pub(crate) async fn refresh_all_codex_accounts(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> std::result::Result<RefreshAccountsResult, String> {
+    let accounts = {
+        let controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+        controller
+            .accounts(ApplicationKind::Codex)
+            .into_iter()
+            .map(|account| account.id)
+            .collect::<Vec<_>>()
+    };
+    let total = accounts.len();
+    let mut failed = 0;
+    let mut invalid = 0;
+    let mut missing = 0;
+    for (completed, id) in accounts.into_iter().enumerate() {
+        let refresh_id = id.clone();
+        let refresh_state = app.state::<AppState>();
+        let session = match refresh_state.0.lock() {
+            Ok(mut controller) => controller.subscription_session(&refresh_id).ok(),
+            Err(_) => None,
+        };
+        let Some(session) = session else {
+            missing += 1;
+            failed += 1;
+            if let Ok(mut controller) = state.0.lock() {
+                let _ = controller.mark_credential_missing(&id);
+            }
+            continue;
+        };
+        if crate::codex::session::import_type(&session) != crate::models::ImportType::OAuth {
+            let _ = app.emit(
+                "account-refresh-progress",
+                RefreshAccountsProgress {
+                    completed: completed + 1,
+                    total,
+                },
+            );
+            continue;
+        }
+        match crate::codex::oauth::refresh_session(&session) {
+            Ok((next, quota)) => {
+                if let Ok(mut controller) = state.0.lock() {
+                    let label = controller.account(&id).ok().map(|account| account.label);
+                    let _ = controller.save_imported_session(
+                        ApplicationKind::Codex,
+                        label,
+                        next,
+                        crate::models::ImportType::OAuth,
+                    );
+                    if let Some((summary, usage)) = quota {
+                        let _ = controller.save_subscription(&id, summary);
+                        let _ = controller.save_cursor_usage_summary(&id, usage);
+                    }
+                }
+            }
+            Err(error) => {
+                failed += 1;
+                let message = error.to_string();
+                if message.contains("失败") || message.contains("过期") || message.contains("失效")
+                {
+                    invalid += 1;
+                    if let Ok(mut controller) = state.0.lock() {
+                        let _ = controller.mark_token_invalid(&id);
+                    }
+                }
+            }
+        }
+        let _ = app.emit(
+            "account-refresh-progress",
+            RefreshAccountsProgress {
+                completed: completed + 1,
+                total,
+            },
+        );
+    }
+    let _ = app.emit("accounts-changed", ());
+    Ok(RefreshAccountsResult {
+        total,
+        failed,
+        invalid,
+        missing,
+    })
+}
+
+#[tauri::command]
 pub(crate) async fn get_cursor_usage(
     id: String,
     app: AppHandle,
@@ -1438,6 +1521,26 @@ pub(crate) async fn import_token_or_json(
     payload: String,
     app: AppHandle,
 ) -> std::result::Result<Account, String> {
+    if kind == ApplicationKind::Codex {
+        let import_app = app.clone();
+        let account = tauri::async_runtime::spawn_blocking(move || {
+            let session = crate::codex::session::from_import(&payload).map_err(error_text)?;
+            let import_type = crate::codex::session::import_type(&session);
+            let import_state = import_app.state::<AppState>();
+            let mut controller = import_state
+                .0
+                .lock()
+                .map_err(|_| "账户存储不可用".to_string())?;
+            controller
+                .save_imported_session(kind, label, session, import_type)
+                .map_err(error_text)
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+        refresh_tray(&app);
+        let _ = app.emit("accounts-changed", ());
+        return Ok(account);
+    }
     if kind != ApplicationKind::Cursor {
         return Err(AppError::ComingSoon.to_string());
     }
@@ -1498,6 +1601,16 @@ pub(crate) async fn start_official_login(
     label: Option<String>,
     app: AppHandle,
 ) -> std::result::Result<Account, String> {
+    if kind == ApplicationKind::Codex {
+        let login_id = app.state::<OauthLoginState>().begin();
+        let worker = app.clone();
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::codex::oauth::complete_codex_oauth(label, login_id, worker)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(error_text);
+    }
     if kind != ApplicationKind::Cursor {
         return Err(AppError::ComingSoon.to_string());
     }
@@ -1564,6 +1677,16 @@ pub(crate) fn switch_account(
     };
     refresh_tray(&app);
     let _ = app.emit("accounts-changed", ());
+    let application = state
+        .0
+        .lock()
+        .ok()
+        .and_then(|controller| controller.account(&id).ok())
+        .map(|account| account.application);
+    if application != Some(ApplicationKind::Cursor) {
+        emit_switch_progress(&app, &operation_id, &id, "complete", 100, "success");
+        return Ok(outcome);
+    }
     if outcome.restart_required {
         emit_switch_progress(&app, &operation_id, &id, "restartRequired", 100, "waiting");
         return Ok(outcome);
@@ -1606,6 +1729,118 @@ pub(crate) fn force_restart_cursor(
     }
     emit_switch_progress(&app, &operation_id, &id, "complete", 100, "success");
     Ok(())
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CodexApiKeyAccount {
+    pub(crate) label: String,
+    pub(crate) api_key: String,
+    pub(crate) base_url: Option<String>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CodexConnectionResult {
+    pub(crate) success: bool,
+    pub(crate) message: String,
+    pub(crate) response_time_ms: Option<u64>,
+}
+
+#[tauri::command]
+pub(crate) fn get_codex_api_key_account(
+    id: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<CodexApiKeyAccount, String> {
+    let (label, api_key, base_url) = state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())?
+        .codex_api_key_account(&id)
+        .map_err(error_text)?;
+    Ok(CodexApiKeyAccount {
+        label,
+        api_key,
+        base_url,
+    })
+}
+
+#[tauri::command]
+pub(crate) fn update_codex_api_key_account(
+    id: String,
+    api_key: String,
+    base_url: Option<String>,
+    label: Option<String>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> std::result::Result<Account, String> {
+    let account = state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())?
+        .update_codex_api_key(
+            &id,
+            &api_key,
+            base_url.as_deref(),
+            label.as_deref(),
+        )
+        .map_err(error_text)?;
+    refresh_tray(&app);
+    let _ = app.emit("accounts-changed", ());
+    Ok(account)
+}
+
+#[tauri::command]
+pub(crate) fn duplicate_codex_api_key_account(
+    id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> std::result::Result<Account, String> {
+    let account = state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())?
+        .duplicate_codex_api_key(&id)
+        .map_err(error_text)?;
+    refresh_tray(&app);
+    let _ = app.emit("accounts-changed", ());
+    Ok(account)
+}
+
+#[tauri::command]
+pub(crate) async fn test_codex_api_key_account(
+    id: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<CodexConnectionResult, String> {
+    let url = {
+        let controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+        let (_, session) = controller.require_codex_api_key(&id).map_err(error_text)?;
+        crate::codex::session::effective_base_url(&session)
+    };
+    tauri::async_runtime::spawn_blocking(move || probe_codex_endpoint(&url))
+        .await
+        .map_err(|error| error.to_string())
+}
+
+fn probe_codex_endpoint(url: &str) -> CodexConnectionResult {
+    let started = std::time::Instant::now();
+    let elapsed = || Some(started.elapsed().as_millis() as u64);
+    match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .and_then(|client| client.get(url).send())
+    {
+        Ok(response) => CodexConnectionResult {
+            success: true,
+            message: format!("HTTP {}", response.status().as_u16()),
+            response_time_ms: elapsed(),
+        },
+        Err(error) => CodexConnectionResult {
+            success: false,
+            message: error.without_url().to_string(),
+            response_time_ms: elapsed(),
+        },
+    }
 }
 
 pub(crate) fn error_text(error: AppError) -> String {

@@ -105,6 +105,8 @@ pub(crate) struct AccountSummary {
     pub(crate) days_remaining: Option<i64>,
     pub(crate) is_current: bool,
     pub(crate) status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) base_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -204,6 +206,8 @@ pub(crate) enum ImportType {
     Token,
     Jwt,
     Native,
+    #[serde(rename = "api_key")]
+    ApiKey,
 }
 
 impl Default for ImportType {
@@ -214,7 +218,7 @@ impl Default for ImportType {
 
 impl ImportType {
     pub(crate) fn supports_desktop_switch(&self) -> bool {
-        matches!(self, Self::OAuth | Self::Native)
+        matches!(self, Self::OAuth | Self::Native | Self::ApiKey)
     }
 }
 

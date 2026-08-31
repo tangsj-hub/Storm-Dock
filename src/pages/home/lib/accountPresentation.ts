@@ -21,5 +21,20 @@ export function subscriptionLabel(account: Account, t: Translate) {
 export function usageLabel(account: Account, t: Translate) {
   if (account.usage?.kind === "currency")
     return t("usageSpent", { amount: `$${(account.usage.used / 100).toFixed(2)}` });
+  if (account.usage?.kind === "percent")
+    return t("usagePercent", { percent: Math.round(account.usage.percent) });
   return account.subscription.plan?.toLowerCase() === "free" ? t("usageFree") : undefined;
+}
+
+export function endpointHost(url?: string) {
+  if (!url) return undefined;
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}
+
+export function accountKindKey(account: Account) {
+  return account.importType === "api_key" ? "accountKind.apiKey" : "accountKind.account";
 }

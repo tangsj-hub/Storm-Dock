@@ -11,6 +11,7 @@ export default defineConfig({
       input: {
         accounts: resolve(__dirname, "index.html"),
         add: resolve(__dirname, "add.html"),
+        edit: resolve(__dirname, "edit.html"),
         settings: resolve(__dirname, "settings.html"),
         usage: resolve(__dirname, "usage.html")
       }

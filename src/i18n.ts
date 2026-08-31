@@ -10,7 +10,7 @@ const resources = {
     launchSession: "启动会话", deleteSession: "删除会话", deleteSessionConfirm: "确认删除这个本地会话吗？", sessionsSourcePath: "JSONL 路径", sessionsResumeCommand: "恢复命令", selectSessionProject: "选择 {{project}} 项目中的会话",
     accounts: "账号管理", accountsWithCount: "账号管理（{{count}} 个）", accountSections: "账号功能", manage: "管理", apiKeys: "API Key", sessions: "会话", sessionsTitle: "会话", refreshSessions: "刷新会话", sessionsLoading: "正在读取会话...", sessionsEmptyTitle: "未发现会话", sessionsEmptyDescription: "本机 Codex 会话将在这里按项目显示。", sessionsCodexOnly: "会话列表目前支持 ChatGPT / Codex。", sessionsUnknownProject: "未关联项目", sessionsSelect: "从左侧选择一个会话", sessionsMessagesLoading: "正在读取会话内容...", sessionsMessagesEmpty: "该会话没有可显示的消息。", sessionsRoleUser: "你", sessionsRoleAssistant: "ChatGPT", toggleSessionProject: "展开或收缩 {{project}} 项目", sessionsJustNow: "刚刚", sessionsMinutesAgo: "{{count}} 分钟前", sessionsHoursAgo: "{{count}} 小时前", sessionsDaysAgo: "{{count}} 天前", plugins: "插件", pluginsWithCount: "插件（{{count}} 个）", mcp: "MCP", apiKeysTitle: "API Key", apiKeysDescription: "API Key 管理将在这里提供。", pluginsTitle: "插件", pluginsDescription: "已安装的 Cursor 与 Claude 插件", pluginsEmptyTitle: "未发现插件", pluginsEmptyDescription: "请先在 Cursor 中安装插件。", pluginEnabled: "已启用", pluginDisabled: "已禁用", pluginEnable: "启用插件", pluginDisable: "禁用插件", pluginDelete: "删除插件", pluginManagedByTeam: "由团队策略管理", pluginSourceMarketplace: "Marketplace", pluginSourceClaude: "Claude", pluginSourceLocal: "本地", pluginSourceCodex: "ChatGPT", pluginRestartRequired: "插件状态已更新。重启 {{application}} 后生效。", pluginCapabilitySkills: "Skills", pluginCapabilityMcps: "MCP", pluginCapabilityHooks: "Hooks", pluginHookTrustRequired: "需在 ChatGPT 中审核并信任", expandPluginChildren: "展开插件子级", collapsePluginChildren: "收缩插件子级", mcpTitle: "MCP", mcpDescription: "MCP 配置将在这里提供。", addAccountTitle: "新增账号", back: "返回账号列表", close: "关闭", export: "导出", exported: "账号已导出。", exportTitle: "导出 JSON", exportDescription: "导出内容包含登录凭证和会话信息，请妥善保管。", copy: "复制", copied: "已复制", download: "下载",
     cursor: "Cursor", codex: "ChatGPT", applicationSectionUnavailableTitle: "{{application}} · {{section}} 暂未支持", applicationSectionUnavailableDescription: "当前版本尚未提供 {{application}} 的{{section}}数据或管理功能。",
-    emptyTitle: "还没有账号", emptyDescription: "使用右上角的新增按钮添加 Cursor 账号。", tokenInvalid: "Token已失效",
+    emptyTitle: "还没有账号", emptyDescription: "使用右上角的新增按钮添加 {{application}} 账号。", tokenInvalid: "Token已失效",
     current: "使用中", switch: "切换", retry: "重试", usage: "用量", delete: "删除", remove: "删除 {{account}}", drag: "拖动 {{account}}", viewUsage: "查看 {{account}} 的用量", exportAccount: "导出 {{account}}",
     usageTitle: "Cursor用量", usageRefresh: "刷新用量", usageLoading: "正在查询 Cursor 用量...", usageRefreshed: "用量已更新。", usagePrimary: "Cursor Models", usageOnDemand: "Other Models", usageUsed: "{{label}} 已用 {{amount}}", usageUsedWithLimit: "{{label}} 已用 {{amount}}（{{percent}}%）", usageReset: "重置日期", usageResetsIn: "将在 {{count}} 天后重置", usageResetsToday: "今天重置", usageResetPassed: "重置日期已过", usageModels: "按模型用量", usageWeekly: "近 7 天", usageWeeklyUnavailable: "近 7 天用量暂不可用。", usageNoModels: "未返回模型请求数据。", usageUnknown: "--", usageAccountMismatch: "返回的用量数据与当前账号不匹配。", usageRequests: "请求", usageUnits: "加权单位", usageCheckedAt: "更新于 {{time}}", usageEmptyTitle: "暂无用量数据", usageEmptyDescription: "刷新后将在这里保存该账号的最近一次用量。",
     usageEvents: "调用明细", usageEventsUnavailable: "刷新后可查看近 7 天调用明细。", usageEventsEmpty: "所选小时段内没有调用记录。", usageRangeFrom: "从", usageRangeTo: "到", usageRangeAll: "全部", usageRangeWeek: "近 7 天", usageHour: "{{hour}} 时", usageHourList: "小时", usagePrevMonth: "上个月", usageNextMonth: "下个月", usageStatCalls: "调用", usageStatUnits: "加权单位", usageStatTokens: "Token", usageStatCost: "消耗", usageEventTime: "时间", usageEventModel: "模型", usageEventUnits: "加权单位", usageEventTokens: "Token", usageEventCost: "费用", usageEventKind: "类型", usageEventOnDemand: "按需", usageEventIncluded: "套餐内",
@@ -18,12 +18,12 @@ const resources = {
     officialLoginTitle: "官方登录", officialLoginDescription: "打开 Cursor 官方授权页，使用与 Cursor CLI 相同的 OAuth / PKCE 流程完成登录并导入账号。", startLogin: "开始登录", officialLoginWaiting: "请在浏览器中完成 Cursor 登录。授权完成后会自动导入账号。", officialLoginImporting: "正在导入官方登录会话...", officialLoginOpenBrowser: "重新打开授权页", cancelLogin: "取消登录", officialLoginCancelled: "已取消官方登录。",
     importCurrentTitle: "导入当前账号", importCurrentDescription: "读取当前 Cursor 的登录账号并加入列表。", cursorNotReady: "Cursor 未就绪。",
     tokenImportTitle: "Token / JSON 导入", tokenImportDescription: "粘贴 Access Token、JWT、user_01…::token 会话凭证或导出的 Cursor JSON。Token / JWT 账号可以查询用量，但不能切换登录 Cursor 桌面端。", tokenExampleTitle: "示例格式", tokenExampleSession: "会话凭证", tokenExampleJwt: "JWT / Access Token", tokenExampleJson: "JSON", credential: "凭证内容", cancel: "取消", import: "导入账号",
-    imported: "已导入 {{account}}。", deleted: "账号已删除。Cursor 当前登录状态未被修改。", reordered: "账号顺序已更新。",
+    imported: "已导入 {{account}}。", deleted: "账号已删除。本机当前登录状态未被修改。", reordered: "账号顺序已更新。",
     settingsTitle: "设置", language: "语言", languageDescription: "选择应用界面显示语言。", chinese: "简体中文", english: "English", languageSaved: "语言已切换为 {{language}}。", database: "账号数据库", databaseLoading: "正在读取数据库位置...", databaseMove: "迁移到同步目录", databaseMoved: "账号数据库已迁移。", databaseChooseDirectory: "选择同步目录",
     switchProgress: "账号切换进度", cursorLaunched: "账号已切换，Cursor 已启动。", cursorRestarted: "账号已切换，Cursor 已重新启动。", restartRequired: "账号已切换。需要重启 Cursor 才生效。",
     restartDialogTitle: "Cursor 正在运行", restartDialogDescription: "当前 Cursor 仍在使用旧登录状态。确认后将强制结束并重新启动 Cursor。", restartDialogWarning: "强制终止会丢失 Cursor 中未保存的内容。", cancelCountdown: "取消 ({{seconds}})", forceRestart: "强制终止并启动",
-    switchStages: { loading: "读取账号凭证", applying: "写入并验证 Cursor 会话", persisting: "保存账号状态", launching: "启动 Cursor", terminating: "正在结束 Cursor", restartRequired: "等待重启确认", complete: "切换完成", error: "切换失败" },
-    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "本机" }, subscriptionPlans: { pro: "Pro", free: "Free", enterprise: "Team" }, subscriptionDays: "{{count}}day", subscriptionToday: "今天", subscriptionUnknownExpiry: "--", subscriptionExpired: "已过期", usageRemaining: "剩余 {{amount}}", usageSpent: "已用 {{amount}}", usageFree: "$0.00"
+    switchStages: { loading: "读取账号凭证", applying: "写入并验证登录会话", persisting: "保存账号状态", launching: "启动应用", terminating: "正在结束应用", restartRequired: "等待重启确认", complete: "切换完成", error: "切换失败" },
+    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "本机", api_key: "API KEY" }, subscriptionPlans: { pro: "Pro", free: "Free", enterprise: "Team", chatgpt: "ChatGPT" }, subscriptionDays: "{{count}}day", subscriptionToday: "今天", subscriptionUnknownExpiry: "--", subscriptionExpired: "已过期", usageRemaining: "剩余 {{amount}}", usageSpent: "已用 {{amount}}", usageFree: "$0.00", usagePercent: "已用 {{percent}}%"
   }},
   en: { translation: {
     appName: "Storm Dock", settings: "Settings", applications: "Applications", sectionActions: "Current section actions", refresh: "Refresh local state", refreshing: "Refreshing local state and subscription details...", refreshed: "Local state refreshed.", subscriptionsRefreshed: "Local state and subscription details refreshed.", subscriptionsRefreshIncomplete: "{{reasons}}", addAccount: "Add account",
@@ -33,7 +33,7 @@ const resources = {
     launchSession: "Launch session", deleteSession: "Delete session", deleteSessionConfirm: "Delete this local session?", sessionsSourcePath: "JSONL path", sessionsResumeCommand: "Resume command", selectSessionProject: "Select sessions in {{project}}",
     accounts: "Account management", accountsWithCount: "Account management ({{count}})", accountSections: "Account sections", manage: "Manage", apiKeys: "API Key", sessions: "Sessions", sessionsTitle: "Sessions", refreshSessions: "Refresh sessions", sessionsLoading: "Reading sessions...", sessionsEmptyTitle: "No sessions found", sessionsEmptyDescription: "Local Codex sessions will appear here, grouped by project.", sessionsCodexOnly: "The session list currently supports ChatGPT / Codex.", sessionsUnknownProject: "No project", sessionsSelect: "Select a session from the list", sessionsMessagesLoading: "Reading session messages...", sessionsMessagesEmpty: "This session has no displayable messages.", sessionsRoleUser: "You", sessionsRoleAssistant: "ChatGPT", toggleSessionProject: "Expand or collapse {{project}} project", sessionsJustNow: "Just now", sessionsMinutesAgo: "{{count}} min ago", sessionsHoursAgo: "{{count}} hr ago", sessionsDaysAgo: "{{count}} days ago", plugins: "Plugins", pluginsWithCount: "Plugins ({{count}})", mcp: "MCP", apiKeysTitle: "API Key", apiKeysDescription: "API Key management will be available here.", pluginsTitle: "Plugins", pluginsDescription: "Installed Cursor and Claude plugins", pluginsEmptyTitle: "No plugins found", pluginsEmptyDescription: "Install a plugin in Cursor first.", pluginEnabled: "Enabled", pluginDisabled: "Disabled", pluginEnable: "Enable plugin", pluginDisable: "Disable plugin", pluginDelete: "Delete plugin", pluginManagedByTeam: "Managed by team policy", pluginSourceMarketplace: "Marketplace", pluginSourceClaude: "Claude", pluginSourceLocal: "Local", pluginSourceCodex: "ChatGPT", pluginRestartRequired: "Plugin state updated. Restart {{application}} for the change to take effect.", pluginCapabilitySkills: "Skills", pluginCapabilityMcps: "MCP", pluginCapabilityHooks: "Hooks", pluginHookTrustRequired: "Review and trust in ChatGPT", expandPluginChildren: "Expand plugin children", collapsePluginChildren: "Collapse plugin children", mcpTitle: "MCP", mcpDescription: "MCP configuration will be available here.", addAccountTitle: "Add account", back: "Back to accounts", close: "Close", export: "Export", exported: "Accounts exported.", exportTitle: "Export JSON", exportDescription: "Exported data includes sign-in credentials and session information. Keep it secure.", copy: "Copy", copied: "Copied", download: "Download",
     cursor: "Cursor", codex: "ChatGPT", applicationSectionUnavailableTitle: "{{application}} · {{section}} is not available yet", applicationSectionUnavailableDescription: "This version does not provide {{section}} data or management for {{application}}.",
-    emptyTitle: "No accounts yet", emptyDescription: "Use the Add account button to add a Cursor account.", tokenInvalid: "Token expired",
+    emptyTitle: "No accounts yet", emptyDescription: "Use the Add account button to add a {{application}} account.", tokenInvalid: "Token expired",
     current: "Current", switch: "Switch", retry: "Retry", usage: "Usage", delete: "Delete", remove: "Delete {{account}}", drag: "Drag {{account}}", viewUsage: "View usage for {{account}}", exportAccount: "Export {{account}}",
     usageTitle: "Cursor usage", usageRefresh: "Refresh usage", usageLoading: "Fetching Cursor usage...", usageRefreshed: "Usage updated.", usagePrimary: "Cursor Models", usageOnDemand: "Other Models", usageUsed: "{{label}} used {{amount}}", usageUsedWithLimit: "{{label}} used {{amount}} ({{percent}}%)", usageReset: "Reset date", usageResetsIn_one: "Resets in {{count}} day", usageResetsIn_other: "Resets in {{count}} days", usageResetsToday: "Resets today", usageResetPassed: "Reset date has passed", usageModels: "Usage by model", usageWeekly: "Last 7 days", usageWeeklyUnavailable: "Last 7 days usage is unavailable.", usageNoModels: "No model request data was returned.", usageUnknown: "--", usageAccountMismatch: "The returned usage data does not match this account.", usageRequests: "requests", usageUnits: "weighted units", usageCheckedAt: "Updated {{time}}", usageEmptyTitle: "No usage data yet", usageEmptyDescription: "Refresh to save the latest usage for this account here.",
     usageEvents: "Call details", usageEventsUnavailable: "Refresh to load the last 7 days of call details.", usageEventsEmpty: "No calls in the selected hour range.", usageRangeFrom: "From", usageRangeTo: "To", usageRangeAll: "All", usageRangeWeek: "Last 7 days", usageHour: "{{hour}}:00", usageHourList: "Hour", usagePrevMonth: "Previous month", usageNextMonth: "Next month", usageStatCalls: "Calls", usageStatUnits: "Weighted units", usageStatTokens: "Tokens", usageStatCost: "Spend", usageEventTime: "Time", usageEventModel: "Model", usageEventUnits: "Weighted units", usageEventTokens: "Tokens", usageEventCost: "Cost", usageEventKind: "Type", usageEventOnDemand: "On-demand", usageEventIncluded: "Included",
@@ -41,12 +41,12 @@ const resources = {
     officialLoginTitle: "Official login", officialLoginDescription: "Open Cursor’s official authorization page and complete the same OAuth / PKCE flow used by the Cursor CLI, then import the account.", startLogin: "Start login", officialLoginWaiting: "Finish signing in to Cursor in your browser. The account will be imported automatically after authorization.", officialLoginImporting: "Importing the official login session...", officialLoginOpenBrowser: "Reopen authorization page", cancelLogin: "Cancel login", officialLoginCancelled: "Official login cancelled.",
     importCurrentTitle: "Import current account", importCurrentDescription: "Read the active Cursor account and add it to the list.", cursorNotReady: "Cursor is not ready.",
     tokenImportTitle: "Import Token / JSON", tokenImportDescription: "Paste an access token, JWT, user_01…::token session credential, or exported Cursor JSON. Token / JWT accounts can query usage, but cannot switch into the Cursor desktop app.", tokenExampleTitle: "Example formats", tokenExampleSession: "Session token", tokenExampleJwt: "JWT / Access Token", tokenExampleJson: "JSON", credential: "Credential", cancel: "Cancel", import: "Import account",
-    imported: "Imported {{account}}.", deleted: "Account deleted. Cursor's active sign-in state was not changed.", reordered: "Account order updated.",
+    imported: "Imported {{account}}.", deleted: "Account deleted. The local sign-in state was not changed.", reordered: "Account order updated.",
     settingsTitle: "Settings", language: "Language", languageDescription: "Choose the display language for the application.", chinese: "Simplified Chinese", english: "English", languageSaved: "Language changed to {{language}}.", database: "Account database", databaseLoading: "Reading database location...", databaseMove: "Move to sync folder", databaseMoved: "Account database moved.", databaseChooseDirectory: "Choose sync folder",
     switchProgress: "Account switch progress", cursorLaunched: "Account switched and Cursor started.", cursorRestarted: "Account switched and Cursor restarted.", restartRequired: "Account switched. Restart Cursor for the change to take effect.",
     restartDialogTitle: "Cursor is running", restartDialogDescription: "Cursor is still using the previous sign-in state. Confirm to force quit and restart it.", restartDialogWarning: "Force quitting may lose unsaved work in Cursor.", cancelCountdown: "Cancel ({{seconds}})", forceRestart: "Force quit and start",
-    switchStages: { loading: "Reading account credentials", applying: "Writing and verifying the Cursor session", persisting: "Saving account state", launching: "Starting Cursor", terminating: "Quitting Cursor", restartRequired: "Waiting for restart confirmation", complete: "Switch complete", error: "Switch failed" },
-    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "Native" }, subscriptionPlans: { pro: "Pro", free: "Free", enterprise: "Team" }, subscriptionDays_one: "{{count}} day", subscriptionDays_other: "{{count}} days", subscriptionToday: "today", subscriptionUnknownExpiry: "--", subscriptionExpired: "Expired", usageRemaining: "{{amount}} left", usageSpent: "{{amount}} used", usageFree: "$0.00"
+    switchStages: { loading: "Reading account credentials", applying: "Writing and verifying the sign-in session", persisting: "Saving account state", launching: "Starting the app", terminating: "Quitting the app", restartRequired: "Waiting for restart confirmation", complete: "Switch complete", error: "Switch failed" },
+    importTypes: { oauth: "OAuth", token: "TOKEN", jwt: "JWT", native: "Native", api_key: "API KEY" }, subscriptionPlans: { pro: "Pro", free: "Free", enterprise: "Team", chatgpt: "ChatGPT" }, subscriptionDays_one: "{{count}} day", subscriptionDays_other: "{{count}} days", subscriptionToday: "today", subscriptionUnknownExpiry: "--", subscriptionExpired: "Expired", usageRemaining: "{{amount}} left", usageSpent: "{{amount}} used", usageFree: "$0.00", usagePercent: "{{percent}}% used"
   }}
 };
 
@@ -73,7 +73,30 @@ Object.assign(resources.zh.translation, {
   toolUninstallConfirmBtn: "确认卸载", toolUninstallUnsupported: "该安装方式无法从本应用安全卸载。",
   envBadge: { wsl: "WSL", windows: "Win", macos: "macOS", linux: "Linux" },
   toolSourcePrefix: "识别来源：",
-  toolSource: { native: "官方", curl: "curl", npm: "npm", nvm: "nvm", homebrew: "Homebrew", volta: "Volta", fnm: "fnm", mise: "mise", bun: "bun", pnpm: "pnpm", scoop: "Scoop", pip: "pip", system: "系统", local: "本地", internal: "官方" }
+  toolSource: { native: "官方", curl: "curl", npm: "npm", nvm: "nvm", homebrew: "Homebrew", volta: "Volta", fnm: "fnm", mise: "mise", bun: "bun", pnpm: "pnpm", scoop: "Scoop", pip: "pip", system: "系统", local: "本地", internal: "官方" },
+  officialLoginDescriptionChatgpt: "打开 ChatGPT 设备授权页，输入下方验证码完成登录并导入账号。",
+  officialLoginWaitingChatgpt: "请在浏览器中打开授权页并输入验证码。授权完成后会自动导入账号。",
+  importCurrentDescriptionChatgpt: "读取当前 ~/.codex 登录并加入列表。",
+  chatgptNotReady: "未检测到 ChatGPT 登录。",
+  apiKeyImport: "API Key",
+  apiKeyImportTitle: "API Key 导入",
+  apiKeyImportDescription: "填写 OpenAI API Key。可选自定义 Base URL；留空则使用官方接口。",
+  apiKeyField: "API Key",
+  baseUrlField: "Base URL（可选）",
+  baseUrlOptional: "https://api.openai.com/v1",
+  accountNote: "备注（可选）",
+  accountKind: { account: "Account", apiKey: "API Key" },
+  accountSwitched: "账号已切换。",
+  edit: "编辑",
+  editAccount: "编辑 {{account}}",
+  editApiKeyTitle: "编辑 API Key",
+  save: "保存",
+  duplicate: "复制",
+  accountDuplicated: "已复制账号。",
+  testConnection: "连通性",
+  apiKeyUpdated: "API Key 已保存。",
+  connectionOk: "可达（{{ms}}ms）",
+  connectionFail: "不可达：{{error}}"
 });
 Object.assign(resources.en.translation, {
   settingsTabs: "Settings sections", settingsTabGeneral: "General", settingsTabLocal: "Local", settingsTabAbout: "About",
@@ -96,7 +119,30 @@ Object.assign(resources.en.translation, {
   toolUninstallConfirmBtn: "Uninstall", toolUninstallUnsupported: "This install can't be uninstalled safely from the app.",
   envBadge: { wsl: "WSL", windows: "Win", macos: "macOS", linux: "Linux" },
   toolSourcePrefix: "Source: ",
-  toolSource: { native: "Native", curl: "curl", npm: "npm", nvm: "nvm", homebrew: "Homebrew", volta: "Volta", fnm: "fnm", mise: "mise", bun: "bun", pnpm: "pnpm", scoop: "Scoop", pip: "pip", system: "System", local: "Local", internal: "Native" }
+  toolSource: { native: "Native", curl: "curl", npm: "npm", nvm: "nvm", homebrew: "Homebrew", volta: "Volta", fnm: "fnm", mise: "mise", bun: "bun", pnpm: "pnpm", scoop: "Scoop", pip: "pip", system: "System", local: "Local", internal: "Native" },
+  officialLoginDescriptionChatgpt: "Open the ChatGPT device authorization page, enter the code below, then import the account.",
+  officialLoginWaitingChatgpt: "Open the authorization page in your browser and enter the code. The account will be imported automatically after authorization.",
+  importCurrentDescriptionChatgpt: "Read the current ~/.codex login and add it to the list.",
+  chatgptNotReady: "No ChatGPT login detected.",
+  apiKeyImport: "API Key",
+  apiKeyImportTitle: "Import API Key",
+  apiKeyImportDescription: "Enter an OpenAI API key. Optionally set a custom Base URL; leave it blank for the official endpoint.",
+  apiKeyField: "API Key",
+  baseUrlField: "Base URL (optional)",
+  baseUrlOptional: "https://api.openai.com/v1",
+  accountNote: "Note (optional)",
+  accountKind: { account: "Account", apiKey: "API Key" },
+  accountSwitched: "Account switched.",
+  edit: "Edit",
+  editAccount: "Edit {{account}}",
+  editApiKeyTitle: "Edit API Key",
+  save: "Save",
+  duplicate: "Duplicate",
+  accountDuplicated: "Account duplicated.",
+  testConnection: "Connectivity",
+  apiKeyUpdated: "API Key saved.",
+  connectionOk: "Reachable ({{ms}}ms)",
+  connectionFail: "Unreachable: {{error}}"
 });
 
 void i18n.use(initReactI18next).init({

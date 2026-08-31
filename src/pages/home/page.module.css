@@ -14,6 +14,7 @@
 .contextToolbar { align-items: center; display: flex; gap: 8px; justify-self: end; min-height: 34px; }
 .iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: #68717d; display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
 .iconButton:hover { background: #edf1f5; border-color: #dbe1e8; color: #20242c; }
+.iconButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }
 .spinning { animation: spin .8s linear infinite; }
 .addButton { align-items: center; background: #e76f51; border: 1px solid #e76f51; border-radius: 5px; color: #fff; display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; }
 .addButton:hover { background: #c9573d; }

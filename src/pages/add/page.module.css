@@ -25,8 +25,11 @@
 .exampleList { border-top: 1px solid #e6ebf1; display: grid; gap: 12px; padding: 12px; }
 .exampleList p { color: #66717d; font-size: 12px; font-weight: 650; }
 .exampleList pre { background: #f6f8fb; border: 1px solid #e6ebf1; border-radius: 4px; color: #374151; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; font-weight: 400; line-height: 1.5; margin: 6px 0 0; overflow-x: auto; padding: 9px 10px; white-space: pre-wrap; word-break: break-all; }
+.userCode { background: #f6f8fb; border: 1px dashed #c5daf8; border-radius: 5px; color: #1f3f73; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 22px; font-weight: 700; letter-spacing: .16em; margin: 0; padding: 12px; text-align: center; }
 .panel label { color: #45505d; display: grid; font-size: 13px; font-weight: 600; gap: 8px; }
-.panel textarea { border: 1px solid #cbd4de; border-radius: 5px; color: #20242c; line-height: 1.45; min-height: 150px; padding: 10px; resize: vertical; }
+.panel textarea, .panel input { border: 1px solid #cbd4de; border-radius: 5px; color: #20242c; font: inherit; }
+.panel textarea { line-height: 1.45; min-height: 150px; padding: 10px; resize: vertical; }
+.panel input { padding: 8px 10px; }
 .primary, .secondary { align-items: center; border: 1px solid transparent; border-radius: 5px; display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; justify-content: center; min-height: 34px; padding: 0 12px; text-decoration: none; width: fit-content; }
 .primary { background: #e76f51; border-color: #e76f51; color: #fff; }
 .primary:hover:not(:disabled) { background: #c9573d; }

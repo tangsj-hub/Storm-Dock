@@ -71,6 +71,7 @@ import {
 import logo from "../../assets/logo.svg";
 import codexIcon from "../../assets/codex.svg";
 import cursorIcon from "../../assets/cursor.svg";
+import grokIcon from "../../assets/tools/grok.svg";
 import "../../i18n";
 import {
   deleteCodexPlugin,
@@ -79,21 +80,31 @@ import {
   deleteCursorSession,
   deleteCursorSessions,
   deleteCursorPlugin,
+  deleteGrokPlugin,
+  deleteGrokSession,
+  deleteGrokSessions,
   getCodexSessionMessages,
   getCursorSessionMessages,
+  getGrokSessionMessages,
   launchCodexSession,
+  launchGrokSession,
   listAccounts,
   listApplications,
   listCodexPlugins,
   listCodexSessions,
   listCursorSessions,
   listCursorPlugins,
+  listGrokPlugins,
+  listGrokSessions,
   listMcpServers,
   setCodexPluginCapabilityEnabled,
   setCodexPluginEnabled,
   setCursorPluginEnabled,
+  setGrokPluginEnabled,
+  setMcpServerEnabled,
 } from "../../lib/api";
 import {
+  APPLICATION_KINDS,
   applicationKindFromQuery,
   canSwitchToDesktop,
   homePath,
@@ -125,6 +136,12 @@ import { SessionWorkspace, type SessionProvider } from "./components/SessionWork
 import type { WorkspaceSection, SwitchProgress } from "./types";
 
 type SwitchOutcome = { restartRequired: boolean };
+const APP_ICONS: Record<ApplicationKind, string> = {
+  cursor: cursorIcon,
+  codex: codexIcon,
+  grok: grokIcon,
+};
+
 const workspaceSections: Array<{
   id: WorkspaceSection;
   icon: ComponentType<{
@@ -483,6 +500,7 @@ export function HomePage() {
   );
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
+  const [mcpPending, setMcpPending] = useState<Set<string>>(() => new Set());
   const [codexSessions, setCodexSessions] = useState<CodexSession[]>([]);
   const [sessionsRefreshing, setSessionsRefreshing] = useState(false);
   const [expandedSessionProjects, setExpandedSessionProjects] = useState<
@@ -553,6 +571,7 @@ export function HomePage() {
   const selectApplication = (next: ApplicationKind) => {
     if (next === selected) return;
     setMcpServers([]);
+    setMcpPending(new Set());
     setAccounts([]);
     setSelected(next);
     window.history.replaceState({}, "", homePath(next));
@@ -775,12 +794,21 @@ export function HomePage() {
     setRefreshFailed(false);
     setNotice(t("refreshing"));
     try {
+      if (!selected || selected === "grok") {
+        await loadAccounts();
+        setNotice(t("refreshed"));
+        return;
+      }
       const result = await invoke<{
         total: number;
         failed: number;
         invalid: number;
         missing: number;
-      }>(isCursor ? "refresh_all_cursor_accounts" : "refresh_all_codex_accounts");
+      }>(
+        selected === "cursor"
+          ? "refresh_all_cursor_accounts"
+          : "refresh_all_codex_accounts",
+      );
       const failed = result.failed;
       await loadAccounts();
       const other = failed - result.invalid - result.missing;
@@ -902,6 +930,17 @@ export function HomePage() {
               await deleteCodexPlugin(plugin.id);
             },
           }
+        : selected === "grok"
+          ? {
+              application: selected,
+              list: listGrokPlugins,
+              setEnabled: async (plugin, enabled) => {
+                await setGrokPluginEnabled(plugin.id, enabled);
+              },
+              remove: async (plugin) => {
+                await deleteGrokPlugin(plugin.id);
+              },
+            }
         : {
             application: selected,
             accountId: currentAccountId,
@@ -919,14 +958,38 @@ export function HomePage() {
     () =>
       setNotice(
         t("pluginRestartRequired", {
-          application: selected === "codex" ? t("codex") : t("cursor"),
+          application: t(selected),
         }),
       ),
     [selected, t],
   );
+  const canToggleMcp = selected === "cursor" || selected === "codex";
+  const toggleMcp = async (server: McpServer) => {
+    if (!canToggleMcp || mcpPending.has(server.id)) return;
+    setMcpPending((current) => new Set(current).add(server.id));
+    try {
+      await setMcpServerEnabled(selected, server.id, !server.enabled);
+      setMcpServers((current) =>
+        current.map((item) =>
+          item.id === server.id ? { ...item, enabled: !server.enabled } : item,
+        ),
+      );
+      setNotice(t("mcpRestartRequired", { application: t(selected) }));
+    } catch (error) {
+      showError(error);
+    } finally {
+      setMcpPending((current) => {
+        const next = new Set(current);
+        next.delete(server.id);
+        return next;
+      });
+    }
+  };
   const sessionProvider = useMemo<SessionProvider>(
     () => selected === "codex"
       ? { id: "codex", label: t("codex"), icon: codexIcon, list: listCodexSessions, loadMessages: getCodexSessionMessages, remove: deleteCodexSession, removeMany: deleteCodexSessions, launch: launchCodexSession }
+      : selected === "grok"
+        ? { id: "grok", label: t("grok"), icon: grokIcon, list: listGrokSessions, loadMessages: getGrokSessionMessages, remove: deleteGrokSession, removeMany: deleteGrokSessions, launch: launchGrokSession }
       : { id: "cursor", label: t("cursor"), icon: cursorIcon, list: listCursorSessions, loadMessages: getCursorSessionMessages, remove: deleteCursorSession, removeMany: deleteCursorSessions },
     [selected, t],
   );
@@ -961,10 +1024,35 @@ export function HomePage() {
           <div className={styles.pluginList}>
             {mcpServers.map((server) => (
               <article className={styles.pluginCard} key={server.id}>
-                <span className={styles.pluginIcon}>
-                  <Waypoints aria-hidden="true" size={20} />
-                </span>
-                <strong>{server.name}</strong>
+                <div className={styles.pluginHeader}>
+                  <span className={styles.pluginIcon}>
+                    <Waypoints aria-hidden="true" size={20} />
+                  </span>
+                  <strong>{server.name}</strong>
+                  {canToggleMcp && (
+                    <div className={styles.pluginActions}>
+                      <Tooltip
+                        content={
+                          server.enabled ? t("mcpDisable") : t("mcpEnable")
+                        }
+                      >
+                        <button
+                          aria-checked={server.enabled}
+                          aria-label={
+                            server.enabled ? t("mcpDisable") : t("mcpEnable")
+                          }
+                          className={styles.pluginSwitch}
+                          disabled={busy || mcpPending.has(server.id)}
+                          onClick={() => void toggleMcp(server)}
+                          role="switch"
+                          type="button"
+                        >
+                          <span />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  )}
+                </div>
               </article>
             ))}
           </div>
@@ -1488,13 +1576,9 @@ export function HomePage() {
             value={selected}
           >
             <Tabs.List aria-label={t("applications")}>
-              {(["cursor", "codex"] as const).map((kind) => (
+              {APPLICATION_KINDS.map((kind) => (
                 <Tabs.Trigger className={styles.appTab} key={kind} value={kind}>
-                  <img
-                    alt=""
-                    className="ink"
-                    src={kind === "cursor" ? cursorIcon : codexIcon}
-                  />
+                  <img alt="" className="ink" src={APP_ICONS[kind]} />
                   {kind === "codex"
                     ? t("codex")
                     : (applications.find((app) => app.kind === kind)?.label ??

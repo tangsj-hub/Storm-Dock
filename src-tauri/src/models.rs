@@ -25,6 +25,7 @@ pub(crate) const MEMBERSHIP_TYPE_KEY: &str = "cursorAuth/stripeMembershipType";
 pub(crate) enum ApplicationKind {
     Cursor,
     Codex,
+    Grok,
 }
 
 impl ApplicationKind {
@@ -32,6 +33,7 @@ impl ApplicationKind {
         match self {
             Self::Cursor => "Cursor",
             Self::Codex => "Codex",
+            Self::Grok => "Grok Build",
         }
     }
 }
@@ -73,6 +75,7 @@ pub(crate) struct PluginCapability {
 pub(crate) struct McpServer {
     pub(crate) id: String,
     pub(crate) name: String,
+    pub(crate) enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

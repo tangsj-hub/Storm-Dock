@@ -135,6 +135,7 @@ body { margin: 0; min-width: 820px; overflow: hidden; }
 #root { position: relative; z-index: 1; }
 html[data-app] body::before { background: url("../assets/cursor.svg") center / min(42vmin, 420px) no-repeat; content: ""; inset: 0; opacity: var(--watermark-opacity); pointer-events: none; position: fixed; z-index: 0; }
 html[data-app="codex"] body::before { background-image: url("../assets/codex.svg"); }
+html[data-app="grok"] body::before { background-image: url("../assets/tools/grok.svg"); }
 html[data-theme="dark"][data-app] body::before { filter: invert(1); }
 html[data-theme="dark"] img.ink { filter: invert(1); }
 html:not([data-app]) body::before { content: none; }

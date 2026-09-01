@@ -80,6 +80,30 @@ pub(crate) async fn list_codex_plugins() -> Vec<Plugin> {
 }
 
 #[tauri::command]
+pub(crate) async fn list_grok_plugins() -> Vec<Plugin> {
+    tauri::async_runtime::spawn_blocking(crate::grok::plugins::list_plugins)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn set_grok_plugin_enabled(
+    id: String,
+    enabled: bool,
+) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::grok::plugins::set_plugin_enabled(&id, enabled))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn delete_grok_plugin(id: String) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::grok::plugins::delete_plugin(&id))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub(crate) async fn list_codex_sessions() -> Vec<CodexSession> {
     tauri::async_runtime::spawn_blocking(crate::codex_sessions::list_sessions)
         .await
@@ -127,6 +151,51 @@ pub(crate) async fn delete_codex_sessions(ids: Vec<String>) -> SessionDeleteBatc
 #[tauri::command]
 pub(crate) async fn launch_codex_session(id: String) -> std::result::Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || crate::codex_sessions::launch_session(&id))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn list_grok_sessions() -> Vec<CodexSession> {
+    tauri::async_runtime::spawn_blocking(crate::grok_sessions::list_sessions)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn get_grok_session_messages(id: String) -> Vec<CodexSessionMessage> {
+    tauri::async_runtime::spawn_blocking(move || crate::grok_sessions::load_messages(&id))
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn delete_grok_session(id: String) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::grok_sessions::delete_session(&id))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn delete_grok_sessions(ids: Vec<String>) -> SessionDeleteBatchResult {
+    let fallback_ids = ids.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (deleted_ids, failed_ids) = crate::grok_sessions::delete_sessions(&ids);
+        SessionDeleteBatchResult {
+            deleted_ids,
+            failed_ids,
+        }
+    })
+    .await
+    .unwrap_or(SessionDeleteBatchResult {
+        deleted_ids: Vec::new(),
+        failed_ids: fallback_ids,
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn launch_grok_session(id: String) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::grok_sessions::launch_session(&id))
         .await
         .map_err(|error| error.to_string())?
 }
@@ -227,6 +296,36 @@ pub(crate) async fn list_mcp_servers(kind: ApplicationKind) -> Vec<McpServer> {
     tauri::async_runtime::spawn_blocking(move || collect_mcp_servers(kind))
         .await
         .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) fn set_mcp_server_enabled(
+    kind: ApplicationKind,
+    id: String,
+    enabled: bool,
+) -> std::result::Result<(), String> {
+    if id.is_empty() || id.contains('\0') || id.contains("..") {
+        return Err("无效的 MCP 标识。".into());
+    }
+    match kind {
+        ApplicationKind::Codex => {
+            let home = std::env::var_os("HOME").ok_or_else(|| "无法读取用户目录。".to_string())?;
+            set_toml_mcp_enabled(
+                &PathBuf::from(home).join(".codex/config.toml"),
+                &id,
+                enabled,
+            )
+        }
+        ApplicationKind::Cursor => {
+            let home = std::env::var_os("HOME").ok_or_else(|| "无法读取用户目录。".to_string())?;
+            set_json_mcp_enabled(
+                &PathBuf::from(home).join(".cursor/mcp.json"),
+                &id,
+                enabled,
+            )
+        }
+        ApplicationKind::Grok => Err("Grok MCP 暂不支持开关。".into()),
+    }
 }
 
 fn collect_codex_plugins() -> Vec<Plugin> {
@@ -428,9 +527,7 @@ fn update_toml_enabled(
         .skip(start + 1)
         .find_map(|(index, line)| line.trim_start().starts_with('[').then_some(index))
         .unwrap_or(lines.len());
-    if let Some(index) =
-        (start + 1..end).find(|index| lines[*index].trim_start().starts_with("enabled"))
-    {
+    if let Some(index) = (start + 1..end).find(|index| toml_key_eq(&lines[*index], "enabled")) {
         lines[index] = format!("enabled = {enabled}");
     } else {
         lines.insert(end, format!("enabled = {enabled}"));
@@ -443,6 +540,12 @@ fn toml_key(value: &str) -> String {
 }
 fn toml_value(value: &str) -> String {
     toml::Value::String(value.into()).to_string()
+}
+
+fn toml_key_eq(line: &str, key: &str) -> bool {
+    line.trim_start()
+        .split_once('=')
+        .is_some_and(|(left, _)| left.trim() == key)
 }
 
 fn add_codex_plugin_metadata(
@@ -658,34 +761,128 @@ fn skill_description(path: &PathBuf) -> Option<String> {
 }
 
 fn collect_mcp_servers(kind: ApplicationKind) -> Vec<McpServer> {
-    let Some(home) = std::env::var_os("HOME") else {
-        return Vec::new();
-    };
     match kind {
-        ApplicationKind::Codex => {
-            fs::read_to_string(PathBuf::from(home).join(".codex/config.toml"))
-                .ok()
-                .and_then(|content| content.parse::<toml::Value>().ok())
-                .and_then(|value| {
-                    value
-                        .get("mcp_servers")
-                        .and_then(toml::Value::as_table)
-                        .cloned()
-                })
-                .map(|servers| {
-                    servers
-                        .keys()
-                        .cloned()
-                        .map(|id| McpServer {
-                            name: id.clone(),
-                            id,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default()
-        }
-        ApplicationKind::Cursor => Vec::new(),
+        ApplicationKind::Codex => std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join(".codex/config.toml"))
+            .and_then(|path| fs::read_to_string(path).ok())
+            .map(|content| mcp_servers_from_toml(&content))
+            .unwrap_or_default(),
+        ApplicationKind::Grok => crate::grok::config::default_config_path()
+            .and_then(|path| fs::read_to_string(path).ok())
+            .map(|content| mcp_servers_from_toml(&content))
+            .unwrap_or_default(),
+        ApplicationKind::Cursor => std::env::var_os("HOME")
+            .map(|home| PathBuf::from(home).join(".cursor/mcp.json"))
+            .and_then(|path| fs::read_to_string(path).ok())
+            .map(|content| mcp_servers_from_json(&content))
+            .unwrap_or_default(),
     }
+}
+
+fn mcp_servers_from_toml(text: &str) -> Vec<McpServer> {
+    text.parse::<toml::Value>()
+        .ok()
+        .and_then(|value| {
+            value
+                .get("mcp_servers")
+                .and_then(toml::Value::as_table)
+                .cloned()
+        })
+        .map(|servers| {
+            servers
+                .iter()
+                .filter(|(_, server)| server.is_table())
+                .map(|(id, server)| McpServer {
+                    id: id.clone(),
+                    name: id.clone(),
+                    enabled: server
+                        .get("enabled")
+                        .and_then(toml::Value::as_bool)
+                        .unwrap_or(true),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn mcp_servers_from_json(text: &str) -> Vec<McpServer> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|value| value.get("mcpServers").and_then(serde_json::Value::as_object).cloned())
+        .map(|servers| {
+            servers
+                .iter()
+                .filter(|(_, server)| server.is_object())
+                .map(|(id, server)| McpServer {
+                    id: id.clone(),
+                    name: id.clone(),
+                    enabled: server.get("disabled").and_then(serde_json::Value::as_bool) != Some(true),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn set_toml_mcp_enabled(path: &PathBuf, id: &str, enabled: bool) -> std::result::Result<(), String> {
+    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let headers = mcp_toml_headers(id);
+    let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
+    let Some(start) = lines
+        .iter()
+        .position(|line| headers.iter().any(|header| line.trim() == header))
+    else {
+        return Err("MCP 不存在。".into());
+    };
+    let end = lines
+        .iter()
+        .enumerate()
+        .skip(start + 1)
+        .find_map(|(index, line)| line.trim_start().starts_with('[').then_some(index))
+        .unwrap_or(lines.len());
+    if let Some(index) = (start + 1..end).find(|index| toml_key_eq(&lines[*index], "enabled")) {
+        lines[index] = format!("enabled = {enabled}");
+    } else {
+        lines.insert(end, format!("enabled = {enabled}"));
+    }
+    fs::write(path, format!("{}\n", lines.join("\n"))).map_err(|error| error.to_string())
+}
+
+fn mcp_toml_headers(id: &str) -> Vec<String> {
+    let quoted = format!("[mcp_servers.{}]", toml_value(id));
+    let bare = id
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || character == '_' || character == '-')
+        && !id.is_empty();
+    if bare {
+        vec![format!("[mcp_servers.{id}]"), quoted]
+    } else {
+        vec![quoted]
+    }
+}
+
+fn set_json_mcp_enabled(path: &PathBuf, id: &str, enabled: bool) -> std::result::Result<(), String> {
+    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let mut value: serde_json::Value =
+        serde_json::from_str(&content).map_err(|error| error.to_string())?;
+    let server = value
+        .get_mut("mcpServers")
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|servers| servers.get_mut(id))
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or_else(|| "MCP 不存在。".to_string())?;
+    if enabled {
+        server.remove("disabled");
+    } else {
+        server.insert("disabled".into(), serde_json::Value::Bool(true));
+    }
+    fs::write(
+        path,
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&value).map_err(|error| error.to_string())?
+        ),
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn collect_cursor_plugins(session: Option<Session>) -> Vec<Plugin> {
@@ -1595,6 +1792,26 @@ pub(crate) async fn import_token_or_json(
         let _ = app.emit("accounts-changed", ());
         return Ok(account);
     }
+    if kind == ApplicationKind::Grok {
+        let import_app = app.clone();
+        let account = tauri::async_runtime::spawn_blocking(move || {
+            let session = crate::grok::session::from_import(&payload).map_err(error_text)?;
+            let import_type = crate::grok::session::import_type(&session);
+            let import_state = import_app.state::<AppState>();
+            let mut controller = import_state
+                .0
+                .lock()
+                .map_err(|_| "账户存储不可用".to_string())?;
+            controller
+                .save_imported_session(kind, label, session, import_type)
+                .map_err(error_text)
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+        refresh_tray(&app);
+        let _ = app.emit("accounts-changed", ());
+        return Ok(account);
+    }
     if kind != ApplicationKind::Cursor {
         return Err(AppError::ComingSoon.to_string());
     }
@@ -1660,6 +1877,16 @@ pub(crate) async fn start_official_login(
         let worker = app.clone();
         return tauri::async_runtime::spawn_blocking(move || {
             crate::codex::oauth::complete_codex_oauth(label, login_id, worker)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(error_text);
+    }
+    if kind == ApplicationKind::Grok {
+        let login_id = app.state::<OauthLoginState>().begin();
+        let worker = app.clone();
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::grok::oauth::complete_grok_oauth(label, login_id, worker)
         })
         .await
         .map_err(|error| error.to_string())?
@@ -1867,19 +2094,38 @@ pub(crate) async fn test_codex_api_key_account(
     base_url: Option<String>,
     state: State<'_, AppState>,
 ) -> std::result::Result<CodexConnectionResult, String> {
-    let url = {
+    let (url, api_key, grok) = {
         let controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
-        let (_, session) = controller.require_codex_api_key(&id).map_err(error_text)?;
-        base_url
+        let (account, session) = controller.require_codex_api_key(&id).map_err(error_text)?;
+        let grok = account.application == ApplicationKind::Grok;
+        let url = base_url
             .as_deref()
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_owned)
-            .unwrap_or_else(|| crate::codex::session::effective_base_url(&session))
+            .unwrap_or_else(|| {
+                if grok {
+                    crate::grok::session::effective_base_url(&session)
+                } else {
+                    crate::codex::session::effective_base_url(&session)
+                }
+            });
+        let api_key = if grok {
+            crate::grok::session::api_key(&crate::grok::session::auth_value(&session).map_err(error_text)?)
+        } else {
+            crate::codex::session::api_key(&crate::codex::session::auth_value(&session).map_err(error_text)?)
+        };
+        (url, api_key, grok)
     };
-    tauri::async_runtime::spawn_blocking(move || probe_codex_endpoint(&url))
-        .await
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        if grok {
+            probe_grok_endpoint(&url, api_key.as_deref())
+        } else {
+            probe_codex_endpoint(&url)
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())
 }
 
 fn probe_codex_endpoint(url: &str) -> CodexConnectionResult {
@@ -1903,6 +2149,130 @@ fn probe_codex_endpoint(url: &str) -> CodexConnectionResult {
     }
 }
 
+fn probe_grok_endpoint(base_url: &str, api_key: Option<&str>) -> CodexConnectionResult {
+    let started = std::time::Instant::now();
+    let elapsed = || Some(started.elapsed().as_millis() as u64);
+    let url = format!("{}/models", base_url.trim_end_matches('/'));
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return CodexConnectionResult {
+                success: false,
+                message: error.without_url().to_string(),
+                response_time_ms: elapsed(),
+            };
+        }
+    };
+    let mut request = client.get(&url);
+    if let Some(api_key) = api_key.filter(|value| !value.is_empty()) {
+        request = request.bearer_auth(api_key);
+    }
+    match request.send() {
+        Ok(response) => CodexConnectionResult {
+            success: response.status().is_success(),
+            message: format!("HTTP {}", response.status().as_u16()),
+            response_time_ms: elapsed(),
+        },
+        Err(error) => CodexConnectionResult {
+            success: false,
+            message: error.without_url().to_string(),
+            response_time_ms: elapsed(),
+        },
+    }
+}
+
 pub(crate) fn error_text(error: AppError) -> String {
     error.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_config_has_no_mcp_servers() {
+        assert!(mcp_servers_from_toml("").is_empty());
+        assert!(mcp_servers_from_toml("[cli]\ninstaller = \"internal\"\n").is_empty());
+    }
+
+    #[test]
+    fn lists_mcp_server_names_from_toml() {
+        let servers = mcp_servers_from_toml(
+            "[mcp_servers.foo]\ncommand = \"npx\"\n\n[mcp_servers.bar]\nurl = \"https://example.com\"\n",
+        );
+        let ids: Vec<_> = servers.iter().map(|server| server.id.as_str()).collect();
+        assert_eq!(ids, ["bar", "foo"]);
+        assert!(servers.iter().all(|server| server.enabled));
+    }
+
+    #[test]
+    fn toml_mcp_enabled_false_is_disabled() {
+        let servers = mcp_servers_from_toml(
+            "[mcp_servers.foo]\ncommand = \"npx\"\nenabled = false\nenabled_tools = [\"a\"]\n",
+        );
+        assert_eq!(servers.len(), 1);
+        assert!(!servers[0].enabled);
+    }
+
+    #[test]
+    fn toggling_toml_mcp_does_not_rewrite_enabled_tools() {
+        let path = std::env::temp_dir().join(format!(
+            "storm-dock-mcp-{}.toml",
+            uuid::Uuid::new_v4()
+        ));
+        fs::write(
+            &path,
+            "[mcp_servers.foo]\ncommand = \"npx\"\nenabled_tools = [\"a\"]\n",
+        )
+        .unwrap();
+        set_toml_mcp_enabled(&path, "foo", false).unwrap();
+        let next = fs::read_to_string(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        assert!(next.contains("enabled = false"));
+        assert!(next.contains("enabled_tools = [\"a\"]"));
+        assert!(!mcp_servers_from_toml(&next)[0].enabled);
+    }
+
+    #[test]
+    fn missing_toml_mcp_does_not_create_a_table() {
+        let path = std::env::temp_dir().join(format!(
+            "storm-dock-mcp-missing-{}.toml",
+            uuid::Uuid::new_v4()
+        ));
+        fs::write(&path, "[cli]\ninstaller = \"internal\"\n").unwrap();
+        let error = set_toml_mcp_enabled(&path, "foo", false).unwrap_err();
+        let next = fs::read_to_string(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        assert_eq!(error, "MCP 不存在。");
+        assert!(!next.contains("mcp_servers"));
+    }
+
+    #[test]
+    fn json_mcp_toggle_preserves_command_and_args() {
+        let path = std::env::temp_dir().join(format!(
+            "storm-dock-mcp-{}.json",
+            uuid::Uuid::new_v4()
+        ));
+        fs::write(
+            &path,
+            r#"{"mcpServers":{"foo":{"command":"npx","args":["-y","demo"]}}}"#,
+        )
+        .unwrap();
+        set_json_mcp_enabled(&path, "foo", false).unwrap();
+        let disabled = fs::read_to_string(&path).unwrap();
+        set_json_mcp_enabled(&path, "foo", true).unwrap();
+        let enabled = fs::read_to_string(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        let off = mcp_servers_from_json(&disabled);
+        let on = mcp_servers_from_json(&enabled);
+        assert_eq!(off.len(), 1);
+        assert!(!off[0].enabled);
+        assert!(on[0].enabled);
+        assert!(disabled.contains("\"command\": \"npx\""));
+        assert!(disabled.contains("\"args\""));
+        assert!(!enabled.contains("disabled"));
+    }
 }

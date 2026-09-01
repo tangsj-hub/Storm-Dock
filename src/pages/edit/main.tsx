@@ -107,7 +107,7 @@ function EditPage() {
             <div className={styles.field}>
               <span>{t("baseUrlField")}</span>
               <div className={styles.endpoint}>
-                <input aria-label={t("baseUrlField")} autoComplete="off" onChange={(event) => { setBaseUrl(event.target.value); setProbe(undefined); }} placeholder={t("baseUrlOptional")} spellCheck={false} type="url" value={baseUrl} />
+                <input aria-label={t("baseUrlField")} autoComplete="off" onChange={(event) => { setBaseUrl(event.target.value); setProbe(undefined); }} placeholder={kind === "grok" ? "https://api.x.ai/v1" : t("baseUrlOptional")} spellCheck={false} type="url" value={baseUrl} />
                 <button className={styles.probe} disabled={testing} onClick={() => void test()} type="button">
                   <Activity aria-hidden="true" className={testing ? styles.spinning : undefined} size={16} />
                   {t("testConnection")}

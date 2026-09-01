@@ -1,7 +1,10 @@
-export type ApplicationKind = "cursor" | "codex";
+export type ApplicationKind = "cursor" | "codex" | "grok";
+
+export const APPLICATION_KINDS = ["cursor", "codex", "grok"] as const;
 
 export function applicationKindFromQuery(search = window.location.search): ApplicationKind {
-  return new URLSearchParams(search).get("kind") === "codex" ? "codex" : "cursor";
+  const kind = new URLSearchParams(search).get("kind");
+  return kind === "codex" || kind === "grok" ? kind : "cursor";
 }
 
 export function syncDocumentAppKind(kind?: ApplicationKind) {
@@ -21,9 +24,9 @@ export function editAccountPath(kind: ApplicationKind, id: string) {
 
 /** Host-neutral plugin contract. New integrations map their native format here. */
 export type PluginCapability = { id: string; name: string; description?: string; kind: "skill" | "mcp" | "hook"; enabled: boolean };
-export type PluginSource = "local" | "marketplace" | "claude" | "codex" | "other";
+export type PluginSource = "local" | "marketplace" | "claude" | "codex" | "grok" | "other";
 export type Plugin = { id: string; name: string; description?: string; icon?: string; source: PluginSource; enabled: boolean; teamRequired: boolean; capabilities: PluginCapability[] };
-export type McpServer = { id: string; name: string };
+export type McpServer = { id: string; name: string; enabled: boolean };
 
 export type LocalSession = { id: string; title: string; projectDir?: string; sourcePath: string; updatedAt: number };
 export type LocalSessionMessage = { role: "user" | "assistant"; content: string; timestamp?: number };

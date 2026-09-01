@@ -11,11 +11,17 @@ export const getPreserveCodexOfficialAuth = () => invoke<boolean>("get_preserve_
 export const setPreserveCodexOfficialAuth = (enabled: boolean) => invoke<void>("set_preserve_codex_official_auth", { enabled });
 export const listCursorPlugins = () => invoke<Plugin[]>("list_cursor_plugins");
 export const listCodexPlugins = () => invoke<Plugin[]>("list_codex_plugins");
+export const listGrokPlugins = () => invoke<Plugin[]>("list_grok_plugins");
 export const listCodexSessions = () => invoke<CodexSession[]>("list_codex_sessions");
 export const getCodexSessionMessages = (id: string) => invoke<CodexSessionMessage[]>("get_codex_session_messages", { id });
 export const deleteCodexSession = (id: string) => invoke<void>("delete_codex_session", { id });
 export const deleteCodexSessions = (ids: string[]) => invoke<SessionDeleteBatchResult>("delete_codex_sessions", { ids });
 export const launchCodexSession = (id: string) => invoke("launch_codex_session", { id });
+export const listGrokSessions = () => invoke<LocalSession[]>("list_grok_sessions");
+export const getGrokSessionMessages = (id: string) => invoke<LocalSessionMessage[]>("get_grok_session_messages", { id });
+export const deleteGrokSession = (id: string) => invoke<void>("delete_grok_session", { id });
+export const deleteGrokSessions = (ids: string[]) => invoke<SessionDeleteBatchResult>("delete_grok_sessions", { ids });
+export const launchGrokSession = (id: string) => invoke("launch_grok_session", { id });
 export const listCursorSessions = () => invoke<LocalSession[]>("list_cursor_sessions");
 export const getCursorSessionMessages = (id: string) => invoke<LocalSessionMessage[]>("get_cursor_session_messages", { id });
 export const deleteCursorSession = (id: string) => invoke<void>("delete_cursor_session", { id });
@@ -23,6 +29,9 @@ export const deleteCursorSessions = (ids: string[]) => invoke<SessionDeleteBatch
 export const setCodexPluginEnabled = (id: string, enabled: boolean) => invoke("set_codex_plugin_enabled", { id, enabled });
 export const setCodexPluginCapabilityEnabled = (pluginId: string, capabilityId: string, kind: "skill" | "mcp", enabled: boolean) => invoke("set_codex_plugin_capability_enabled", { pluginId, capabilityId, kind, enabled });
 export const deleteCodexPlugin = (id: string) => invoke("delete_codex_plugin", { id });
+export const setGrokPluginEnabled = (id: string, enabled: boolean) => invoke("set_grok_plugin_enabled", { id, enabled });
+export const deleteGrokPlugin = (id: string) => invoke("delete_grok_plugin", { id });
 export const listMcpServers = (kind: ApplicationKind) => invoke<McpServer[]>("list_mcp_servers", { kind });
+export const setMcpServerEnabled = (kind: ApplicationKind, id: string, enabled: boolean) => invoke("set_mcp_server_enabled", { kind, id, enabled });
 export const setCursorPluginEnabled = (id: string, source: Plugin["source"], enabled: boolean) => invoke("set_cursor_plugin_enabled", { id, source, enabled });
 export const deleteCursorPlugin = (id: string, source: Plugin["source"]) => invoke("delete_cursor_plugin", { id, source });

@@ -4,6 +4,8 @@ mod codex_sessions;
 mod commands;
 mod cursor;
 mod cursor_sessions;
+mod grok;
+mod grok_sessions;
 mod error;
 mod models;
 mod sql_backup;
@@ -74,11 +76,17 @@ pub fn run() {
             commands::list_applications,
             commands::list_cursor_plugins,
             commands::list_codex_plugins,
+            commands::list_grok_plugins,
             commands::list_codex_sessions,
             commands::get_codex_session_messages,
             commands::delete_codex_session,
             commands::delete_codex_sessions,
             commands::launch_codex_session,
+            commands::list_grok_sessions,
+            commands::get_grok_session_messages,
+            commands::delete_grok_session,
+            commands::delete_grok_sessions,
+            commands::launch_grok_session,
             commands::list_cursor_sessions,
             commands::get_cursor_session_messages,
             commands::delete_cursor_session,
@@ -86,7 +94,10 @@ pub fn run() {
             commands::set_codex_plugin_enabled,
             commands::set_codex_plugin_capability_enabled,
             commands::delete_codex_plugin,
+            commands::set_grok_plugin_enabled,
+            commands::delete_grok_plugin,
             commands::list_mcp_servers,
+            commands::set_mcp_server_enabled,
             commands::set_cursor_plugin_enabled,
             commands::delete_cursor_plugin,
             commands::list_accounts,

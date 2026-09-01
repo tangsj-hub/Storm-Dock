@@ -24,6 +24,8 @@ pub(crate) enum AppError {
     CursorNotDetected,
     #[error("未检测到 ChatGPT 登录")]
     CodexNotDetected,
+    #[error("未检测到 Grok 登录")]
+    GrokNotDetected,
     #[error("could not verify the Cursor session; the previous state was restored")]
     VerifyFailed,
     #[error("could not restore the previous Cursor session")]

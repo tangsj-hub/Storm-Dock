@@ -29,12 +29,12 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
   const subscription = subscriptionLabel(account, t);
   const usage = usageLabel(account, t);
-  const host = kind === "codex" ? endpointHost(account.baseUrl) : undefined;
+  const host = kind !== "cursor" ? endpointHost(account.baseUrl) : undefined;
   const isApiKey = account.importType === "api_key";
   return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical aria-label={t("drag", { account: account.label })} className={styles.dragHandle} size={24} {...attributes} {...listeners} />
     <div className={styles.accountCopy}><strong>{account.label}</strong><div className={styles.accountMeta}>
-      {kind === "codex" && <span className={`${styles.kindBadge} ${isApiKey ? styles.kindApiKey : styles.kindAccount}`}>{isApiKey ? <KeyRound aria-hidden="true" size={11} /> : <UserRound aria-hidden="true" size={11} />}{t(accountKindKey(account))}</span>}
+      {kind !== "cursor" && <span className={`${styles.kindBadge} ${isApiKey ? styles.kindApiKey : styles.kindAccount}`}>{isApiKey ? <KeyRound aria-hidden="true" size={11} /> : <UserRound aria-hidden="true" size={11} />}{t(accountKindKey(account))}</span>}
       {subscription && <span className={`${styles.metaBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name} · {subscription.expiry}</span>}
       {usage && <span className={styles.metaBadge}>{usage}</span>}
       {host && <span className={styles.metaBadge}>{host}</span>}

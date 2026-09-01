@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::apps::{ApplicationAdapter, CodexAdapter, CursorAdapter};
+use crate::apps::{ApplicationAdapter, CodexAdapter, CursorAdapter, GrokAdapter};
 use crate::cursor::session::{raw_export_from_session, session_display_label};
 use crate::cursor::usage::{cursor_usage_from_snapshot, update_export_usage, usage_pools};
 use crate::error::{AppError, Result};
@@ -31,6 +31,7 @@ pub(crate) struct Controller {
     database: Connection,
     cursor: CursorAdapter,
     codex: CodexAdapter,
+    grok: GrokAdapter,
 }
 
 impl Controller {
@@ -49,6 +50,7 @@ impl Controller {
             database,
             cursor: CursorAdapter::default(),
             codex: CodexAdapter::default(),
+            grok: GrokAdapter::default(),
         };
         controller.migrate_raw_exports()?;
         Ok(controller)
@@ -110,6 +112,7 @@ impl Controller {
         match kind {
             ApplicationKind::Cursor => "cursor",
             ApplicationKind::Codex => "codex",
+            ApplicationKind::Grok => "grok",
         }
     }
 
@@ -142,6 +145,7 @@ impl Controller {
             let application = match row.get::<_, String>(1)?.as_str() {
                 "cursor" => ApplicationKind::Cursor,
                 "codex" => ApplicationKind::Codex,
+                "grok" => ApplicationKind::Grok,
                 _ => return Err(AppError::Message("数据库中的应用类型无效".into())),
             };
             accounts.push(Account {
@@ -228,6 +232,7 @@ impl Controller {
         match kind {
             ApplicationKind::Cursor => &self.cursor,
             ApplicationKind::Codex => &self.codex,
+            ApplicationKind::Grok => &self.grok,
         }
     }
 
@@ -257,7 +262,7 @@ impl Controller {
     }
 
     pub(crate) fn statuses(&self) -> Vec<ApplicationStatus> {
-        vec![self.cursor.detect(), self.codex.detect()]
+        vec![self.cursor.detect(), self.codex.detect(), self.grok.detect()]
     }
 
     pub(crate) fn current_cursor_session(&self) -> Result<Session> {
@@ -267,6 +272,7 @@ impl Controller {
     pub(crate) fn accounts(&self, kind: ApplicationKind) -> Vec<AccountSummary> {
         let current_session = match kind {
             ApplicationKind::Codex => self.codex.live_match_session().ok(),
+            ApplicationKind::Grok => self.grok.live_match_session().ok(),
             ApplicationKind::Cursor => self.cursor.import_current().ok(),
         };
         self.all_accounts()
@@ -278,6 +284,7 @@ impl Controller {
                 let is_current = current_session.as_ref().zip(account_session.as_ref()).is_some_and(
                     |(current, saved)| match kind {
                         ApplicationKind::Codex => crate::codex::session::matches_live(saved, current),
+                        ApplicationKind::Grok => crate::grok::session::matches_live(saved, current),
                         ApplicationKind::Cursor => [AUTH_ID_KEY, EMAIL_KEY, ACCESS_TOKEN_KEY]
                             .iter()
                             .any(|key| {
@@ -317,10 +324,15 @@ impl Controller {
                         .subscription
                         .reset_timestamp(&account.raw_export)
                         .map(|expires_at| days_remaining(expires_at, now())),
-                    base_url: account_session
-                        .as_ref()
-                        .and_then(crate::codex::session::base_url)
-                        .filter(|_| kind == ApplicationKind::Codex),
+                    base_url: match kind {
+                        ApplicationKind::Codex => account_session
+                            .as_ref()
+                            .and_then(crate::codex::session::base_url),
+                        ApplicationKind::Grok => account_session
+                            .as_ref()
+                            .and_then(crate::grok::session::base_url),
+                        ApplicationKind::Cursor => None,
+                    },
                 }
             })
             .collect()
@@ -364,25 +376,29 @@ impl Controller {
         let now = now();
         let email = session
             .values
-            .get(if kind == ApplicationKind::Codex {
-                crate::codex::CODEX_EMAIL_KEY
-            } else {
-                EMAIL_KEY
+            .get(match kind {
+                ApplicationKind::Codex => crate::codex::CODEX_EMAIL_KEY,
+                ApplicationKind::Grok => crate::grok::GROK_EMAIL_KEY,
+                ApplicationKind::Cursor => EMAIL_KEY,
             })
             .cloned()
             .filter(|value| !value.is_empty());
-        let display_label = if kind == ApplicationKind::Codex {
-            crate::codex::session::display_label(&session)
-        } else {
-            session_display_label(&session)
+        let display_label = match kind {
+            ApplicationKind::Codex => crate::codex::session::display_label(&session),
+            ApplicationKind::Grok => crate::grok::session::display_label(&session),
+            ApplicationKind::Cursor => session_display_label(&session),
         };
-        let existing_id = if kind == ApplicationKind::Codex {
-            self.matching_codex_account_id(&session)?
-        } else if let Some(email) = email.as_deref() {
-            matching_account_index(&self.all_accounts()?, kind, email)
-                .map(|index| self.all_accounts().unwrap()[index].id.clone())
-        } else {
-            None
+        let existing_id = match kind {
+            ApplicationKind::Codex => self.matching_codex_account_id(&session)?,
+            ApplicationKind::Grok => self.matching_grok_account_id(&session)?,
+            ApplicationKind::Cursor => {
+                if let Some(email) = email.as_deref() {
+                    matching_account_index(&self.all_accounts()?, kind, email)
+                        .map(|index| self.all_accounts().unwrap()[index].id.clone())
+                } else {
+                    None
+                }
+            }
         };
         if let Some(existing_id) = existing_id {
             let mut account = self.account(&existing_id)?;
@@ -464,10 +480,10 @@ impl Controller {
         label: Option<String>,
     ) -> Result<Account> {
         let session = self.adapter(kind).import_current()?;
-        let import_type = if kind == ApplicationKind::Codex {
-            crate::codex::session::import_type(&session)
-        } else {
-            ImportType::Native
+        let import_type = match kind {
+            ApplicationKind::Codex => crate::codex::session::import_type(&session),
+            ApplicationKind::Grok => crate::grok::session::import_type(&session),
+            ApplicationKind::Cursor => ImportType::Native,
         };
         self.save_imported_session(kind, label, session, import_type)
     }
@@ -486,6 +502,20 @@ impl Controller {
         Ok(None)
     }
 
+    fn matching_grok_account_id(&self, session: &Session) -> Result<Option<String>> {
+        for account in self.all_accounts()? {
+            if account.application != ApplicationKind::Grok {
+                continue;
+            }
+            if let Ok(saved) = self.load_session(&account.id) {
+                if crate::grok::session::same_identity(&saved, session) {
+                    return Ok(Some(account.id));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     #[cfg(test)]
     pub(crate) fn import_payload(
         &mut self,
@@ -496,6 +526,11 @@ impl Controller {
         if kind == ApplicationKind::Codex {
             let session = crate::codex::session::from_import(payload)?;
             let import_type = crate::codex::session::import_type(&session);
+            return self.save_imported_session(kind, label, session, import_type);
+        }
+        if kind == ApplicationKind::Grok {
+            let session = crate::grok::session::from_import(payload)?;
+            let import_type = crate::grok::session::import_type(&session);
             return self.save_imported_session(kind, label, session, import_type);
         }
         if kind != ApplicationKind::Cursor {
@@ -907,7 +942,10 @@ impl Controller {
 
     pub(crate) fn require_codex_api_key(&self, id: &str) -> Result<(Account, Session)> {
         let account = self.account(id)?;
-        if account.application != ApplicationKind::Codex || account.import_type != ImportType::ApiKey
+        if !matches!(
+            account.application,
+            ApplicationKind::Codex | ApplicationKind::Grok
+        ) || account.import_type != ImportType::ApiKey
         {
             return Err(AppError::Message("不是 API Key 账号".into()));
         }
@@ -920,13 +958,18 @@ impl Controller {
         id: &str,
     ) -> Result<(String, String, Option<String>)> {
         let (account, session) = self.require_codex_api_key(id)?;
-        let key = crate::codex::session::api_key(&crate::codex::session::auth_value(&session)?)
-            .ok_or(AppError::SecretMissing)?;
-        Ok((
-            account.label,
-            key,
-            crate::codex::session::base_url(&session),
-        ))
+        let key = match account.application {
+            ApplicationKind::Grok => {
+                crate::grok::session::api_key(&crate::grok::session::auth_value(&session)?)
+            }
+            _ => crate::codex::session::api_key(&crate::codex::session::auth_value(&session)?),
+        }
+        .ok_or(AppError::SecretMissing)?;
+        let base_url = match account.application {
+            ApplicationKind::Grok => crate::grok::session::base_url(&session),
+            _ => crate::codex::session::base_url(&session),
+        };
+        Ok((account.label, key, base_url))
     }
 
     pub(crate) fn update_codex_api_key(
@@ -937,15 +980,24 @@ impl Controller {
         label: Option<&str>,
     ) -> Result<Account> {
         let (mut account, _) = self.require_codex_api_key(id)?;
-        let session = crate::codex::session::session_from_auth(
-            crate::codex::session::api_key_auth_json(api_key.trim()),
-            base_url
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned),
-        )?;
+        let session = match account.application {
+            ApplicationKind::Grok => crate::grok::session::session_from_auth(
+                crate::grok::session::api_key_auth_json(api_key.trim()),
+                base_url
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned),
+            )?,
+            _ => crate::codex::session::session_from_auth(
+                crate::codex::session::api_key_auth_json(api_key.trim()),
+                base_url
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned),
+            )?,
+        };
         let is_current = self
-            .accounts(ApplicationKind::Codex)
+            .accounts(account.application)
             .iter()
             .any(|item| item.id == id && item.is_current);
         let now = now();
@@ -991,7 +1043,7 @@ impl Controller {
         );
         let account = Account {
             id: new_id.clone(),
-            application: ApplicationKind::Codex,
+            application: source.application,
             label: format!("{} copy", source.label),
             email: source.email.clone(),
             import_type: ImportType::ApiKey,
@@ -1011,7 +1063,7 @@ impl Controller {
         let transaction = self.database.transaction()?;
         let sort_order: i64 = transaction.query_row(
             "SELECT COUNT(*) FROM accounts WHERE application=?1",
-            params![Self::kind_value(ApplicationKind::Codex)],
+            params![Self::kind_value(source.application)],
             |row| row.get(0),
         )?;
         transaction.execute("INSERT INTO accounts (id, application, label, email, import_type, subscription_json, usage_json, usage_raw_json, raw_export_json, created_at, updated_at, last_used_at, sort_order) VALUES (?1,?2,?3,?4,?5,?6,NULL,NULL,?7,?8,?9,?10,?11)", params![account.id, Self::kind_value(account.application), account.label, account.email, Self::import_type_value(&account.import_type), serde_json::to_string(&account.subscription)?, serde_json::to_string(&account.raw_export)?, account.created_at as i64, account.updated_at as i64, account.last_used_at as i64, sort_order])?;
@@ -1038,6 +1090,19 @@ impl Controller {
             return Ok(serde_json::json!({
                 "auth": crate::codex::session::auth_value(&session)?,
                 "base_url": crate::codex::session::base_url(&session),
+            }));
+        }
+        if account.application == ApplicationKind::Grok {
+            if account.raw_export.is_object() {
+                return Ok(account.raw_export.clone());
+            }
+            let session = self.load_session(&account.id)?;
+            if let Some(raw) = session.raw_export.clone() {
+                return Ok(raw);
+            }
+            return Ok(serde_json::json!({
+                "auth": crate::grok::session::auth_value(&session)?,
+                "base_url": crate::grok::session::base_url(&session),
             }));
         }
         self.export_cursor_account(account)

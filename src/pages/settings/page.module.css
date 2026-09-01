@@ -88,6 +88,86 @@
   max-width: 720px;
 }
 
+.about {
+  background: var(--solid);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  display: grid;
+  overflow: hidden;
+}
+
+.aboutPlate {
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  justify-items: center;
+  padding: 36px 28px 28px;
+  text-align: center;
+}
+
+.aboutMark {
+  align-items: center;
+  background: var(--icon-well);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  display: inline-flex;
+  height: 72px;
+  justify-content: center;
+  margin-bottom: 16px;
+  width: 72px;
+}
+
+.aboutMark img { height: 44px; width: 44px; }
+.aboutPlate h2 { font-size: 22px; font-weight: 720; letter-spacing: -.02em; }
+.aboutTagline { color: var(--muted); font-size: 13px; margin-top: 6px; }
+
+.aboutVersion {
+  background: var(--badge);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--badge-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  margin-top: 14px;
+  padding: 3px 10px;
+}
+
+.aboutBody { display: grid; gap: 22px; padding: 22px 24px 8px; }
+.aboutSection h3 { font-size: 12px; font-weight: 680; margin: 0 0 8px; }
+.aboutSection p { color: var(--muted); font-size: 13px; line-height: 1.65; }
+
+.aboutRoster {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: grid;
+  list-style: none;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.aboutBerth {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 18px 7.5em minmax(0, 1fr);
+  padding: 12px 14px;
+}
+
+.aboutBerth + .aboutBerth { border-top: 1px solid var(--border); }
+.aboutBerth img { display: block; height: 18px; width: 18px; }
+.aboutBerth strong { font-size: 13px; font-weight: 650; }
+.aboutBerth span { color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+.aboutFoot {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  margin: 16px 0 0;
+  padding: 12px 24px 16px;
+}
+
 .sectionTitle {
   align-items: center;
   border-bottom: 1px solid var(--border);
@@ -122,7 +202,7 @@
   align-items: center;
   background: var(--accent-bg);
   border-radius: 5px;
-  color: var(--accent-hover);
+  color: var(--accent);
   display: inline-flex;
   height: 38px;
   justify-content: center;
@@ -250,7 +330,7 @@
 .toolCard:hover { border-color: var(--border-strong); }
 .toolTop { align-items: flex-start; display: flex; justify-content: space-between; gap: 10px; }
 .toolIdentity { align-items: flex-start; display: flex; gap: 10px; min-width: 0; }
-.toolIcon { align-items: center; background: var(--icon-well); border: 1px solid var(--border); border-radius: 7px; display: inline-flex; flex: none; height: 32px; justify-content: center; width: 32px; }
+.toolIcon { align-items: center; background: #eef1f5; border: 1px solid var(--border); border-radius: 7px; display: inline-flex; flex: none; height: 32px; justify-content: center; width: 32px; }
 .toolIcon img { display: block; height: 18px; object-fit: contain; width: 18px; }
 .toolCopy { display: flex; flex-direction: column; min-width: 0; }
 .toolTop h3 { font-size: 13px; font-weight: 680; line-height: 32px; margin: 0; }

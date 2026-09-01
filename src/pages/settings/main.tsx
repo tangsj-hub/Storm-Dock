@@ -4,6 +4,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { Check, ChevronDown, Database, FolderSync, KeyRound, Languages, Monitor, PanelTop, Power } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -14,6 +15,10 @@ import i18n from "../../i18n";
 import { exportDatabase, getDatabasePath, getPreserveCodexOfficialAuth, importDatabase, moveDatabase, setPreserveCodexOfficialAuth } from "../../lib/api";
 import { getPreference, setPreference, type ThemePreference } from "../../lib/theme";
 import { applicationKindFromQuery, homePath, syncDocumentAppKind } from "../../lib/types";
+import logo from "../../assets/logo.svg";
+import cursorIcon from "../../assets/cursor.svg";
+import codexIcon from "../../assets/codex.svg";
+import grokIcon from "../../assets/tools/grok.svg";
 import { LocalEnvPanel } from "./LocalEnvPanel";
 import "../../styles/global.css";
 import styles from "./page.module.css";
@@ -30,6 +35,11 @@ const themes = [
 ] as const;
 
 const sqlFilters = [{ name: "SQL", extensions: ["sql"] }];
+const aboutApps = [
+  { icon: cursorIcon, nameKey: "cursor", detailKey: "aboutAppCursor" },
+  { icon: codexIcon, nameKey: "codex", detailKey: "aboutAppCodex" },
+  { icon: grokIcon, nameKey: "grok", detailKey: "aboutAppGrok" }
+] as const;
 
 function SettingsPage() {
   const { t } = useTranslation();
@@ -43,6 +53,7 @@ function SettingsPage() {
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [closeToTray, setCloseToTray] = useState(() => localStorage.getItem("closeToTray") !== "false");
   const [preserveCodexAuth, setPreserveCodexAuth] = useState(true);
+  const [appVersion, setAppVersion] = useState("");
   useEffect(() => { void invoke("set_close_to_tray", { enabled: closeToTray }); }, [closeToTray]);
   const current = languages.find((item) => item.code === language) ?? languages[0];
   const currentTheme = themes.find((item) => item.code === theme) ?? themes[2];
@@ -59,6 +70,7 @@ function SettingsPage() {
   useEffect(() => { void getDatabasePath().then(setDatabasePath).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void isEnabled().then(setLaunchAtLogin).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void getPreserveCodexOfficialAuth().then(setPreserveCodexAuth).catch((error) => setNotice(String(error))); }, []);
+  useEffect(() => { void getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0")); }, []);
   const toggleLaunchAtLogin = async () => { try { if (launchAtLogin) await disable(); else await enable(); setLaunchAtLogin(!launchAtLogin); } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); } };
   const toggleCloseToTray = () => { const next = !closeToTray; setCloseToTray(next); localStorage.setItem("closeToTray", String(next)); };
   const togglePreserveCodexAuth = async () => {
@@ -172,7 +184,38 @@ function SettingsPage() {
       <Tabs.Content className={styles.pane} value="local">
         <LocalEnvPanel onNotice={(message, status) => { setNoticeStatus(status ?? "success"); setNotice(message); }} />
       </Tabs.Content>
-      <Tabs.Content className={styles.pane} forceMount value="about" />
+      <Tabs.Content className={styles.pane} forceMount value="about">
+        <div className={styles.stack}>
+          <article className={styles.about}>
+            <header className={styles.aboutPlate}>
+              <span className={styles.aboutMark}><img alt="" src={logo} /></span>
+              <h2>{t("appName")}</h2>
+              <p className={styles.aboutTagline}>{t("aboutTagline")}</p>
+              {appVersion ? <p className={styles.aboutVersion}>{t("aboutVersion", { version: appVersion })}</p> : null}
+            </header>
+            <div className={styles.aboutBody}>
+              <section className={styles.aboutSection}>
+                <p>{t("aboutIntro")}</p>
+              </section>
+              <section className={styles.aboutSection}>
+                <h3>{t("aboutAppsTitle")}</h3>
+                <ul className={styles.aboutRoster}>
+                  {aboutApps.map((app) => <li className={styles.aboutBerth} key={app.nameKey}>
+                    <img alt="" className="ink" src={app.icon} />
+                    <strong>{t(app.nameKey)}</strong>
+                    <span>{t(app.detailKey)}</span>
+                  </li>)}
+                </ul>
+              </section>
+              <section className={styles.aboutSection}>
+                <h3>{t("aboutDataTitle")}</h3>
+                <p>{t("aboutData")}</p>
+              </section>
+            </div>
+            <p className={styles.aboutFoot}>{t("aboutCopyright", { year: new Date().getFullYear() })}</p>
+          </article>
+        </div>
+      </Tabs.Content>
       </div>
     </Tabs.Root>
   </main>

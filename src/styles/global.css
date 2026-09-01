@@ -73,23 +73,23 @@ html, html[data-theme="light"] {
 html[data-theme="dark"] {
   --bg: #16181d;
   --fg: #e8eaee;
-  --muted: #8b939e;
-  --border: #2c323c;
-  --border-strong: #3a424e;
-  --hover: #22262e;
-  --panel: rgb(36 40 48 / .72);
-  --panel-hover: rgb(44 50 60 / .88);
-  --panel-current: rgb(38 52 72 / .78);
-  --panel-current-hover: rgb(48 62 84 / .9);
-  --solid: #1e222a;
-  --track: #262b34;
-  --code-bg: #1a1e25;
+  --muted: #b7bfcb;
+  --border: #5f656d;
+  --border-strong: #6b7179;
+  --hover: #2c323c;
+  --panel: rgb(48 54 64 / .92);
+  --panel-hover: rgb(56 62 74 / .96);
+  --panel-current: rgb(46 62 86 / .92);
+  --panel-current-hover: rgb(54 72 98 / .96);
+  --solid: #232830;
+  --track: #323844;
+  --code-bg: #1c2128;
   --accent: #e76f51;
   --accent-hover: #c9573d;
-  --accent-bg: #3a2a24;
+  --accent-bg: #32231e;
   --on-accent: #fff;
   --focus: #5b8def;
-  --danger: #e07070;
+  --danger: #ee8888;
   --danger-hover: #c45c5c;
   --danger-bg: #3a2426;
   --danger-border: #6a3a40;
@@ -103,8 +103,8 @@ html[data-theme="dark"] {
   --info: #7aa8e8;
   --info-bg: #1e2a3c;
   --info-border: #3d5a80;
-  --badge: #262b34;
-  --badge-fg: #9aa5b4;
+  --badge: #353c48;
+  --badge-fg: #c2cad6;
   --kind-account-bg: #2a313c;
   --kind-account-fg: #c5d0dc;
   --kind-key-bg: #3a3224;
@@ -114,9 +114,9 @@ html[data-theme="dark"] {
   --shadow: rgb(0 0 0 / 28%);
   --shadow-strong: rgb(0 0 0 / 45%);
   --overlay: rgb(0 0 0 / 55%);
-  --input-border: #3a424e;
-  --switch-off: #3a424e;
-  --chart-zero: #3a424e;
+  --input-border: #6b7179;
+  --switch-off: #6b7179;
+  --chart-zero: #6b7179;
   --tooltip-bg: #12141a;
   --tooltip-fg: #e8eaee;
   --toast-bg: #1c222c;
@@ -127,7 +127,7 @@ html[data-theme="dark"] {
   --toast-error-bg: #482a2d;
   --toast-error-border: #80434b;
   --watermark-opacity: .18;
-  --icon-well: #e8eaee;
+  --icon-well: #232830;
 }
 
 * { box-sizing: border-box; }

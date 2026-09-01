@@ -9,7 +9,7 @@
 .addPage { align-content: start; display: grid; gap: 18px; min-height: 0; }
 .tabs { border-bottom: 1px solid var(--border); display: flex; gap: 20px; }
 .tab { align-items: center; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); display: inline-flex; font-size: 13px; font-weight: 600; gap: 7px; margin-bottom: -1px; padding: 9px 2px; }
-.tab[data-state="active"] { border-color: var(--accent); color: var(--accent-hover); }
+.tab[data-state="active"] { border-color: var(--accent); color: var(--accent); }
 .content { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .panel { display: grid; gap: 24px; padding: 28px; }
 .heading { align-items: flex-start; display: flex; gap: 13px; }

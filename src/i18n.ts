@@ -112,7 +112,17 @@ Object.assign(resources.zh.translation, {
   hideApiKey: "隐藏 API Key",
   apiKeyUpdated: "API Key 已保存。",
   connectionOk: "可达（{{ms}}ms）",
-  connectionFail: "不可达：{{error}}"
+  connectionFail: "不可达：{{error}}",
+  aboutTagline: "本地开发账号坞",
+  aboutVersion: "版本 {{version}}",
+  aboutIntro: "Storm Dock 是一款本地桌面应用，用来集中保管并切换 Cursor、ChatGPT 与 Grok Build 的登录身份。同一台电脑上的多个账号可以分别保存、随时切换，不必在各应用里反复登录。",
+  aboutAppsTitle: "支持的应用",
+  aboutAppCursor: "登录、切换、用量与插件",
+  aboutAppCodex: "登录、会话、API Key 与插件",
+  aboutAppGrok: "登录、API Key 与插件",
+  aboutDataTitle: "数据与隐私",
+  aboutData: "账号与会话保存在本机数据库中，可迁移到你选择的同步目录。凭证不会出现在界面或日志里。",
+  aboutCopyright: "© {{year}} Storm Dock"
 });
 Object.assign(resources.en.translation, {
   settingsTabs: "Settings sections", settingsTabGeneral: "General", settingsTabData: "Data", settingsTabLocal: "Local", settingsTabAbout: "About",
@@ -171,7 +181,17 @@ Object.assign(resources.en.translation, {
   hideApiKey: "Hide API Key",
   apiKeyUpdated: "API Key saved.",
   connectionOk: "Reachable ({{ms}}ms)",
-  connectionFail: "Unreachable: {{error}}"
+  connectionFail: "Unreachable: {{error}}",
+  aboutTagline: "A local dock for developer accounts",
+  aboutVersion: "Version {{version}}",
+  aboutIntro: "Storm Dock is a local desktop app for keeping and switching Cursor, ChatGPT, and Grok Build identities. Store several accounts on this computer and switch among them without signing in again inside each app.",
+  aboutAppsTitle: "Supported apps",
+  aboutAppCursor: "Sign-in, switching, usage, and plugins",
+  aboutAppCodex: "Sign-in, sessions, API keys, and plugins",
+  aboutAppGrok: "Sign-in, API keys, and plugins",
+  aboutDataTitle: "Data & privacy",
+  aboutData: "Accounts and sessions stay in a database on this computer, which you can move to a sync folder you choose. Credentials are not shown in the UI or written to logs.",
+  aboutCopyright: "© {{year}} Storm Dock"
 });
 
 void i18n.use(initReactI18next).init({

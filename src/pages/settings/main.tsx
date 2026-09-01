@@ -53,7 +53,7 @@ function SettingsPage() {
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [closeToTray, setCloseToTray] = useState(() => localStorage.getItem("closeToTray") !== "false");
   const [preserveCodexAuth, setPreserveCodexAuth] = useState(true);
-  const [appVersion, setAppVersion] = useState("");
+  const [appVersion, setAppVersion] = useState("1.1.0");
   useEffect(() => { void invoke("set_close_to_tray", { enabled: closeToTray }); }, [closeToTray]);
   const current = languages.find((item) => item.code === language) ?? languages[0];
   const currentTheme = themes.find((item) => item.code === theme) ?? themes[2];
@@ -70,7 +70,7 @@ function SettingsPage() {
   useEffect(() => { void getDatabasePath().then(setDatabasePath).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void isEnabled().then(setLaunchAtLogin).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void getPreserveCodexOfficialAuth().then(setPreserveCodexAuth).catch((error) => setNotice(String(error))); }, []);
-  useEffect(() => { void getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0")); }, []);
+  useEffect(() => { void getVersion().then(setAppVersion).catch(() => setAppVersion("1.1.0")); }, []);
   const toggleLaunchAtLogin = async () => { try { if (launchAtLogin) await disable(); else await enable(); setLaunchAtLogin(!launchAtLogin); } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); } };
   const toggleCloseToTray = () => { const next = !closeToTray; setCloseToTray(next); localStorage.setItem("closeToTray", String(next)); };
   const togglePreserveCodexAuth = async () => {
@@ -191,7 +191,7 @@ function SettingsPage() {
               <span className={styles.aboutMark}><img alt="" src={logo} /></span>
               <h2>{t("appName")}</h2>
               <p className={styles.aboutTagline}>{t("aboutTagline")}</p>
-              {appVersion ? <p className={styles.aboutVersion}>{t("aboutVersion", { version: appVersion })}</p> : null}
+              <p className={styles.aboutVersion}>{t("aboutVersion", { version: appVersion })}</p>
             </header>
             <div className={styles.aboutBody}>
               <section className={styles.aboutSection}>

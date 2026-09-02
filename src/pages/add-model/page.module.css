@@ -2,6 +2,7 @@
 .field > span { color: var(--fg); font-size: 13px; font-weight: 600; }
 .idRow { align-items: stretch; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) 11em 7.5em auto; }
 .idRow input, .sourceSelect { min-height: 34px; }
+.modelIdInput:focus-visible { border-color: var(--focus); outline: none; }
 .sourceSelect { border: 1px solid var(--input-border); border-radius: 5px; padding: 0 8px; }
 .sourceHint { color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.45; }
 .sourceHint a { color: var(--focus); }
@@ -77,3 +78,5 @@
 .hitDownload { color: var(--muted); display: inline-flex; }
 .hitCard:hover .hitDownload { color: var(--fg); }
 .empty { color: var(--muted); font-size: 13px; font-weight: 500; }
+.centerTabs { border-bottom: 1px solid var(--border); display: flex; gap: 20px; margin-bottom: 18px; }
+.modelCenterContent { background: transparent; border: 0; border-radius: 0; }

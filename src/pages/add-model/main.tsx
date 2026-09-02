@@ -8,8 +8,9 @@ import { Tooltip } from "../../components/Tooltip";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
 import { searchRemoteModels } from "../../lib/api";
+import { ModelCenter } from "../home/components/ModelCenter";
 import { agoParts, avatarTone, formatCount, hitCapabilities, isGgufHit, type HitCapability } from "../../lib/modelHits";
-import { modelsHomePath, modelDetailPath, type ModelFormat, type ModelSource, type RemoteModelHit } from "../../lib/types";
+import { modelCenterPath, modelDetailPath, modelsHomePath, type ModelCenterTab, type ModelFormat, type ModelSource, type RemoteModelHit } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "../add/page.module.css";
 import extra from "./page.module.css";
@@ -69,11 +70,11 @@ function CapabilityIcon({ kind }: { kind: HitCapability }) {
   );
 }
 
-function HitRow({ hit }: { hit: RemoteModelHit }) {
+function HitRow({ hit, context }: { hit: RemoteModelHit; context: { query: string; source: ModelSource; format: ModelFormat; tab: ModelCenterTab } }) {
   const { t } = useTranslation();
   const caps = hitCapabilities(hit);
   return (
-    <a className={extra.hitCard} href={modelDetailPath(hit.source, hit.repo)}>
+    <a className={extra.hitCard} href={modelDetailPath(hit.source, hit.repo, context)}>
       <div className={extra.hitModel}>
         <span className={`${extra.hitAvatar} ${AVATAR_CLASS[avatarTone(hit.author)]}`}>{hit.author.slice(0, 1).toUpperCase() || "?"}</span>
         <div className={extra.hitCopy}>
@@ -97,11 +98,16 @@ function HitRow({ hit }: { hit: RemoteModelHit }) {
 function AddModelPage() {
   const { t } = useTranslation();
   const home = modelsHomePath();
-  const [query, setQuery] = useState("");
-  const [source, setSource] = useState<ModelSource>("modelscope");
-  const [format, setFormat] = useState<ModelFormat>("all");
+  const params = new URLSearchParams(window.location.search);
+  const [query, setQuery] = useState(params.get("query") ?? "");
+  const [source, setSource] = useState<ModelSource>(params.get("source") === "huggingface" ? "huggingface" : "modelscope");
+  const [format, setFormat] = useState<ModelFormat>((FORMATS.includes(params.get("format") as ModelFormat) ? params.get("format") : "all") as ModelFormat);
+  const [tab, setTab] = useState<ModelCenterTab>(params.get("tab") === "downloaded" ? "downloaded" : "discover");
   const [searching, setSearching] = useState(false);
-  const [hits, setHits] = useState<RemoteModelHit[]>();
+  const [hits, setHits] = useState<RemoteModelHit[] | undefined>(() => {
+    if (!params.get("query")) return undefined;
+    try { const cached = JSON.parse(sessionStorage.getItem("storm.modelSearchHits") ?? "null"); return Array.isArray(cached) ? cached : undefined; } catch { return undefined; }
+  });
   const [notice, setNotice] = useState<string>();
   const [noticeFailed, setNoticeFailed] = useState(false);
 
@@ -111,7 +117,10 @@ function AddModelPage() {
     setSearching(true);
     setNotice(undefined);
     try {
-      setHits(await searchRemoteModels(source, q, format));
+      const next = await searchRemoteModels(source, q, format);
+      setHits(next);
+      sessionStorage.setItem("storm.modelSearchHits", JSON.stringify(next));
+      window.history.replaceState({}, "", modelCenterPath({ query: q, source, format, tab: "discover" }));
     } catch (error) {
       setHits(undefined);
       setNoticeFailed(true);
@@ -133,8 +142,12 @@ function AddModelPage() {
         </header>
         <section className={styles.workspace}>
           <div className={styles.addPage}>
-            <div className={styles.content}>
-              <form
+            <div className={`${styles.content} ${extra.modelCenterContent}`}>
+              <div className={extra.centerTabs} role="tablist">
+                <button className={`${styles.tab} ${tab === "discover" ? styles.tabActive : ""}`} onClick={() => { setTab("discover"); window.history.replaceState({}, "", modelCenterPath({ query, source, format })); }} role="tab" type="button">{t("modelCenterDiscover")}</button>
+                <button className={`${styles.tab} ${tab === "downloaded" ? styles.tabActive : ""}`} onClick={() => { setTab("downloaded"); window.history.replaceState({}, "", modelCenterPath({ query, source, format, tab: "downloaded" })); }} role="tab" type="button">{t("modelCenterDownloaded")}</button>
+              </div>
+              {tab === "downloaded" ? <ModelCenter onNotice={(message) => { setNotice(message); setNoticeFailed(false); }} refreshKey={0} /> : <form
                 className={styles.panel}
                 onSubmit={(event) => {
                   event.preventDefault();
@@ -144,7 +157,7 @@ function AddModelPage() {
                 <div className={extra.field}>
                   <span>{t("modelIdLabel")}</span>
                   <div className={extra.idRow}>
-                    <input autoFocus autoComplete="off" disabled={searching} onChange={(event) => { setQuery(event.target.value); setHits(undefined); }} placeholder={t("modelRepoPlaceholder")} spellCheck={false} value={query} />
+                    <input className={extra.modelIdInput} autoComplete="off" disabled={searching} onChange={(event) => { setQuery(event.target.value); setHits(undefined); }} placeholder={t("modelRepoPlaceholder")} spellCheck={false} value={query} />
                     <select aria-label={t("modelFormatLabel")} className={extra.sourceSelect} disabled={searching} onChange={(event) => { setFormat(event.target.value as ModelFormat); setHits(undefined); }} value={format}>
                       {FORMATS.map((item) => <option key={item} value={item}>{t(formatLabelKey(item))}</option>)}
                     </select>
@@ -176,14 +189,14 @@ function AddModelPage() {
                         <span>{t("modelStatLikes")}</span>
                         <span />
                       </div>
-                      {hits.map((hit) => <HitRow hit={hit} key={`${hit.source}:${hit.repo}`} />)}
+                      {hits.map((hit) => <HitRow context={{ query, source, format, tab }} hit={hit} key={`${hit.source}:${hit.repo}`} />)}
                     </div>
                   )
                 ) : null}
                 <div className={styles.actions}>
                   <a className={styles.secondary} href={home}>{t("cancel")}</a>
                 </div>
-              </form>
+              </form>}
             </div>
           </div>
         </section>

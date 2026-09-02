@@ -9,8 +9,8 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { Tooltip } from "../../components/Tooltip";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
-import { cancelModelDownload, listDownloadJobs, probeRemoteModel, startModelDownload } from "../../lib/api";
-import { addModelPath, modelRepoFromQuery, modelSourceFromQuery, modelsHomePath, type DownloadJob, type ModelFit, type RemoteModelProbe, type RemoteModelVariant } from "../../lib/types";
+import { cancelModelDownload, listDownloadJobs, probeRemoteModel, startModelDownloadFast } from "../../lib/api";
+import { modelCenterPath, modelRepoFromQuery, modelSourceFromQuery, type DownloadJob, type DownloadSnapshot, type ModelCenterContext, type ModelFit, type RemoteModelProbe, type RemoteModelVariant } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "../add/page.module.css";
 import extra from "../add-model/page.module.css";
@@ -81,16 +81,19 @@ function ModelDetailPage() {
   const { t } = useTranslation();
   const source = modelSourceFromQuery();
   const repo = modelRepoFromQuery();
-  const search = addModelPath();
-  const home = modelsHomePath();
+  const params = new URLSearchParams(window.location.search);
+  const context: ModelCenterContext = { query: params.get("query") ?? "", source: params.get("listSource") === "huggingface" ? "huggingface" : params.get("listSource") === "modelscope" ? "modelscope" : undefined, format: (params.get("format") as ModelCenterContext["format"]) ?? "all", tab: params.get("tab") === "downloaded" ? "downloaded" : "discover" };
+  const search = modelCenterPath(context);
+  const home = modelCenterPath();
   const [loading, setLoading] = useState(true);
   const [probe, setProbe] = useState<RemoteModelProbe>();
   const [variantId, setVariantId] = useState("");
   const [job, setJob] = useState<DownloadJob>();
+  const [starting, setStarting] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [noticeFailed, setNoticeFailed] = useState(false);
   const watching = useRef(false);
-  const downloading = job?.status === "downloading" || job?.status === "queued" || job?.status === "verifying";
+  const downloading = starting || job?.status === "downloading" || job?.status === "queued" || job?.status === "verifying";
   const selected = useMemo(
     () => probe?.variants.find((variant) => variant.id === variantId) ?? probe?.variants[0],
     [probe, variantId],
@@ -133,25 +136,29 @@ function ModelDetailPage() {
       if (match) watching.current = true;
       const done = jobs.find((item) => item.repo === repo && item.status === "completed");
       if (done && watching.current) {
-        window.location.assign(modelsHomePath(t("modelDownloadComplete", { repo: done.repo })));
+        window.location.assign(modelCenterPath({ tab: "downloaded" }));
       }
     };
     void listDownloadJobs().then(pick).catch(() => undefined);
-    void listen<DownloadJob[]>("model-download-snapshot", ({ payload }) => pick(payload)).then((fn) => {
+    void listen<DownloadSnapshot>("model-download-snapshot", ({ payload }) => pick(payload.jobs)).then((fn) => {
       unlisten = fn;
     });
     return () => unlisten?.();
   }, [repo, t]);
 
   const download = async () => {
-    if (!probe || !selected) return;
+    if (!probe || !selected || starting) return;
     setNotice(undefined);
+    setStarting(true);
+    watching.current = true;
     try {
-      await startModelDownload(probe.source, probe.repo, probe.revision, selected.files);
-      watching.current = true;
+      await startModelDownloadFast(probe.source, probe.repo, probe.revision, selected.files.map((path) => probe.files.find((file) => file.path === path)).filter((file): file is NonNullable<typeof file> => Boolean(file)));
       showNotice(t("modelDownloadStarted", { repo: probe.repo }));
     } catch (error) {
       showNotice(diskNotice(t, error), true);
+      watching.current = false;
+    } finally {
+      setStarting(false);
     }
   };
 

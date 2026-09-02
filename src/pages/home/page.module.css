@@ -179,4 +179,8 @@
 .dialogCancel, .dialogConfirm { border-radius: 5px; font-size: 13px; font-weight: 650; min-height: 34px; padding: 0 12px; }
 .dialogCancel { background: var(--solid); border: 1px solid var(--border-strong); color: var(--fg); }
 .dialogConfirm { background: var(--danger); border: 1px solid var(--danger); color: var(--on-accent); }
+.dialogPrimary { background: var(--accent); border: 1px solid var(--accent); border-radius: 5px; color: var(--on-accent); font-size: 13px; font-weight: 650; min-height: 34px; padding: 0 12px; }
+.modelMenu { background: var(--solid); border: 1px solid var(--border); border-radius: 5px; box-shadow: 0 8px 20px var(--shadow-strong); min-width: 180px; padding: 4px; z-index: 40; }
+.modelMenuItem { border-radius: 3px; color: var(--fg); cursor: default; font-size: 12px; outline: none; padding: 7px 8px; }
+.modelMenuItem[data-highlighted] { background: var(--hover); }
 @keyframes spin { to { transform: rotate(360deg); } }

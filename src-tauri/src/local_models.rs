@@ -384,16 +384,14 @@ pub(crate) fn models_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())
 }
 
-pub(crate) fn model_dir(root: &Path, source: ModelSource, repo: &str) -> PathBuf {
-    root.join(source.as_str()).join(dir_name(repo))
-}
-
 pub(crate) fn http_client() -> Client {
     static CLIENT: OnceLock<Client> = OnceLock::new();
     CLIENT
         .get_or_init(|| {
             Client::builder()
                 .connect_timeout(Duration::from_secs(20))
+                .tcp_keepalive(Duration::from_secs(30))
+                .pool_idle_timeout(Duration::from_secs(90))
                 .pool_max_idle_per_host(MAX_CHUNK_WORKERS)
                 .build()
                 .unwrap_or_else(|_| Client::new())
@@ -1879,6 +1877,71 @@ fn modelscope_cache() -> PathBuf {
         .join("hub")
 }
 
+pub(crate) fn source_cache_root(source: ModelSource) -> PathBuf {
+    match source {
+        ModelSource::HuggingFace => hf_hub_cache(),
+        ModelSource::ModelScope => modelscope_cache(),
+    }
+}
+
+pub(crate) fn source_cache_model_dir(source: ModelSource, repo: &str) -> Result<PathBuf, String> {
+    let (owner, name) = repo.split_once('/').ok_or("模型 ID 无效")?;
+    if owner.is_empty() || name.is_empty() || owner == "." || owner == ".." || name == "." || name == ".."
+        || owner.contains(['/', '\\']) || name.contains(['/', '\\']) {
+        return Err("模型 ID 无效".into());
+    }
+    Ok(match source {
+        ModelSource::HuggingFace => source_cache_root(source).join(format!("models--{owner}--{name}")),
+        ModelSource::ModelScope => source_cache_root(source).join(owner).join(name),
+    })
+}
+
+fn copy_tree_without_links(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(source).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let from = entry.path();
+        let to = destination.join(entry.file_name());
+        let kind = fs::symlink_metadata(&from).map_err(|e| e.to_string())?;
+        if kind.file_type().is_symlink() {
+            let real = fs::canonicalize(&from).map_err(|e| e.to_string())?;
+            if fs::hard_link(&real, &to).is_err() {
+                fs::copy(real, &to).map_err(|e| e.to_string())?;
+            }
+        } else if kind.is_dir() {
+            copy_tree_without_links(&from, &to)?;
+        } else {
+            fs::copy(&from, &to).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn migrate_directory(source_path: &Path, destination: &Path) -> Result<(), String> {
+    if destination.exists() {
+        return Err("目标模型目录已存在，拒绝覆盖".into());
+    }
+    if let Some(parent) = destination.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
+    let has_links = fn_has_links(source_path)?;
+    if !has_links {
+        fs::rename(source_path, destination).map_err(|e| e.to_string())?;
+    } else {
+        copy_tree_without_links(source_path, destination)?;
+        fs::remove_dir_all(source_path).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn fn_has_links(path: &Path) -> Result<bool, String> {
+    for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let child = entry.path();
+        let meta = fs::symlink_metadata(&child).map_err(|e| e.to_string())?;
+        if meta.file_type().is_symlink() || (meta.is_dir() && fn_has_links(&child)?) { return Ok(true); }
+    }
+    Ok(false)
+}
+
 #[cfg(test)]
 fn scan_app_models(root: &Path) -> Vec<LocalLlm> {
     scan_app_models_with(root, &ModelCache::new())
@@ -2291,29 +2354,34 @@ pub(crate) fn probe_remote_model(
 }
 
 #[tauri::command]
-pub(crate) fn search_remote_models(
+pub(crate) async fn search_remote_models(
     source: ModelSource,
     query: String,
     format: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<RemoteModelHit>, String> {
     bind_stored_hf_token(&state);
-    let query = query.trim();
-    if query.is_empty() {
-        return Err("请输入搜索关键词".into());
-    }
-    let format = format.as_deref().unwrap_or("all");
-    let searched = match source {
-        ModelSource::HuggingFace => search_huggingface(query, format),
-        ModelSource::ModelScope => search_modelscope(query, format),
-    };
-    let exact = lookup_exact(source, query);
-    match (exact, searched) {
-        (Some(exact), Ok(hits)) => Ok(merge_exact(Some(exact), hits)),
-        (Some(exact), Err(_)) => Ok(vec![exact]),
-        (None, Ok(hits)) => Ok(hits),
-        (None, Err(error)) => Err(error),
-    }
+    let query = query.trim().to_string();
+    if query.is_empty() { return Err("请输入搜索关键词".into()); }
+    let format = format.unwrap_or_else(|| "all".into());
+    tauri::async_runtime::spawn_blocking(move || {
+        // Exact lookup and ranked search hit independent endpoints; run them
+        // concurrently so latency is bounded by the slower request.
+        std::thread::scope(|scope| {
+            let exact = scope.spawn(|| lookup_exact(source, &query));
+            let searched = scope.spawn(|| match source {
+                ModelSource::HuggingFace => search_huggingface(&query, &format),
+                ModelSource::ModelScope => search_modelscope(&query, &format),
+            }).join().map_err(|_| "搜索线程异常退出".to_string())?;
+            let exact = exact.join().map_err(|_| "搜索线程异常退出".to_string())?;
+            match (exact, searched) {
+                (Some(exact), Ok(hits)) => Ok(merge_exact(Some(exact), hits)),
+                (Some(exact), Err(_)) => Ok(vec![exact]),
+                (None, Ok(hits)) => Ok(hits),
+                (None, Err(error)) => Err(error),
+            }
+        })
+    }).await.map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -2425,6 +2493,42 @@ pub(crate) fn open_local_model_dir(state: State<'_, AppState>, id: String) -> Re
             .path
     };
     open_dir(Path::new(&path))
+}
+
+#[tauri::command]
+pub(crate) fn migrate_local_model(
+    state: State<'_, AppState>,
+    id: String,
+    target: ModelSource,
+) -> Result<(), String> {
+    let model = {
+        let controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+        controller.local_model(&id).map_err(|error| error.to_string())?
+    };
+    let source_path = PathBuf::from(&model.path);
+    if !source_path.is_dir() { return Err("模型目录不存在或尚未完成下载".into()); }
+    let content = if model.source == ModelSource::HuggingFace {
+        hf_snapshot(&source_path).map(|(_, path)| path).unwrap_or_else(|| source_path.clone())
+    } else {
+        let (_, path) = modelscope_revision(&source_path);
+        path
+    };
+    let target_root = source_cache_model_dir(target, &model.repo)?;
+    if target == ModelSource::HuggingFace {
+        let revision = model.revision.chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.')).collect::<String>();
+        let revision = if revision.is_empty() { "main".into() } else { revision };
+        let snapshot = target_root.join("snapshots").join(&revision);
+        migrate_directory(&content, &snapshot)?;
+        fs::create_dir_all(target_root.join("refs")).map_err(|e| e.to_string())?;
+        fs::write(target_root.join("refs").join("main"), &revision).map_err(|e| e.to_string())?;
+    } else {
+        migrate_directory(&content, &target_root)?;
+    }
+    if content != source_path && source_path.exists() { let _ = fs::remove_dir_all(&source_path); }
+    let new_model = LocalLlm { id: model_id(target, &model.repo), source: target, repo: model.repo.clone(), revision: if target == ModelSource::HuggingFace { "main".into() } else { "master".into() }, path: target_root.to_string_lossy().into_owned(), size: model.size, files: model.files };
+    let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+    controller.delete_local_model_row(&id).map_err(|error| error.to_string())?;
+    controller.upsert_local_model(&new_model).map_err(|error| error.to_string())
 }
 
 #[cfg(test)]

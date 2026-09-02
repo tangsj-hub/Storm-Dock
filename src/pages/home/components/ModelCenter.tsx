@@ -3,11 +3,12 @@ import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from "@dnd-kit/utilities";
 import { listen } from "@tauri-apps/api/event";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import { FolderOpen, GripVertical, HardDrive, Trash2 } from "lucide-react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { ArrowRightLeft, FolderOpen, GripVertical, HardDrive, Trash2 } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { deleteLocalModel, listLocalModels, openLocalModelDir, refreshLocalModels, reorderLocalModels } from "../../../lib/api";
-import type { DownloadJob, LocalLlm } from "../../../lib/types";
+import { deleteLocalModel, listLocalModels, migrateLocalModel, openLocalModelDir, refreshLocalModels, reorderLocalModels } from "../../../lib/api";
+import type { DownloadJob, DownloadSnapshot, LocalLlm, ModelSource } from "../../../lib/types";
 import { Tooltip } from "../../../components/Tooltip";
 import { useLatestRequest } from "../hooks/useLatestRequest";
 import styles from "../page.module.css";
@@ -30,10 +31,12 @@ function ModelCardBody({
   model,
   onNotice,
   onRemove,
+  onMigrate,
 }: {
   model: LocalLlm;
   onNotice: (message: string, status?: "success" | "error") => void;
   onRemove?: (model: LocalLlm) => void;
+  onMigrate?: (model: LocalLlm, target: ModelSource) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -56,6 +59,26 @@ function ModelCardBody({
                 <FolderOpen aria-hidden="true" size={18} />
               </button>
             </Tooltip>
+            {onMigrate ? (
+              <DropdownMenu.Root>
+                <Tooltip content={t("modelMigrate")}>
+                  <DropdownMenu.Trigger asChild>
+                    <button aria-label={t("modelMigrate")} className={styles.iconButton} onClick={(event) => event.currentTarget.blur()} type="button">
+                      <ArrowRightLeft aria-hidden="true" size={18} />
+                    </button>
+                  </DropdownMenu.Trigger>
+                </Tooltip>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content align="end" className={styles.modelMenu} onCloseAutoFocus={(event) => event.preventDefault()} sideOffset={6}>
+                    {(["huggingface", "modelscope"] as ModelSource[]).filter((target) => target !== model.source).map((target) => (
+                      <DropdownMenu.Item className={styles.modelMenuItem} key={target} onSelect={() => onMigrate(model, target)}>
+                        {t("modelMigrateTo", { target: t(target === "huggingface" ? "modelSourceHuggingFace" : "modelSourceModelScope") })}
+                      </DropdownMenu.Item>
+                    ))}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            ) : null}
             {onRemove ? (
               <Tooltip content={t("delete")}>
                 <button aria-label={t("remove", { account: model.repo })} className={styles.iconButton} onClick={() => onRemove(model)} type="button">
@@ -74,6 +97,7 @@ function SortableModel(props: {
   model: LocalLlm;
   onNotice: (message: string, status?: "success" | "error") => void;
   onRemove: (model: LocalLlm) => void;
+  onMigrate: (model: LocalLlm, target: ModelSource) => void;
 }) {
   const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: props.model.id });
@@ -97,6 +121,7 @@ export const ModelCenter = memo(function ModelCenter({
   const { t } = useTranslation();
   const [models, setModels] = useState<LocalLlm[]>([]);
   const [pendingDelete, setPendingDelete] = useState<LocalLlm>();
+  const [pendingMigration, setPendingMigration] = useState<{ model: LocalLlm; target: ModelSource }>();
   const onNoticeRef = useRef(onNotice);
   const onBusyRef = useRef(onBusyChange);
   const beginRequest = useLatestRequest();
@@ -130,8 +155,8 @@ export const ModelCenter = memo(function ModelCenter({
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    void listen<DownloadJob[]>("model-download-snapshot", ({ payload }) => {
-      if (payload.some((job) => job.status === "completed")) {
+    void listen<DownloadSnapshot>("model-download-snapshot", ({ payload }) => {
+      if (payload.jobs.some((job) => job.status === "completed")) {
         void refreshLocalModels().then(applyModels).catch(noticeError);
       }
     }).then((fn) => {
@@ -148,6 +173,19 @@ export const ModelCenter = memo(function ModelCenter({
       await deleteLocalModel(target.id);
       onNotice(t("modelDeleted", { repo: target.repo }));
       applyModels(await listLocalModels());
+    } catch (error) {
+      noticeError(error);
+    }
+  };
+
+  const confirmMigration = async () => {
+    if (!pendingMigration) return;
+    const { model, target } = pendingMigration;
+    setPendingMigration(undefined);
+    try {
+      await migrateLocalModel(model.id, target);
+      onNotice(t("modelMigrated", { repo: model.repo, target: t(target === "huggingface" ? "modelSourceHuggingFace" : "modelSourceModelScope") }));
+      applyModels(await refreshLocalModels());
     } catch (error) {
       noticeError(error);
     }
@@ -187,7 +225,7 @@ export const ModelCenter = memo(function ModelCenter({
           <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => void reorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}>
             <SortableContext items={models.map((model) => model.id)} strategy={verticalListSortingStrategy}>
               {models.map((model) => (
-                <SortableModel key={model.id} model={model} onNotice={onNotice} onRemove={setPendingDelete} />
+                <SortableModel key={model.id} model={model} onMigrate={(candidate, target) => setPendingMigration({ model: candidate, target })} onNotice={onNotice} onRemove={setPendingDelete} />
               ))}
             </SortableContext>
           </DndContext>
@@ -206,6 +244,19 @@ export const ModelCenter = memo(function ModelCenter({
               <AlertDialog.Action asChild>
                 <button autoFocus className={styles.dialogConfirm} onClick={() => void confirmDelete()} type="button">{t("delete")}</button>
               </AlertDialog.Action>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+      <AlertDialog.Root onOpenChange={(open) => { if (!open) setPendingMigration(undefined); }} open={Boolean(pendingMigration)}>
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className={styles.dialogOverlay} />
+          <AlertDialog.Content className={styles.dialogContent}>
+            <AlertDialog.Title>{t("modelMigrateConfirmTitle")}</AlertDialog.Title>
+            <AlertDialog.Description>{t("modelMigrateConfirm", { repo: pendingMigration?.model.repo, target: pendingMigration ? t(pendingMigration.target === "huggingface" ? "modelSourceHuggingFace" : "modelSourceModelScope") : "" })}</AlertDialog.Description>
+            <div className={styles.dialogActions}>
+              <AlertDialog.Cancel asChild><button className={styles.dialogCancel} type="button">{t("cancel")}</button></AlertDialog.Cancel>
+              <AlertDialog.Action asChild><button autoFocus className={styles.dialogPrimary} onClick={() => void confirmMigration()} type="button">{t("modelMigrate")}</button></AlertDialog.Action>
             </div>
           </AlertDialog.Content>
         </AlertDialog.Portal>

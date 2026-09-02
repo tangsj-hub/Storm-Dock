@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, DownloadJob, LocalLlm, LocalSession, LocalSessionMessage, McpServer, ModelFormat, ModelSource, Plugin, RemoteModelHit, RemoteModelProbe, SessionDeleteBatchResult } from "./types";
+import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, DownloadJob, LocalLlm, LocalSession, LocalSessionMessage, McpServer, ModelFormat, ModelSource, Plugin, RemoteModelFile, RemoteModelHit, RemoteModelProbe, SessionDeleteBatchResult } from "./types";
 
 export const listApplications = () => invoke<ApplicationStatus[]>("list_applications");
 export const listAccounts = (kind: ApplicationKind) => invoke<Account[]>("list_accounts", { kind });
@@ -40,6 +40,7 @@ export const deleteCursorPlugin = (id: string, source: Plugin["source"]) => invo
 export const searchRemoteModels = (source: ModelSource, query: string, format?: ModelFormat) => invoke<RemoteModelHit[]>("search_remote_models", { source, query, format: format && format !== "all" ? format : null });
 export const probeRemoteModel = (source: ModelSource, repo: string, revision?: string) => invoke<RemoteModelProbe>("probe_remote_model", { source, repo, revision: revision || null });
 export const startModelDownload = (source: ModelSource, repo: string, revision?: string, files?: string[]) => invoke<string>("start_model_download", { source, repo, revision: revision || null, files: files ?? null });
+export const startModelDownloadFast = (source: ModelSource, repo: string, revision: string, files: RemoteModelFile[]) => invoke<string>("start_model_download_fast", { source, repo, revision, files });
 export const cancelModelDownload = (jobId: string) => invoke("cancel_model_download", { jobId });
 export const listDownloadJobs = () => invoke<DownloadJob[]>("list_download_jobs");
 export const resumeDownloadJob = (jobId: string) => invoke("resume_download_job", { jobId });
@@ -49,3 +50,4 @@ export const refreshLocalModels = () => invoke<LocalLlm[]>("refresh_local_models
 export const reorderLocalModels = (ids: string[]) => invoke("reorder_local_models", { ids });
 export const deleteLocalModel = (id: string) => invoke("delete_local_model", { id });
 export const openLocalModelDir = (id: string) => invoke("open_local_model_dir", { id });
+export const migrateLocalModel = (id: string, target: ModelSource) => invoke<void>("migrate_local_model", { id, target });

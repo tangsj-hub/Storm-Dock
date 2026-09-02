@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, Download, Pause, Play, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { cancelModelDownload, dismissDownloadJob, listDownloadJobs, resumeDownloadJob } from "../lib/api";
-import type { DownloadJob } from "../lib/types";
+import type { DownloadJob, DownloadSnapshot } from "../lib/types";
 import styles from "./DownloadDock.module.css";
 
 const RESUME_SEEN = "download-resume-seen";
@@ -50,6 +50,13 @@ export function DownloadDock() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let poll: number | undefined;
+    let polling = false;
+    const refresh = async () => {
+      if (polling) return;
+      polling = true;
+      try { apply(await listDownloadJobs()); } catch { /* event stream remains authoritative */ } finally { polling = false; }
+    };
     void listDownloadJobs()
       .then((next) => {
         apply(next);
@@ -59,10 +66,11 @@ export function DownloadDock() {
         }
       })
       .catch(() => undefined);
-    void listen<DownloadJob[]>("model-download-snapshot", ({ payload }) => apply(payload)).then((fn) => {
+    void listen<DownloadSnapshot>("model-download-snapshot", ({ payload }) => apply(payload.jobs)).then((fn) => {
       unlisten = fn;
     });
-    return () => unlisten?.();
+    poll = window.setInterval(() => void refresh(), 10000);
+    return () => { unlisten?.(); if (poll !== undefined) window.clearInterval(poll); };
   }, [apply]);
 
   useEffect(() => {
@@ -127,10 +135,10 @@ export function DownloadDock() {
                   <div className={styles.rowCopy}>
                     <strong>{job.repo}</strong>
                     <span>
-                      {statusLabel(job, t)}
-                      {job.status === "downloading" ? ` · ${t("modelSpeed", { speed: formatBytes(job.speedBps) })}` : ""}
+                      {job.phase === "assembling" ? t("downloadAssembling") : job.phase === "verifying" ? `${t("downloadVerifying")} · ${formatBytes(job.phaseBytes)} / ${formatBytes(job.phaseTotalBytes)}` : statusLabel(job, t)}
+                      {job.status === "downloading" && job.speedBps > 0 ? ` · ${t("modelSpeed", { speed: formatBytes(job.speedBps) })}` : ""}
                     </span>
-                    {job.totalBytes > 0 ? (
+                    {(job.totalBytes > 0 || job.phaseTotalBytes > 0) ? (
                       <Progress.Root aria-label={t("modelDownloading")} className={styles.bar} value={percent}>
                         <Progress.Indicator className={job.status === "failed" ? styles.barError : styles.barFill} style={{ transform: `translateX(-${100 - percent}%)` }} />
                       </Progress.Root>

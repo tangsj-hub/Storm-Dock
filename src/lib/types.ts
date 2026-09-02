@@ -28,9 +28,26 @@ export function addModelPath() {
   return "/add-model.html";
 }
 
-export function modelDetailPath(source: ModelSource, repo: string) {
+export type ModelCenterTab = "discover" | "downloaded";
+export type ModelCenterContext = { query?: string; source?: ModelSource; format?: ModelFormat; tab?: ModelCenterTab };
+
+export function modelDetailPath(source: ModelSource, repo: string, context: ModelCenterContext = {}) {
   const params = new URLSearchParams({ source, repo });
+  if (context.query?.trim()) params.set("query", context.query.trim());
+  if (context.source) params.set("listSource", context.source);
+  if (context.format && context.format !== "all") params.set("format", context.format);
+  if (context.tab) params.set("tab", context.tab);
   return `/model-detail.html?${params}`;
+}
+
+export function modelCenterPath(context: ModelCenterContext = {}) {
+  const params = new URLSearchParams();
+  if (context.query?.trim()) params.set("query", context.query.trim());
+  if (context.source) params.set("source", context.source);
+  if (context.format && context.format !== "all") params.set("format", context.format);
+  if (context.tab && context.tab !== "discover") params.set("tab", context.tab);
+  const encoded = params.toString();
+  return `/add-model.html${encoded ? `?${encoded}` : ""}`;
 }
 
 export function modelSourceFromQuery(search = window.location.search): ModelSource | undefined {
@@ -137,6 +154,7 @@ export type LocalLlm = {
   files: number;
 };
 export type DownloadJobStatus = "queued" | "downloading" | "paused" | "retry_wait" | "failed" | "verifying" | "completed" | "cancelled";
+export type DownloadPhase = DownloadJobStatus | "assembling";
 export type DownloadJob = {
   jobId: string;
   repo: string;
@@ -152,7 +170,14 @@ export type DownloadJob = {
   verification: "sha256" | "weak";
   retryCount: number;
   weaklyVerified: boolean;
+  phase: DownloadPhase;
+  phaseBytes: number;
+  phaseTotalBytes: number;
+  currentFileIndex?: number;
+  overallBytes: number;
+  overallTotalBytes: number;
 };
+export type DownloadSnapshot = { version: 1; generatedAt: number; jobs: DownloadJob[] };
 
 export type CursorUsageDetails = {
   accountId: string;

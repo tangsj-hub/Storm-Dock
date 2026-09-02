@@ -49,7 +49,10 @@ mod tests {
 
     #[test]
     fn writes_and_restores_auth_json() {
-        let path = env::temp_dir().join(format!("storm-dock-grok-auth-{}.json", uuid::Uuid::new_v4()));
+        let path = env::temp_dir().join(format!(
+            "storm-dock-grok-auth-{}.json",
+            uuid::Uuid::new_v4()
+        ));
         let _ = fs::remove_file(&path);
         let auth = serde_json::json!({ "https://auth.x.ai::client": { "key": "token" } });
         write_auth(&path, &auth).unwrap();

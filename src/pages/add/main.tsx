@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronDown, ExternalLink, KeyRound, LogIn, RefreshCw } from
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
+import { DownloadDock } from "../../components/DownloadDock";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
@@ -115,7 +116,7 @@ function AddPage() {
         {usesApiKey ? <Tabs.Content className={styles.content} value="token"><form className={styles.panel} onSubmit={(event) => { event.preventDefault(); void importApiKey(); }}><div className={styles.heading}><KeyRound aria-hidden="true" size={22} /><div><h2>{t("apiKeyImportTitle")}</h2><p>{t(isGrok ? "apiKeyImportDescriptionGrok" : "apiKeyImportDescription")}</p></div></div><div className={styles.credentialBlock}><label>{t("apiKeyField")}<input autoFocus autoComplete="off" onChange={(event) => setApiKey(event.target.value)} spellCheck={false} type="text" value={apiKey} /></label><label>{t("baseUrlField")}<input autoComplete="off" onChange={(event) => setBaseUrl(event.target.value)} placeholder={isGrok ? "https://api.x.ai/v1" : t("baseUrlOptional")} spellCheck={false} type="url" value={baseUrl} /></label><label>{t("accountNote")}<input autoComplete="off" onChange={(event) => setNote(event.target.value)} type="text" value={note} /></label></div><div className={styles.actions}><a className={styles.secondary} href={home}>{t("cancel")}</a><button className={styles.primary} disabled={busy || !apiKey.trim()} type="submit">{t("import")}</button></div></form></Tabs.Content> : <Tabs.Content className={styles.content} value="token"><form className={styles.panel} onSubmit={(event) => { event.preventDefault(); void importPayload(); }}><div className={styles.heading}><KeyRound aria-hidden="true" size={22} /><div><h2>{t("tokenImportTitle")}</h2><p>{t("tokenImportDescription")}</p></div></div><div className={styles.credentialBlock}><details className={styles.examples}><summary><ChevronDown aria-hidden="true" size={16} />{t("tokenExampleTitle")}</summary><div className={styles.exampleList}>{TOKEN_EXAMPLES.map((example) => <div key={example.key}><p>{t(example.key)}</p><pre>{example.sample}</pre></div>)}</div></details><label>{t("credential")}<textarea autoFocus onChange={(event) => setPayload(event.target.value)} rows={8} value={payload} /></label></div><div className={styles.actions}><a className={styles.secondary} href={home}>{t("cancel")}</a><button className={styles.primary} disabled={busy || !payload.trim()} type="submit">{t("import")}</button></div></form></Tabs.Content>}
       </Tabs.Root>
     </section>
-  </main><ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
+  </main><ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} /><Toast.Viewport className={styles.toastViewport} /><DownloadDock /></Toast.Provider>;
 }
 
 syncDocumentAppKind(applicationKindFromQuery());

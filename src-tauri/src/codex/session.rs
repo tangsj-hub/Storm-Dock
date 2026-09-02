@@ -89,7 +89,10 @@ pub(crate) fn oauth_auth_json(
 ) -> serde_json::Value {
     let mut tokens = serde_json::Map::new();
     if let Some(id_token) = id_token.filter(|token| !token.is_empty()) {
-        tokens.insert("id_token".into(), serde_json::Value::String(id_token.into()));
+        tokens.insert(
+            "id_token".into(),
+            serde_json::Value::String(id_token.into()),
+        );
     }
     tokens.insert(
         "access_token".into(),
@@ -169,7 +172,9 @@ pub(crate) fn from_import(raw: &str) -> Result<Session> {
     }
     let value: serde_json::Value = serde_json::from_str(raw)?;
     let value = match value {
-        serde_json::Value::Array(values) => values.into_iter().next().ok_or(AppError::InvalidImport)?,
+        serde_json::Value::Array(values) => {
+            values.into_iter().next().ok_or(AppError::InvalidImport)?
+        }
         value => value,
     };
     let object = value.as_object().ok_or(AppError::InvalidImport)?;
@@ -184,7 +189,13 @@ pub(crate) fn from_import(raw: &str) -> Result<Session> {
     }
     let key = json_text(
         &value,
-        &["OPENAI_API_KEY", "openai_api_key", "api_key", "apiKey", "key"],
+        &[
+            "OPENAI_API_KEY",
+            "openai_api_key",
+            "api_key",
+            "apiKey",
+            "key",
+        ],
     )
     .ok_or(AppError::InvalidImport)?;
     session_from_auth(api_key_auth_json(&key), base_url)
@@ -248,7 +259,10 @@ mod tests {
             r#"{"OPENAI_API_KEY":"sk-custom","base_url":"https://api.example.com/v1"}"#,
         )
         .unwrap();
-        assert_eq!(base_url(&custom).as_deref(), Some("https://api.example.com/v1"));
+        assert_eq!(
+            base_url(&custom).as_deref(),
+            Some("https://api.example.com/v1")
+        );
         assert!(!same_identity(&key, &custom));
         assert!(same_identity(&key, &from_import("sk-test-key").unwrap()));
         assert_eq!(effective_base_url(&key), DEFAULT_OPENAI_BASE_URL);

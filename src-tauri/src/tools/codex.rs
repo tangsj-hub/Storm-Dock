@@ -1,4 +1,4 @@
-use super::adapter::{NativeCleanup, ToolAdapter, exe_matches, path_has};
+use super::adapter::{exe_matches, path_has, NativeCleanup, ToolAdapter};
 use super::parent_dir;
 use super::slash_path;
 

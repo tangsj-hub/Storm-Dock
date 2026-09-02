@@ -181,10 +181,7 @@ fn poll_once(
         .post(&device.token_endpoint)
         .header("User-Agent", USER_AGENT)
         .form(&[
-            (
-                "grant_type",
-                "urn:ietf:params:oauth:grant-type:device_code",
-            ),
+            ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
             ("client_id", XAI_CLIENT_ID),
             ("device_code", device.device_code.as_str()),
         ])
@@ -220,14 +217,20 @@ fn session_from_tokens(tokens: &OAuthTokenResponse) -> Result<crate::models::Ses
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AppError::Message("登录响应缺少 refresh_token".into()))?;
-    let user_id = [tokens.id_token.as_deref(), Some(tokens.access_token.as_str())]
-        .into_iter()
-        .flatten()
-        .find_map(user_id_from_jwt);
-    let email = [tokens.id_token.as_deref(), Some(tokens.access_token.as_str())]
-        .into_iter()
-        .flatten()
-        .find_map(email_from_jwt);
+    let user_id = [
+        tokens.id_token.as_deref(),
+        Some(tokens.access_token.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(user_id_from_jwt);
+    let email = [
+        tokens.id_token.as_deref(),
+        Some(tokens.access_token.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(email_from_jwt);
     session_from_auth(
         oauth_auth_json(
             &tokens.access_token,
@@ -286,7 +289,10 @@ mod tests {
     #[test]
     fn device_client_matches_grok_cli() {
         assert_eq!(XAI_CLIENT_ID, "b1a00492-073a-47ea-816f-4c329264a828");
-        assert_eq!(XAI_DISCOVERY_URL, "https://auth.x.ai/.well-known/openid-configuration");
+        assert_eq!(
+            XAI_DISCOVERY_URL,
+            "https://auth.x.ai/.well-known/openid-configuration"
+        );
         assert!(expires_at(Some(60)).contains('T'));
     }
 }

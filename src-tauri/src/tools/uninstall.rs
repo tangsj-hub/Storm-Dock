@@ -215,8 +215,8 @@ pub(crate) fn posix_command_from_paths(tool: &str, bin: &str, real: &str) -> Opt
 
 #[cfg(test)]
 mod tests {
-    use super::posix_command_from_paths;
     use super::brew_cask_from_path;
+    use super::posix_command_from_paths;
 
     #[test]
     fn uninstall_claude_native_rms_launcher_and_payload() {
@@ -257,8 +257,7 @@ mod tests {
     #[test]
     fn cask_name_from_path() {
         assert_eq!(
-            brew_cask_from_path("/opt/homebrew/Caskroom/claude-code@latest/1.0/claude")
-                .as_deref(),
+            brew_cask_from_path("/opt/homebrew/Caskroom/claude-code@latest/1.0/claude").as_deref(),
             Some("claude-code@latest")
         );
     }
@@ -277,12 +276,9 @@ mod tests {
 
     #[test]
     fn uninstall_grok_native_rms_bin_and_downloads_not_home() {
-        let cmd = posix_command_from_paths(
-            "grok",
-            "/Users/a/.grok/bin/grok",
-            "/Users/a/.grok/bin/grok",
-        )
-        .unwrap();
+        let cmd =
+            posix_command_from_paths("grok", "/Users/a/.grok/bin/grok", "/Users/a/.grok/bin/grok")
+                .unwrap();
         assert!(cmd.contains("rm -f '/Users/a/.grok/bin/grok'"));
         assert!(cmd.contains("rm -rf '/Users/a/.grok/downloads'"));
         assert!(!cmd.contains("rm -rf '/Users/a/.grok'"));
@@ -390,7 +386,10 @@ mod tests {
             r"C:\Users\me\.local\share\claude\versions\2.1.0\claude.exe",
         )
         .unwrap();
-        assert!(cmd.contains("rm -f 'C:\\Users\\me\\.local\\bin\\claude.exe'") || cmd.contains("claude.exe"));
+        assert!(
+            cmd.contains("rm -f 'C:\\Users\\me\\.local\\bin\\claude.exe'")
+                || cmd.contains("claude.exe")
+        );
         assert!(cmd.contains(".local/share/claude") || cmd.contains(".local\\share\\claude"));
     }
 
@@ -402,7 +401,11 @@ mod tests {
             r"C:\Users\me\AppData\Local\Programs\claude\claude.exe",
         )
         .unwrap();
-        assert!(cmd.contains("Programs/claude") || cmd.contains("Programs\\claude") || cmd.contains("/programs/claude"));
+        assert!(
+            cmd.contains("Programs/claude")
+                || cmd.contains("Programs\\claude")
+                || cmd.contains("/programs/claude")
+        );
     }
 
     #[test]

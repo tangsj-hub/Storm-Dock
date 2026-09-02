@@ -42,7 +42,10 @@ impl ToolAdapter for HermesAdapter {
             LifecycleCommandShell::WindowsBatch => {
                 #[cfg(target_os = "windows")]
                 {
-                    format!("hermes update || {}", super::powershell_irm_install(INSTALL_WINDOWS_SCRIPT))
+                    format!(
+                        "hermes update || {}",
+                        super::powershell_irm_install(INSTALL_WINDOWS_SCRIPT)
+                    )
                 }
                 #[cfg(not(target_os = "windows"))]
                 {

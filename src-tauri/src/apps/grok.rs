@@ -175,7 +175,13 @@ mod tests {
 
     fn oauth_session() -> Session {
         session::session_from_auth(
-            session::oauth_auth_json("access-live", "refresh-live", Some("user-1"), Some("me@x.ai"), "now"),
+            session::oauth_auth_json(
+                "access-live",
+                "refresh-live",
+                Some("user-1"),
+                Some("me@x.ai"),
+                "now",
+            ),
             None,
         )
         .unwrap()
@@ -191,7 +197,10 @@ mod tests {
         .unwrap();
         adapter.apply(&next).unwrap();
         let imported = adapter.import_current().unwrap();
-        assert_eq!(session::import_type(&imported), crate::models::ImportType::ApiKey);
+        assert_eq!(
+            session::import_type(&imported),
+            crate::models::ImportType::ApiKey
+        );
         assert_eq!(
             imported.values.get(session::GROK_AUTH_KEY),
             next.values.get(session::GROK_AUTH_KEY)
@@ -229,8 +238,11 @@ mod tests {
     #[test]
     fn switching_api_key_keeps_auth_json_and_cli_tables() {
         let (adapter, auth_path, config_path) = test_adapter();
-        fs::write(&config_path, "[cli]\ninstaller = \"internal\"\n\n[marketplace]\nkeep = true\n")
-            .unwrap();
+        fs::write(
+            &config_path,
+            "[cli]\ninstaller = \"internal\"\n\n[marketplace]\nkeep = true\n",
+        )
+        .unwrap();
         let oauth = oauth_session();
         adapter.apply(&oauth).unwrap();
         let original_auth = fs::read(&auth_path).unwrap();
@@ -250,7 +262,10 @@ mod tests {
         assert!(config_text.contains("marketplace"));
 
         let imported = adapter.import_current().unwrap();
-        assert_eq!(session::import_type(&imported), crate::models::ImportType::ApiKey);
+        assert_eq!(
+            session::import_type(&imported),
+            crate::models::ImportType::ApiKey
+        );
         let live = adapter.live_match_session().unwrap();
         assert!(session::matches_live(&key, &live));
         assert!(!session::matches_live(&oauth, &live));
@@ -275,7 +290,13 @@ mod tests {
         adapter.apply(&oauth_session()).unwrap();
         let original = fs::read(&auth_path).unwrap();
         let stale = session::session_from_auth(
-            session::oauth_auth_json("stale-access", "stale-refresh", Some("user-1"), Some("me@x.ai"), "later"),
+            session::oauth_auth_json(
+                "stale-access",
+                "stale-refresh",
+                Some("user-1"),
+                Some("me@x.ai"),
+                "later",
+            ),
             None,
         )
         .unwrap();

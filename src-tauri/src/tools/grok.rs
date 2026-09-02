@@ -1,4 +1,4 @@
-use super::adapter::{NativeCleanup, ToolAdapter, path_has};
+use super::adapter::{path_has, NativeCleanup, ToolAdapter};
 use super::slash_path;
 
 pub(crate) const ADAPTER: GrokAdapter = GrokAdapter;
@@ -59,9 +59,9 @@ impl ToolAdapter for GrokAdapter {
 }
 
 pub(crate) fn is_native(bin_path: &str, real_target: &str) -> bool {
-    [bin_path, real_target].iter().any(|path| {
-        path_has(path, "/.grok/bin/") || path_has(path, "/.grok/downloads/grok-")
-    })
+    [bin_path, real_target]
+        .iter()
+        .any(|path| path_has(path, "/.grok/bin/") || path_has(path, "/.grok/downloads/grok-"))
 }
 
 pub(crate) fn downloads_dir(bin_path: &str, real_target: &str) -> Option<String> {

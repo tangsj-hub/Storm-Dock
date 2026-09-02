@@ -1,5 +1,5 @@
 use super::{
-    chain_update_commands, claude, codex, gemini, grok, hermes, opencode, openclaw, pi, slash_path,
+    chain_update_commands, claude, codex, gemini, grok, hermes, openclaw, opencode, pi, slash_path,
     LifecycleCommandShell, ToolLifecycleAction,
 };
 

@@ -121,7 +121,11 @@ fn find_summary_path(id: &str) -> Option<PathBuf> {
     files
         .into_iter()
         .filter(|path| parse_summary(path).is_some_and(|session| session.id == id))
-        .max_by_key(|path| parse_summary(path).map(|session| session.updated_at).unwrap_or(0))
+        .max_by_key(|path| {
+            parse_summary(path)
+                .map(|session| session.updated_at)
+                .unwrap_or(0)
+        })
 }
 
 fn collect_summary_files(root: &Path, files: &mut Vec<PathBuf>) {
@@ -260,10 +264,7 @@ fn modified_at(path: &Path) -> u64 {
 }
 
 fn is_valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 128
-        && !id.contains(['/', '\\', '\0'])
-        && !id.contains("..")
+    !id.is_empty() && id.len() <= 128 && !id.contains(['/', '\\', '\0']) && !id.contains("..")
 }
 
 fn short_id(id: &str) -> &str {
@@ -286,7 +287,13 @@ fn safe_title(value: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    fn write_session(root: &Path, project: &str, id: &str, summary: &str, history: &str) -> PathBuf {
+    fn write_session(
+        root: &Path,
+        project: &str,
+        id: &str,
+        summary: &str,
+        history: &str,
+    ) -> PathBuf {
         let session_dir = root.join(project).join(id);
         fs::create_dir_all(&session_dir).unwrap();
         let summary_path = session_dir.join("summary.json");
@@ -297,7 +304,8 @@ mod tests {
 
     #[test]
     fn scans_native_layout_and_prefers_generated_title() {
-        let root = std::env::temp_dir().join(format!("storm-dock-grok-sessions-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("storm-dock-grok-sessions-{}", uuid::Uuid::new_v4()));
         let id = "019f6af2-18b0-7673-958e-d25be650e172";
         write_session(
             &root,
@@ -318,7 +326,8 @@ mod tests {
 
     #[test]
     fn loads_chat_history_and_skips_reasoning() {
-        let root = std::env::temp_dir().join(format!("storm-dock-grok-messages-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("storm-dock-grok-messages-{}", uuid::Uuid::new_v4()));
         let summary_path = write_session(
             &root,
             "project",
@@ -345,9 +354,16 @@ mod tests {
 
     #[test]
     fn delete_session_removes_only_the_matching_directory() {
-        let root = std::env::temp_dir().join(format!("storm-dock-grok-delete-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("storm-dock-grok-delete-{}", uuid::Uuid::new_v4()));
         let id = "session-to-delete";
-        let summary_path = write_session(&root, "project", id, &format!(r#"{{"info":{{"id":"{id}"}}}}"#), "");
+        let summary_path = write_session(
+            &root,
+            "project",
+            id,
+            &format!(r#"{{"info":{{"id":"{id}"}}}}"#),
+            "",
+        );
         let sibling = root.join("project").join("session-to-keep");
         fs::create_dir_all(&sibling).unwrap();
         fs::write(sibling.join("keep.txt"), "keep").unwrap();
@@ -360,11 +376,21 @@ mod tests {
 
     #[test]
     fn delete_session_rejects_paths_outside_root() {
-        let root = std::env::temp_dir().join(format!("storm-dock-grok-outside-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("storm-dock-grok-outside-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&root).unwrap();
-        let outside = std::env::temp_dir().join(format!("storm-dock-grok-outside-dir-{}", uuid::Uuid::new_v4()));
+        let outside = std::env::temp_dir().join(format!(
+            "storm-dock-grok-outside-dir-{}",
+            uuid::Uuid::new_v4()
+        ));
         let id = "session-outside";
-        let summary_path = write_session(&outside, "project", id, &format!(r#"{{"info":{{"id":"{id}"}}}}"#), "");
+        let summary_path = write_session(
+            &outside,
+            "project",
+            id,
+            &format!(r#"{{"info":{{"id":"{id}"}}}}"#),
+            "",
+        );
         assert!(delete_session_dir(&root, &summary_path, id).is_err());
         assert!(outside.join("project").join(id).exists());
         let _ = fs::remove_dir_all(&root);

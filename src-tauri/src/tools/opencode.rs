@@ -1,4 +1,4 @@
-use super::adapter::{NativeCleanup, ToolAdapter, exe_matches, path_has};
+use super::adapter::{exe_matches, path_has, NativeCleanup, ToolAdapter};
 
 pub(crate) const ADAPTER: OpenCodeAdapter = OpenCodeAdapter;
 
@@ -51,8 +51,7 @@ fn is_curl_layout(bin: &str, real: &str) -> bool {
         return false;
     }
     [bin, real].iter().any(|path| {
-        path_has(path, "/.opencode/bin/")
-            || (exe_matches(path, "opencode") && is_user_bin(path))
+        path_has(path, "/.opencode/bin/") || (exe_matches(path, "opencode") && is_user_bin(path))
     })
 }
 

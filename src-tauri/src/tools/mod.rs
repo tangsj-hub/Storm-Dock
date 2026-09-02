@@ -6,8 +6,8 @@ mod codex;
 mod gemini;
 mod grok;
 mod hermes;
-mod opencode;
 mod openclaw;
+mod opencode;
 mod pi;
 mod uninstall;
 
@@ -80,8 +80,8 @@ fn remote_cache() -> &'static Mutex<HashMap<String, (Instant, Option<String>)>> 
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn npm_tags_cache()
--> &'static Mutex<HashMap<String, (Instant, serde_json::Map<String, serde_json::Value>)>> {
+fn npm_tags_cache(
+) -> &'static Mutex<HashMap<String, (Instant, serde_json::Map<String, serde_json::Value>)>> {
     static CACHE: OnceLock<
         Mutex<HashMap<String, (Instant, serde_json::Map<String, serde_json::Value>)>>,
     > = OnceLock::new();
@@ -177,7 +177,8 @@ fn spawn_remote_latest(
         let Ok(updated) = tauri::async_runtime::spawn_blocking(move || {
             attach_remote_latest(snapshot, wsl.as_ref(), force)
         })
-        .await else {
+        .await
+        else {
             return;
         };
         persist_tool_snapshot(&updated);
@@ -288,7 +289,8 @@ fn spawn_background_refresh(
         let Ok(local) = tauri::async_runtime::spawn_blocking(move || {
             collect_tool_versions(&requested, wsl_probe.as_ref(), true)
         })
-        .await else {
+        .await
+        else {
             return;
         };
         persist_tool_snapshot(&local);
@@ -338,8 +340,7 @@ fn attach_remote_latest(
                     if !tool.latest_pending && !force {
                         return tool;
                     }
-                    let latest =
-                        fetch_remote_latest(&tool.name, tool.version.as_deref(), !force);
+                    let latest = fetch_remote_latest(&tool.name, tool.version.as_deref(), !force);
                     let mut next = tool;
                     next.update_available =
                         is_update_available(next.version.as_deref(), latest.as_deref());
@@ -708,13 +709,10 @@ fn build_tool_action_line(
         //    语义也不适合跨 wsl.exe;这里统一替换为 POSIX 版安装/更新命令。
         if let Some(distro) = wsl_distro_for_tool(tool) {
             let command = match action {
-                ToolLifecycleAction::Uninstall => wsl_posix_uninstall_command(
-                    tool,
-                    &distro,
-                    wsl_shell,
-                    wsl_shell_flag,
-                )
-                .ok_or_else(|| UNINSTALL_UNANCHORED.to_string())?,
+                ToolLifecycleAction::Uninstall => {
+                    wsl_posix_uninstall_command(tool, &distro, wsl_shell, wsl_shell_flag)
+                        .ok_or_else(|| UNINSTALL_UNANCHORED.to_string())?
+                }
                 _ => wsl_tool_action_shell_command(tool, action)
                     .ok_or_else(|| format!("Unsupported tool action target: {tool}"))?,
             };
@@ -1053,7 +1051,12 @@ fn fetch_npm_dist_tags(
         "https://registry.npmmirror.com",
     ] {
         let url = format!("{registry}/{package}");
-        let Some(resp) = client_ref.get(&url).send().ok().filter(|r| r.status().is_success()) else {
+        let Some(resp) = client_ref
+            .get(&url)
+            .send()
+            .ok()
+            .filter(|r| r.status().is_success())
+        else {
             continue;
         };
         let Ok(json) = resp.json::<serde_json::Value>() else {
@@ -1185,16 +1188,13 @@ fn try_get_version(tool: &str) -> ShellProbe {
         cmd.env("PATH", merge_path_segments(&login_path, &inherited));
     }
     isolate_child_process_group(&mut cmd);
-    let output = cmd
-        .spawn()
+    let output = cmd.spawn().map_err(|_| ()).and_then(|child| {
+        wait_child_output(
+            child,
+            CommandDeadline::from_timeout(Some(Duration::from_secs(4))),
+        )
         .map_err(|_| ())
-        .and_then(|child| {
-            wait_child_output(
-                child,
-                CommandDeadline::from_timeout(Some(Duration::from_secs(4))),
-            )
-            .map_err(|_| ())
-        });
+    });
 
     match output {
         Ok(out) => {
@@ -2854,7 +2854,10 @@ fn anchored_official_update_command(tool: &str, bin_path: &str) -> Option<String
 fn grok_native_update_command(update: String) -> String {
     chain_update_commands(
         update,
-        grok::ADAPTER.posix_installer().unwrap_or_default().to_string(),
+        grok::ADAPTER
+            .posix_installer()
+            .unwrap_or_default()
+            .to_string(),
         LifecycleCommandShell::Posix,
     )
 }
@@ -3659,7 +3662,10 @@ fn installs_anchored_command(tool: &str, installs: &[ToolInstallation]) -> Optio
     anchored_command_from_paths(tool, &inst.path, &real)
 }
 
-fn installs_anchored_uninstall_command(tool: &str, installs: &[ToolInstallation]) -> Option<String> {
+fn installs_anchored_uninstall_command(
+    tool: &str,
+    installs: &[ToolInstallation],
+) -> Option<String> {
     let inst = default_install(installs)?;
     let real = inst.real.to_string_lossy();
     anchored_uninstall_command_from_paths(tool, &inst.path, &real)
@@ -4102,4 +4108,3 @@ mod tests {
         );
     }
 }
-

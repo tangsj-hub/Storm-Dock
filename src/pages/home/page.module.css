@@ -4,6 +4,10 @@
 .brand { align-items: center; display: flex; font-size: 17px; font-weight: 720; gap: 8px; }
 .brand > img { height: 19px; width: 19px; }
 .brand svg { color: var(--focus); }
+.headerModes { align-items: center; display: flex; gap: 10px; }
+.modelCenterTab { align-items: center; background: var(--solid); border: 1px solid var(--border-strong); border-radius: 7px; color: var(--muted); display: inline-flex; font-size: 13px; font-weight: 600; height: 34px; padding: 0 14px; }
+.modelCenterTab:hover { color: var(--fg); }
+.modelCenterTabActive { background: var(--solid); box-shadow: 0 1px 2px var(--shadow); color: var(--fg); }
 .settingsButton { align-items: center; border-radius: 4px; color: var(--muted); display: inline-flex; height: 26px; justify-content: center; margin-left: 2px; width: 26px; }
 .settingsButton:hover { background: var(--track); color: var(--fg); }
 .switcher [role="tablist"] { background: var(--track); border: 1px solid var(--border-strong); border-radius: 7px; display: flex; gap: 2px; padding: 3px; }
@@ -34,6 +38,7 @@
 .current:hover { background: var(--panel-current-hover); }
 .dragging { box-shadow: 0 8px 20px var(--shadow-strong); opacity: .78; }
 .dragHandle { color: var(--muted); cursor: grab; outline: none; touch-action: none; user-select: none; }
+.cardIcon { color: var(--muted); }
 .dragHandle:focus-visible { color: var(--focus); }
 .accountCopy strong { display: block; font-size: 14px; font-weight: 680; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .accountMeta { align-items: center; display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
@@ -164,7 +169,7 @@
 .placeholder { align-items: center; background: var(--panel); border: 1px dashed var(--border-strong); border-radius: 6px; color: var(--muted); display: flex; flex-direction: column; justify-content: center; min-height: 250px; text-align: center; }
 .placeholder h2 { color: var(--fg); font-size: 16px; margin: 0 0 6px; }
 .placeholder p { font-size: 13px; }
-.toastViewport { bottom: 24px; display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }
+.toastViewport { bottom: calc(24px + var(--download-dock-offset, 0px)); display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }
 .dialogOverlay { background: var(--overlay); inset: 0; position: fixed; z-index: 30; }
 .dialogContent { background: var(--solid); border: 1px solid var(--border); border-radius: 7px; box-shadow: 0 18px 42px var(--shadow-strong); left: 50%; max-width: 440px; padding: 24px; position: fixed; top: 50%; transform: translate(-50%, -50%); width: calc(100vw - 48px); z-index: 31; }
 .dialogContent h2 { font-size: 17px; margin: 0 0 9px; }

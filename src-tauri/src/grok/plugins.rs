@@ -11,7 +11,10 @@ pub(crate) fn list_plugins() -> Vec<Plugin> {
     let Some(home) = grok_home() else {
         return Vec::new();
     };
-    list_plugins_from(&home, &read_text(&home.join("config.toml")).unwrap_or_default())
+    list_plugins_from(
+        &home,
+        &read_text(&home.join("config.toml")).unwrap_or_default(),
+    )
 }
 
 pub(crate) fn set_plugin_enabled(id: &str, enabled: bool) -> std::result::Result<(), String> {
@@ -107,12 +110,7 @@ fn looks_like_plugin(path: &Path) -> bool {
         || path.join("hooks/hooks.json").is_file()
 }
 
-fn plugin_from_dir(
-    path: &Path,
-    id: &str,
-    enabled: &[String],
-    disabled: &[String],
-) -> Plugin {
+fn plugin_from_dir(path: &Path, id: &str, enabled: &[String], disabled: &[String]) -> Plugin {
     let (name, description, icon) = metadata(path, id);
     Plugin {
         id: id.into(),
@@ -335,7 +333,12 @@ fn encode_table(table: toml::map::Map<String, toml::Value>) -> Result<String> {
 fn string_list(config_text: &str, key: &str) -> Vec<String> {
     parse_table(config_text)
         .ok()
-        .and_then(|table| table.get("plugins").and_then(toml::Value::as_table).cloned())
+        .and_then(|table| {
+            table
+                .get("plugins")
+                .and_then(toml::Value::as_table)
+                .cloned()
+        })
         .map(|plugins| array_strings(plugins.get(key)))
         .unwrap_or_default()
 }
@@ -383,10 +386,7 @@ fn expand_path(home: &Path, path: &str) -> PathBuf {
 }
 
 fn is_valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 128
-        && !id.contains(['\\', '\0'])
-        && !id.contains("..")
+    !id.is_empty() && id.len() <= 128 && !id.contains(['\\', '\0']) && !id.contains("..")
 }
 
 #[cfg(test)]
@@ -410,7 +410,8 @@ mod tests {
 
     #[test]
     fn lists_enabled_plugins_and_skips_disabled_default() {
-        let home = std::env::temp_dir().join(format!("storm-dock-grok-plugins-{}", uuid::Uuid::new_v4()));
+        let home =
+            std::env::temp_dir().join(format!("storm-dock-grok-plugins-{}", uuid::Uuid::new_v4()));
         write_plugin(&home.join("plugins"), "demo");
         write_plugin(&home.join("plugins"), "other");
         let config = "[plugins]\nenabled = [\"demo\"]\n";
@@ -441,14 +442,19 @@ mod tests {
 
     #[test]
     fn delete_removes_directory_and_config_entries() {
-        let home = std::env::temp_dir().join(format!("storm-dock-grok-plugin-del-{}", uuid::Uuid::new_v4()));
+        let home = std::env::temp_dir().join(format!(
+            "storm-dock-grok-plugin-del-{}",
+            uuid::Uuid::new_v4()
+        ));
         write_plugin(&home.join("plugins"), "demo");
         let config = "[plugins]\nenabled = [\"demo\"]\n";
         let path = plugin_dir(&home, config, "demo").unwrap();
         fs::remove_dir_all(&path).unwrap();
         let next = apply_removed(config, "demo").unwrap();
         assert!(!home.join("plugins/demo").exists());
-        assert!(!string_list(&next, "enabled").iter().any(|value| value == "demo"));
+        assert!(!string_list(&next, "enabled")
+            .iter()
+            .any(|value| value == "demo"));
         let _ = fs::remove_dir_all(&home);
     }
 }

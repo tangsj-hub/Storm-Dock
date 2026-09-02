@@ -131,8 +131,7 @@ impl ApplicationAdapter for CodexAdapter {
                     && session::chatgpt_account_id(live) == session::chatgpt_account_id(&next_auth)
             })
         } else {
-            self.preserve_official_auth
-                && live_auth.as_ref().is_some_and(session::is_chatgpt_login)
+            self.preserve_official_auth && live_auth.as_ref().is_some_and(session::is_chatgpt_login)
         };
         if !skip_auth {
             auth::write_auth(auth_path, &next_auth)?;
@@ -196,7 +195,10 @@ mod tests {
         )
         .unwrap();
         let imported = adapter.import_current().unwrap();
-        assert_eq!(session::import_type(&imported), crate::models::ImportType::ApiKey);
+        assert_eq!(
+            session::import_type(&imported),
+            crate::models::ImportType::ApiKey
+        );
 
         let next = session::from_import(
             r#"{"OPENAI_API_KEY":"sk-next","base_url":"https://api.example.com/v1"}"#,
@@ -204,7 +206,11 @@ mod tests {
         .unwrap();
         adapter.apply(&next).unwrap();
         assert_eq!(
-            adapter.import_current().unwrap().values.get(session::CODEX_AUTH_KEY),
+            adapter
+                .import_current()
+                .unwrap()
+                .values
+                .get(session::CODEX_AUTH_KEY),
             next.values.get(session::CODEX_AUTH_KEY)
         );
         let config_text = fs::read_to_string(&config_path).unwrap();
@@ -259,7 +265,10 @@ mod tests {
         );
 
         let imported = adapter.import_current().unwrap();
-        assert_eq!(session::import_type(&imported), crate::models::ImportType::OAuth);
+        assert_eq!(
+            session::import_type(&imported),
+            crate::models::ImportType::OAuth
+        );
         assert!(!imported.values.contains_key(session::CODEX_BASE_URL_KEY));
 
         let live = adapter.live_match_session().unwrap();
@@ -269,7 +278,10 @@ mod tests {
         adapter.apply(&oauth).unwrap();
         assert_eq!(fs::read(&auth_path).unwrap(), original_auth);
         let restored = fs::read_to_string(&config_path).unwrap();
-        assert_eq!(crate::codex::config::experimental_bearer_token(&restored), None);
+        assert_eq!(
+            crate::codex::config::experimental_bearer_token(&restored),
+            None
+        );
         assert_eq!(crate::codex::config::active_base_url(&restored), None);
         let live = adapter.live_match_session().unwrap();
         assert!(session::matches_live(&oauth, &live));
@@ -283,7 +295,9 @@ mod tests {
     fn preserve_writes_default_openai_url_for_key_without_base_url() {
         let (adapter, auth_path, config_path) = test_adapter();
         adapter.apply(&oauth_session()).unwrap();
-        adapter.apply(&session::from_import("sk-default").unwrap()).unwrap();
+        adapter
+            .apply(&session::from_import("sk-default").unwrap())
+            .unwrap();
         let config_text = fs::read_to_string(&config_path).unwrap();
         assert_eq!(
             crate::codex::config::experimental_bearer_token(&config_text).as_deref(),

@@ -91,9 +91,11 @@ pub(crate) async fn set_grok_plugin_enabled(
     id: String,
     enabled: bool,
 ) -> std::result::Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || crate::grok::plugins::set_plugin_enabled(&id, enabled))
-        .await
-        .map_err(|error| error.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::grok::plugins::set_plugin_enabled(&id, enabled)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -318,11 +320,7 @@ pub(crate) fn set_mcp_server_enabled(
         }
         ApplicationKind::Cursor => {
             let home = std::env::var_os("HOME").ok_or_else(|| "无法读取用户目录。".to_string())?;
-            set_json_mcp_enabled(
-                &PathBuf::from(home).join(".cursor/mcp.json"),
-                &id,
-                enabled,
-            )
+            set_json_mcp_enabled(&PathBuf::from(home).join(".cursor/mcp.json"), &id, enabled)
         }
         ApplicationKind::Grok => Err("Grok MCP 暂不支持开关。".into()),
     }
@@ -808,7 +806,12 @@ fn mcp_servers_from_toml(text: &str) -> Vec<McpServer> {
 fn mcp_servers_from_json(text: &str) -> Vec<McpServer> {
     serde_json::from_str::<serde_json::Value>(text)
         .ok()
-        .and_then(|value| value.get("mcpServers").and_then(serde_json::Value::as_object).cloned())
+        .and_then(|value| {
+            value
+                .get("mcpServers")
+                .and_then(serde_json::Value::as_object)
+                .cloned()
+        })
         .map(|servers| {
             servers
                 .iter()
@@ -816,14 +819,19 @@ fn mcp_servers_from_json(text: &str) -> Vec<McpServer> {
                 .map(|(id, server)| McpServer {
                     id: id.clone(),
                     name: id.clone(),
-                    enabled: server.get("disabled").and_then(serde_json::Value::as_bool) != Some(true),
+                    enabled: server.get("disabled").and_then(serde_json::Value::as_bool)
+                        != Some(true),
                 })
                 .collect()
         })
         .unwrap_or_default()
 }
 
-fn set_toml_mcp_enabled(path: &PathBuf, id: &str, enabled: bool) -> std::result::Result<(), String> {
+fn set_toml_mcp_enabled(
+    path: &PathBuf,
+    id: &str,
+    enabled: bool,
+) -> std::result::Result<(), String> {
     let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
     let headers = mcp_toml_headers(id);
     let mut lines: Vec<String> = content.lines().map(str::to_owned).collect();
@@ -860,7 +868,11 @@ fn mcp_toml_headers(id: &str) -> Vec<String> {
     }
 }
 
-fn set_json_mcp_enabled(path: &PathBuf, id: &str, enabled: bool) -> std::result::Result<(), String> {
+fn set_json_mcp_enabled(
+    path: &PathBuf,
+    id: &str,
+    enabled: bool,
+) -> std::result::Result<(), String> {
     let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
     let mut value: serde_json::Value =
         serde_json::from_str(&content).map_err(|error| error.to_string())?;
@@ -1354,6 +1366,30 @@ pub(crate) fn set_preserve_codex_official_auth(
         .lock()
         .map_err(|_| "账户存储不可用".to_string())?
         .set_preserve_codex_official_auth(enabled)
+        .map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn get_hf_token_configured(
+    state: State<'_, AppState>,
+) -> std::result::Result<bool, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())
+        .map(|controller| controller.hf_token_configured())
+}
+
+#[tauri::command]
+pub(crate) fn set_hf_token(
+    token: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<(), String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())?
+        .set_hf_token(token)
         .map_err(error_text)
 }
 
@@ -2059,12 +2095,7 @@ pub(crate) fn update_codex_api_key_account(
         .0
         .lock()
         .map_err(|_| "账户存储不可用".to_string())?
-        .update_codex_api_key(
-            &id,
-            &api_key,
-            base_url.as_deref(),
-            label.as_deref(),
-        )
+        .update_codex_api_key(&id, &api_key, base_url.as_deref(), label.as_deref())
         .map_err(error_text)?;
     refresh_tray(&app);
     let _ = app.emit("accounts-changed", ());
@@ -2111,9 +2142,13 @@ pub(crate) async fn test_codex_api_key_account(
                 }
             });
         let api_key = if grok {
-            crate::grok::session::api_key(&crate::grok::session::auth_value(&session).map_err(error_text)?)
+            crate::grok::session::api_key(
+                &crate::grok::session::auth_value(&session).map_err(error_text)?,
+            )
         } else {
-            crate::codex::session::api_key(&crate::codex::session::auth_value(&session).map_err(error_text)?)
+            crate::codex::session::api_key(
+                &crate::codex::session::auth_value(&session).map_err(error_text)?,
+            )
         };
         (url, api_key, grok)
     };
@@ -2219,10 +2254,8 @@ mod tests {
 
     #[test]
     fn toggling_toml_mcp_does_not_rewrite_enabled_tools() {
-        let path = std::env::temp_dir().join(format!(
-            "storm-dock-mcp-{}.toml",
-            uuid::Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("storm-dock-mcp-{}.toml", uuid::Uuid::new_v4()));
         fs::write(
             &path,
             "[mcp_servers.foo]\ncommand = \"npx\"\nenabled_tools = [\"a\"]\n",
@@ -2252,10 +2285,8 @@ mod tests {
 
     #[test]
     fn json_mcp_toggle_preserves_command_and_args() {
-        let path = std::env::temp_dir().join(format!(
-            "storm-dock-mcp-{}.json",
-            uuid::Uuid::new_v4()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("storm-dock-mcp-{}.json", uuid::Uuid::new_v4()));
         fs::write(
             &path,
             r#"{"mcpServers":{"foo":{"command":"npx","args":["-y","demo"]}}}"#,

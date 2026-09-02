@@ -9,10 +9,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
+import { DownloadDock } from "../../components/DownloadDock";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import i18n from "../../i18n";
-import { exportDatabase, getDatabasePath, getPreserveCodexOfficialAuth, importDatabase, moveDatabase, setPreserveCodexOfficialAuth } from "../../lib/api";
+import { exportDatabase, getDatabasePath, getHfTokenConfigured, getPreserveCodexOfficialAuth, importDatabase, moveDatabase, setHfToken, setPreserveCodexOfficialAuth } from "../../lib/api";
 import { getPreference, setPreference, type ThemePreference } from "../../lib/theme";
 import { applicationKindFromQuery, homePath, syncDocumentAppKind } from "../../lib/types";
 import logo from "../../assets/logo.svg";
@@ -53,6 +54,9 @@ function SettingsPage() {
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
   const [closeToTray, setCloseToTray] = useState(() => localStorage.getItem("closeToTray") !== "false");
   const [preserveCodexAuth, setPreserveCodexAuth] = useState(true);
+  const [hfToken, setHfTokenValue] = useState("");
+  const [hfConfigured, setHfConfigured] = useState(false);
+  const [hfBusy, setHfBusy] = useState(false);
   const [appVersion, setAppVersion] = useState("1.1.0");
   useEffect(() => { void invoke("set_close_to_tray", { enabled: closeToTray }); }, [closeToTray]);
   const current = languages.find((item) => item.code === language) ?? languages[0];
@@ -70,6 +74,7 @@ function SettingsPage() {
   useEffect(() => { void getDatabasePath().then(setDatabasePath).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void isEnabled().then(setLaunchAtLogin).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void getPreserveCodexOfficialAuth().then(setPreserveCodexAuth).catch((error) => setNotice(String(error))); }, []);
+  useEffect(() => { void getHfTokenConfigured().then(setHfConfigured).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void getVersion().then(setAppVersion).catch(() => setAppVersion("1.1.0")); }, []);
   const toggleLaunchAtLogin = async () => { try { if (launchAtLogin) await disable(); else await enable(); setLaunchAtLogin(!launchAtLogin); } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); } };
   const toggleCloseToTray = () => { const next = !closeToTray; setCloseToTray(next); localStorage.setItem("closeToTray", String(next)); };
@@ -80,6 +85,22 @@ function SettingsPage() {
       setPreserveCodexAuth(next);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error));
+    }
+  };
+  const saveHfToken = async () => {
+    setHfBusy(true);
+    try {
+      await setHfToken(hfToken);
+      const configured = hfToken.trim().length > 0;
+      setHfConfigured(configured);
+      setHfTokenValue("");
+      setNoticeStatus("success");
+      setNotice(configured ? t("hfTokenSaved") : t("hfTokenCleared"));
+    } catch (error) {
+      setNoticeStatus("error");
+      setNotice(error instanceof Error ? error.message : String(error));
+    } finally {
+      setHfBusy(false);
     }
   };
   const showError = (error: unknown) => {
@@ -137,9 +158,10 @@ function SettingsPage() {
   return <Toast.Provider><main className={styles.shell}>
     <WindowDragSurface />
     <header className={styles.header}><a aria-label={t("back")} className={styles.back} href={homePath(applicationKindFromQuery())}>←</a><h1>{t("settingsTitle")}</h1></header>
-    <Tabs.Root className={styles.layout} defaultValue="general" orientation="vertical">
+    <Tabs.Root className={styles.layout} defaultValue={new URLSearchParams(window.location.search).get("tab") === "huggingface" ? "huggingface" : "general"} orientation="vertical">
       <Tabs.List aria-label={t("settingsTabs")} className={styles.nav}>
         <Tabs.Trigger className={styles.tab} value="general">{t("settingsTabGeneral")}</Tabs.Trigger>
+        <Tabs.Trigger className={styles.tab} value="huggingface">{t("settingsTabHuggingFace")}</Tabs.Trigger>
         <Tabs.Trigger className={styles.tab} value="data">{t("settingsTabData")}</Tabs.Trigger>
         <Tabs.Trigger className={styles.tab} value="local">{t("settingsTabLocal")}</Tabs.Trigger>
         <Tabs.Trigger className={styles.tab} value="about">{t("settingsTabAbout")}</Tabs.Trigger>
@@ -166,6 +188,25 @@ function SettingsPage() {
           <div className={styles.behaviorList}>
             <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><KeyRound aria-hidden="true" size={20} /></span><div><h2>{t("preserveCodexOfficialAuth")}</h2><p>{t("preserveCodexOfficialAuthDescription")}</p></div></div><button aria-checked={preserveCodexAuth} className={styles.switch} onClick={() => void togglePreserveCodexAuth()} role="switch" type="button"><span /></button></div>
           </div>
+        </div>
+      </Tabs.Content>
+      <Tabs.Content className={styles.pane} forceMount value="huggingface">
+        <div className={styles.stack}>
+          <form className={`${styles.row} ${styles.tokenRow}`} onSubmit={(event) => { event.preventDefault(); void saveHfToken(); }}>
+            <div className={styles.settingCopy}><span className={styles.icon}><KeyRound aria-hidden="true" size={20} /></span><div><h2>{t("hfTokenLabel")}</h2><p>{t("hfSettingsDescription")}</p></div></div>
+            <div className={styles.tokenField}>
+              <input
+                autoComplete="off"
+                disabled={hfBusy}
+                onChange={(event) => setHfTokenValue(event.target.value)}
+                placeholder={hfConfigured ? t("hfTokenConfiguredPlaceholder") : t("hfTokenPlaceholder")}
+                spellCheck={false}
+                type="password"
+                value={hfToken}
+              />
+              <button className={styles.databaseButton} disabled={hfBusy} type="submit">{t("hfTokenSave")}</button>
+            </div>
+          </form>
         </div>
       </Tabs.Content>
       <Tabs.Content className={styles.pane} forceMount value="data">
@@ -232,7 +273,7 @@ function SettingsPage() {
         </AlertDialog.Content>
       </AlertDialog.Portal>
     </AlertDialog.Root>
-    <ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} status={noticeStatus} /><Toast.Viewport className={styles.toastViewport} /></Toast.Provider>;
+    <ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} status={noticeStatus} /><Toast.Viewport className={styles.toastViewport} /><DownloadDock /></Toast.Provider>;
 }
 
 syncDocumentAppKind();

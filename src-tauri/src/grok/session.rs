@@ -223,10 +223,9 @@ pub(crate) fn from_import(raw: &str) -> Result<Session> {
     }
     let value: serde_json::Value = serde_json::from_str(raw)?;
     let value = match value {
-        serde_json::Value::Array(values) => values
-            .into_iter()
-            .next()
-            .ok_or(AppError::InvalidImport)?,
+        serde_json::Value::Array(values) => {
+            values.into_iter().next().ok_or(AppError::InvalidImport)?
+        }
         value => value,
     };
     let object = value.as_object().ok_or(AppError::InvalidImport)?;
@@ -254,8 +253,7 @@ pub(crate) fn same_identity(left: &Session, right: &Session) -> bool {
         return false;
     };
     if is_official_login(&left_auth) && is_official_login(&right_auth) {
-        return user_id(&left_auth) == user_id(&right_auth)
-            && user_id(&left_auth).is_some();
+        return user_id(&left_auth) == user_id(&right_auth) && user_id(&left_auth).is_some();
     }
     api_key(&left_auth) == api_key(&right_auth) && base_url(left) == base_url(right)
 }
@@ -309,17 +307,19 @@ mod tests {
 
         let key = from_import("sk-test-key").unwrap();
         assert_eq!(import_type(&key), ImportType::ApiKey);
-        let custom = from_import(
-            r#"{"api_key":"sk-custom","base_url":"https://api.example.com/v1"}"#,
-        )
-        .unwrap();
+        let custom =
+            from_import(r#"{"api_key":"sk-custom","base_url":"https://api.example.com/v1"}"#)
+                .unwrap();
         assert_eq!(
             base_url(&custom).as_deref(),
             Some("https://api.example.com/v1")
         );
         assert!(!same_identity(&key, &custom));
         assert!(same_identity(&key, &from_import("sk-test-key").unwrap()));
-        assert_eq!(effective_base_url(&key), crate::grok::config::DEFAULT_BASE_URL);
+        assert_eq!(
+            effective_base_url(&key),
+            crate::grok::config::DEFAULT_BASE_URL
+        );
 
         let live_default = session_from_auth(
             api_key_auth_json("sk-test-key"),

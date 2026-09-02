@@ -121,7 +121,10 @@ pub(crate) fn apply_model_route(
                 "api_backend".into(),
                 Value::String(DEFAULT_API_BACKEND.into()),
             );
-            selected.insert("context_window".into(), Value::Integer(DEFAULT_CONTEXT_WINDOW));
+            selected.insert(
+                "context_window".into(),
+                Value::Integer(DEFAULT_CONTEXT_WINDOW),
+            );
             selected.remove("env_key");
             model_tables.insert(profile, Value::Table(selected));
             table.insert("model".into(), Value::Table(model_tables));
@@ -134,12 +137,10 @@ pub(crate) fn apply_model_route(
     encode_table(table)
 }
 
-fn selected_model<'a>(table: &'a toml::map::Map<String, Value>) -> Option<&'a toml::map::Map<String, Value>> {
-    let profile = table
-        .get("models")?
-        .get("default")?
-        .as_str()?
-        .trim();
+fn selected_model<'a>(
+    table: &'a toml::map::Map<String, Value>,
+) -> Option<&'a toml::map::Map<String, Value>> {
+    let profile = table.get("models")?.get("default")?.as_str()?.trim();
     table.get("model")?.get(profile)?.as_table()
 }
 
@@ -172,7 +173,9 @@ mod tests {
     fn official_config_has_no_model_table() {
         assert!(is_official_live_config(""));
         assert!(is_official_live_config("[cli]\ninstaller = \"internal\"\n"));
-        assert!(!is_official_live_config("[models]\ndefault = \"grok-4.5\"\n"));
+        assert!(!is_official_live_config(
+            "[models]\ndefault = \"grok-4.5\"\n"
+        ));
         assert!(!is_official_live_config("not = [valid"));
     }
 

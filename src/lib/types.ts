@@ -18,6 +18,34 @@ export function homePath(kind: ApplicationKind, notice?: string) {
   return `/?${params}`;
 }
 
+export function modelsHomePath(notice?: string) {
+  const params = new URLSearchParams({ models: "1" });
+  if (notice) params.set("notice", notice);
+  return `/?${params}`;
+}
+
+export function addModelPath() {
+  return "/add-model.html";
+}
+
+export function modelDetailPath(source: ModelSource, repo: string) {
+  const params = new URLSearchParams({ source, repo });
+  return `/model-detail.html?${params}`;
+}
+
+export function modelSourceFromQuery(search = window.location.search): ModelSource | undefined {
+  const source = new URLSearchParams(search).get("source");
+  return source === "huggingface" || source === "modelscope" ? source : undefined;
+}
+
+export function modelRepoFromQuery(search = window.location.search) {
+  return new URLSearchParams(search).get("repo")?.trim() || "";
+}
+
+export function homeModeFromQuery(search = window.location.search): "apps" | "models" {
+  return new URLSearchParams(search).get("models") === "1" ? "models" : "apps";
+}
+
 export function editAccountPath(kind: ApplicationKind, id: string) {
   return `/edit.html?kind=${kind}&id=${encodeURIComponent(id)}`;
 }
@@ -57,6 +85,74 @@ export type Account = {
 export function canSwitchToDesktop(account: Account) {
   return account.importType !== "token" && account.importType !== "jwt";
 }
+
+export type ModelSource = "huggingface" | "modelscope";
+export type ModelFormat = "all" | "gguf" | "safetensors" | "mlx" | "finetune";
+export type RemoteModelFile = { path: string; size: number };
+export type ModelFit = "fits" | "marginal" | "partial" | "ram" | "oom" | "unknown";
+export type RemoteModelVariant = { id: string; label: string; size: number; files: string[]; fit: ModelFit };
+export type RemoteModelHit = {
+  source: ModelSource;
+  repo: string;
+  name: string;
+  author: string;
+  downloads?: number;
+  likes?: number;
+  library?: string;
+  pipeline?: string;
+  tags: string[];
+  params?: string;
+  updatedAt?: string;
+};
+export type RemoteModelCard = {
+  author: string;
+  name: string;
+  description: string;
+  tags: string[];
+  license?: string;
+  library?: string;
+  pipeline?: string;
+  baseModel?: string;
+  downloads?: number;
+  likes?: number;
+  params?: string;
+  updatedAt?: string;
+};
+export type RemoteModelProbe = {
+  source: ModelSource;
+  repo: string;
+  revision: string;
+  files: RemoteModelFile[];
+  variants: RemoteModelVariant[];
+  defaultVariantId: string;
+  card: RemoteModelCard;
+};
+export type LocalLlm = {
+  id: string;
+  source: ModelSource;
+  repo: string;
+  revision: string;
+  path: string;
+  size: number;
+  files: number;
+};
+export type DownloadJobStatus = "queued" | "downloading" | "paused" | "retry_wait" | "failed" | "verifying" | "completed" | "cancelled";
+export type DownloadJob = {
+  jobId: string;
+  repo: string;
+  source: ModelSource;
+  revision: string;
+  downloadedBytes: number;
+  totalBytes: number;
+  speedBps: number;
+  currentFile: string;
+  percent: number;
+  status: DownloadJobStatus;
+  error?: string;
+  verification: "sha256" | "weak";
+  retryCount: number;
+  weaklyVerified: boolean;
+};
 
 export type CursorUsageDetails = {
   accountId: string;

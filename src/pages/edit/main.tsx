@@ -3,6 +3,7 @@ import { Activity, ArrowLeft, Eye, EyeOff, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
+import { DownloadDock } from "../../components/DownloadDock";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { Tooltip } from "../../components/Tooltip";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
@@ -126,6 +127,7 @@ function EditPage() {
       </form>
       <ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} />
       <Toast.Viewport className={styles.toastViewport} />
+      <DownloadDock />
     </Toast.Provider>
   );
 }

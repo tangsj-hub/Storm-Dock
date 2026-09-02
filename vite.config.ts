@@ -8,9 +8,11 @@ export default defineConfig({
   server: { host: "127.0.0.1", port: 1420, strictPort: true },
   build: {
     rollupOptions: {
-      input: {
+        input: {
         accounts: resolve(__dirname, "index.html"),
         add: resolve(__dirname, "add.html"),
+        addModel: resolve(__dirname, "add-model.html"),
+        modelDetail: resolve(__dirname, "model-detail.html"),
         edit: resolve(__dirname, "edit.html"),
         settings: resolve(__dirname, "settings.html"),
         usage: resolve(__dirname, "usage.html")

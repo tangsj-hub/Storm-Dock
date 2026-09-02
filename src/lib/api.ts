@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, LocalSession, LocalSessionMessage, McpServer, Plugin, SessionDeleteBatchResult } from "./types";
+import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, DownloadJob, LocalLlm, LocalSession, LocalSessionMessage, McpServer, ModelFormat, ModelSource, Plugin, RemoteModelHit, RemoteModelProbe, SessionDeleteBatchResult } from "./types";
 
 export const listApplications = () => invoke<ApplicationStatus[]>("list_applications");
 export const listAccounts = (kind: ApplicationKind) => invoke<Account[]>("list_accounts", { kind });
@@ -9,6 +9,8 @@ export const exportDatabase = (file: string) => invoke<void>("export_database", 
 export const importDatabase = (file: string) => invoke<string>("import_database", { file });
 export const getPreserveCodexOfficialAuth = () => invoke<boolean>("get_preserve_codex_official_auth");
 export const setPreserveCodexOfficialAuth = (enabled: boolean) => invoke<void>("set_preserve_codex_official_auth", { enabled });
+export const getHfTokenConfigured = () => invoke<boolean>("get_hf_token_configured");
+export const setHfToken = (token: string) => invoke<void>("set_hf_token", { token });
 export const listCursorPlugins = () => invoke<Plugin[]>("list_cursor_plugins");
 export const listCodexPlugins = () => invoke<Plugin[]>("list_codex_plugins");
 export const listGrokPlugins = () => invoke<Plugin[]>("list_grok_plugins");
@@ -35,3 +37,15 @@ export const listMcpServers = (kind: ApplicationKind) => invoke<McpServer[]>("li
 export const setMcpServerEnabled = (kind: ApplicationKind, id: string, enabled: boolean) => invoke("set_mcp_server_enabled", { kind, id, enabled });
 export const setCursorPluginEnabled = (id: string, source: Plugin["source"], enabled: boolean) => invoke("set_cursor_plugin_enabled", { id, source, enabled });
 export const deleteCursorPlugin = (id: string, source: Plugin["source"]) => invoke("delete_cursor_plugin", { id, source });
+export const searchRemoteModels = (source: ModelSource, query: string, format?: ModelFormat) => invoke<RemoteModelHit[]>("search_remote_models", { source, query, format: format && format !== "all" ? format : null });
+export const probeRemoteModel = (source: ModelSource, repo: string, revision?: string) => invoke<RemoteModelProbe>("probe_remote_model", { source, repo, revision: revision || null });
+export const startModelDownload = (source: ModelSource, repo: string, revision?: string, files?: string[]) => invoke<string>("start_model_download", { source, repo, revision: revision || null, files: files ?? null });
+export const cancelModelDownload = (jobId: string) => invoke("cancel_model_download", { jobId });
+export const listDownloadJobs = () => invoke<DownloadJob[]>("list_download_jobs");
+export const resumeDownloadJob = (jobId: string) => invoke("resume_download_job", { jobId });
+export const dismissDownloadJob = (jobId: string) => invoke("dismiss_download_job", { jobId });
+export const listLocalModels = () => invoke<LocalLlm[]>("list_local_models");
+export const refreshLocalModels = () => invoke<LocalLlm[]>("refresh_local_models");
+export const reorderLocalModels = (ids: string[]) => invoke("reorder_local_models", { ids });
+export const deleteLocalModel = (id: string) => invoke("delete_local_model", { id });
+export const openLocalModelDir = (id: string) => invoke("open_local_model_dir", { id });

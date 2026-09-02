@@ -272,6 +272,10 @@
 
 .databaseButton:hover { background: var(--hover); border-color: var(--border-strong); }
 
+.tokenField { align-items: center; display: flex; flex: none; gap: 8px; }
+.tokenField input { background: var(--solid); border: 1px solid var(--input-border); border-radius: 5px; color: var(--fg); font: inherit; min-height: 34px; min-width: 0; padding: 0 10px; width: 220px; }
+.tokenRow { flex-wrap: wrap; gap: 12px; }
+
 .menu {
   background: var(--solid);
   border: 1px solid var(--border);
@@ -297,7 +301,7 @@
 .menuItem[data-highlighted] { background: var(--info-bg); color: var(--info); }
 
 .toastViewport {
-  bottom: 24px;
+  bottom: calc(24px + var(--download-dock-offset, 0px));
   display: grid;
   gap: 10px;
   list-style: none;

@@ -4,9 +4,11 @@ mod codex_sessions;
 mod commands;
 mod cursor;
 mod cursor_sessions;
+mod download;
+mod error;
 mod grok;
 mod grok_sessions;
-mod error;
+mod local_models;
 mod models;
 mod sql_backup;
 mod store;
@@ -107,6 +109,8 @@ pub fn run() {
             commands::import_database,
             commands::get_preserve_codex_official_auth,
             commands::set_preserve_codex_official_auth,
+            commands::get_hf_token_configured,
+            commands::set_hf_token,
             commands::export_cursor_accounts,
             commands::get_cursor_export_record,
             commands::refresh_account_subscription,
@@ -127,6 +131,18 @@ pub fn run() {
             commands::update_codex_api_key_account,
             commands::duplicate_codex_api_key_account,
             commands::test_codex_api_key_account,
+            local_models::probe_remote_model,
+            local_models::search_remote_models,
+            download::start_model_download,
+            download::cancel_model_download,
+            download::list_download_jobs,
+            download::resume_download_job,
+            download::dismiss_download_job,
+            local_models::list_local_models,
+            local_models::refresh_local_models,
+            local_models::reorder_local_models,
+            local_models::delete_local_model,
+            local_models::open_local_model_dir,
             set_close_to_tray,
             tools::get_tool_versions,
             tools::run_tool_lifecycle_action,

@@ -8,7 +8,13 @@ use crate::models::Session;
 pub(crate) const STORM_DOCK_SQL_HEADER: &str = "-- Storm Dock SQLite 导出";
 pub(crate) const CC_SWITCH_SQL_HEADER: &str = "-- CC Switch SQLite 导出";
 
-const DUMP_TABLES: &[&str] = &["accounts", "sessions", "application_state", "app_kv"];
+const DUMP_TABLES: &[&str] = &[
+    "accounts",
+    "sessions",
+    "application_state",
+    "app_kv",
+    "local_models",
+];
 
 pub(crate) enum BackupKind {
     StormDockSql,
@@ -48,7 +54,9 @@ pub(crate) fn load_sql(conn: &Connection, sql: &str) -> Result<()> {
         .map_err(|error| AppError::Message(format!("执行 SQL 导入失败: {error}")))?;
     if !conn.is_autocommit() {
         let _ = conn.execute_batch("ROLLBACK;");
-        return Err(AppError::Message("SQL 备份事务未完成，文件可能已截断。".into()));
+        return Err(AppError::Message(
+            "SQL 备份事务未完成，文件可能已截断。".into(),
+        ));
     }
     Ok(())
 }
@@ -85,7 +93,10 @@ fn session_from_cc_provider(settings: &str) -> Result<Option<Session>> {
     if !has_login_material(&auth) {
         return Ok(None);
     }
-    Ok(Some(session_from_auth(auth, base_url_from_cc_config(&value))?))
+    Ok(Some(session_from_auth(
+        auth,
+        base_url_from_cc_config(&value),
+    )?))
 }
 
 fn base_url_from_cc_config(value: &serde_json::Value) -> Option<String> {
@@ -118,8 +129,10 @@ fn dump_table(conn: &Connection, table: &str, output: &mut String) -> Result<()>
         .map(|column| quote_ident(column))
         .collect::<Vec<_>>()
         .join(", ");
-    let mut statement =
-        conn.prepare(&format!("SELECT {quoted_columns} FROM {}", quote_ident(table)))?;
+    let mut statement = conn.prepare(&format!(
+        "SELECT {quoted_columns} FROM {}",
+        quote_ident(table)
+    ))?;
     let mut rows = statement.query([])?;
     while let Some(row) = rows.next()? {
         let mut values = Vec::with_capacity(columns.len());

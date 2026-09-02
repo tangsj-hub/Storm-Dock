@@ -2,6 +2,7 @@ html {
   --page-content-width: 1060px;
   --page-shell-padding: 56px 28px 28px;
   --window-titlebar-height: 40px;
+  --download-dock-offset: 0px;
   background: var(--bg);
   color: var(--fg);
   color-scheme: light;
@@ -140,8 +141,10 @@ html[data-theme="dark"][data-app] body::before { filter: invert(1); }
 html[data-theme="dark"] img.ink { filter: invert(1); }
 html:not([data-app]) body::before { content: none; }
 button, input, textarea, select { font: inherit; }
-input, textarea, select { background: var(--solid); color: var(--fg); }
+input, textarea, select { background: var(--solid); border: 1px solid var(--input-border); border-radius: 5px; color: var(--fg); }
+select { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 13px) 14px, calc(100% - 8px) 14px; background-repeat: no-repeat; background-size: 5px 5px, 5px 5px; min-height: 34px; padding: 0 28px 0 8px; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .48; }
-button:focus-visible, textarea:focus-visible, a:focus-visible, summary:focus-visible, [role="tab"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible, summary:focus-visible, [role="tab"]:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+select:focus-visible { border-color: var(--input-border); box-shadow: none; outline: none; }
 h1, h2, p { margin: 0; }

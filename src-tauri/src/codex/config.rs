@@ -155,14 +155,18 @@ mod tests {
     #[test]
     fn sets_and_clears_custom_provider_without_dropping_plugins() {
         let original = "[plugins.demo]\nenabled = true\n";
-        let with_url = apply_provider_route(original, Some("https://api.example.com/v1"), None).unwrap();
+        let with_url =
+            apply_provider_route(original, Some("https://api.example.com/v1"), None).unwrap();
         assert!(with_url.contains("model_provider"));
         assert!(with_url.contains("https://api.example.com/v1"));
         assert!(with_url.contains("demo"));
         let cleared = apply_provider_route(&with_url, None, None).unwrap();
         assert!(!cleared.contains("model_provider"));
         assert!(cleared.contains("demo"));
-        assert_eq!(active_base_url(&with_url).as_deref(), Some("https://api.example.com/v1"));
+        assert_eq!(
+            active_base_url(&with_url).as_deref(),
+            Some("https://api.example.com/v1")
+        );
         assert_eq!(active_base_url(&cleared), None);
     }
 
@@ -174,7 +178,10 @@ mod tests {
             Some("sk-live"),
         )
         .unwrap();
-        assert_eq!(experimental_bearer_token(&with_key).as_deref(), Some("sk-live"));
+        assert_eq!(
+            experimental_bearer_token(&with_key).as_deref(),
+            Some("sk-live")
+        );
         assert!(!with_key.contains("stale"));
         assert!(with_key.contains("demo"));
         let cleared = apply_provider_route(&with_key, None, None).unwrap();

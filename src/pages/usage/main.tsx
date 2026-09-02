@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import { ExportDialog } from "../../components/ExportDialog";
+import { DownloadDock } from "../../components/DownloadDock";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import toastStyles from "../../components/ToastMessage.module.css";
 import { Tooltip } from "../../components/Tooltip";
@@ -145,6 +146,7 @@ function UsagePage() {
   </main>
   <ToastMessage notice={notice} onOpenChange={(open) => { if (!open) setNotice(undefined); }} status={noticeStatus} />
   <Toast.Viewport className={toastStyles.viewport} />
+  <DownloadDock />
   </Toast.Provider>;
 }
 

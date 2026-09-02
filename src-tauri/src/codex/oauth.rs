@@ -95,7 +95,9 @@ pub(crate) fn complete_codex_oauth(
     Ok(account)
 }
 
-pub(crate) fn refresh_session(session: &Session) -> Result<(Session, Option<(SubscriptionSummary, UsageMetric)>)> {
+pub(crate) fn refresh_session(
+    session: &Session,
+) -> Result<(Session, Option<(SubscriptionSummary, UsageMetric)>)> {
     let auth = crate::codex::session::auth_value(session)?;
     let Some(refresh_token) = auth
         .pointer("/tokens/refresh_token")
@@ -107,10 +109,16 @@ pub(crate) fn refresh_session(session: &Session) -> Result<(Session, Option<(Sub
     };
     let tokens = refresh_tokens(refresh_token)?;
     let refreshed = session_from_tokens(&tokens)?;
-    let quota = tokens
-        .id_token
-        .as_deref()
-        .and_then(|_| fetch_quota(&tokens.access_token, crate::codex::session::chatgpt_account_id(&crate::codex::session::auth_value(&refreshed).ok()?).as_deref()).ok());
+    let quota = tokens.id_token.as_deref().and_then(|_| {
+        fetch_quota(
+            &tokens.access_token,
+            crate::codex::session::chatgpt_account_id(
+                &crate::codex::session::auth_value(&refreshed).ok()?,
+            )
+            .as_deref(),
+        )
+        .ok()
+    });
     Ok((refreshed, quota))
 }
 
@@ -259,9 +267,12 @@ fn session_from_tokens(tokens: &OAuthTokenResponse) -> Result<Session> {
 fn account_metadata(tokens: &OAuthTokenResponse) -> (Option<String>, Option<String>) {
     let mut account_id = None;
     let mut email = None;
-    for token in [tokens.id_token.as_deref(), Some(tokens.access_token.as_str())]
-        .into_iter()
-        .flatten()
+    for token in [
+        tokens.id_token.as_deref(),
+        Some(tokens.access_token.as_str()),
+    ]
+    .into_iter()
+    .flatten()
     {
         let Some(claims) = jwt_claims(token) else {
             continue;
@@ -280,7 +291,10 @@ fn account_metadata(tokens: &OAuthTokenResponse) -> (Option<String>, Option<Stri
     (account_id, email)
 }
 
-fn fetch_quota(access_token: &str, account_id: Option<&str>) -> Result<(SubscriptionSummary, UsageMetric)> {
+fn fetch_quota(
+    access_token: &str,
+    account_id: Option<&str>,
+) -> Result<(SubscriptionSummary, UsageMetric)> {
     let mut request = http_client()?
         .get("https://chatgpt.com/backend-api/wham/usage")
         .header("Authorization", format!("Bearer {access_token}"))
@@ -321,14 +335,21 @@ fn fetch_quota(access_token: &str, account_id: Option<&str>) -> Result<(Subscrip
 fn last_refresh_now() -> String {
     time::OffsetDateTime::from_unix_timestamp(now() as i64)
         .ok()
-        .and_then(|time| time.format(&time::format_description::well_known::Rfc3339).ok())
+        .and_then(|time| {
+            time.format(&time::format_description::well_known::Rfc3339)
+                .ok()
+        })
         .unwrap_or_else(|| now().to_string())
 }
 
 fn parse_interval(value: Option<&serde_json::Value>) -> Duration {
     let seconds = value
         .and_then(serde_json::Value::as_u64)
-        .or_else(|| value.and_then(serde_json::Value::as_f64).map(|value| value as u64))
+        .or_else(|| {
+            value
+                .and_then(serde_json::Value::as_f64)
+                .map(|value| value as u64)
+        })
         .unwrap_or(5)
         .clamp(2, 15);
     Duration::from_secs(seconds + 3)
@@ -368,7 +389,10 @@ mod tests {
     #[test]
     fn device_urls_match_official_codex_cli() {
         assert_eq!(CODEX_CLIENT_ID, "app_EMoamEEZ73f0CkXaXp7hrann");
-        assert_eq!(DEVICE_VERIFICATION_URL, "https://auth.openai.com/codex/device");
+        assert_eq!(
+            DEVICE_VERIFICATION_URL,
+            "https://auth.openai.com/codex/device"
+        );
         assert!(parse_interval(Some(&serde_json::json!(5))) >= Duration::from_secs(8));
     }
 }

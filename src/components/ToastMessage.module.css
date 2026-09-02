@@ -1,4 +1,4 @@
-.viewport { bottom: 24px; display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }
+.viewport { bottom: calc(24px + var(--download-dock-offset, 0px)); display: grid; gap: 10px; list-style: none; margin: 0; max-width: 390px; outline: none; padding: 0; position: fixed; right: 24px; width: calc(100vw - 48px); z-index: 20; }
 .toast { align-items: center; animation: enter .18s ease-out; background: var(--toast-bg); border: 1px solid var(--toast-border); border-radius: 6px; box-shadow: 0 10px 24px var(--shadow); color: var(--tooltip-fg); display: flex; font-size: 13px; gap: 8px; line-height: 1.4; padding: 11px 13px; }
 .success svg { color: var(--toast-ok); }
 .error { background: var(--toast-error-bg); border-color: var(--toast-error-border); }

@@ -14,6 +14,8 @@
 .tag { background: var(--hover); border: 1px solid var(--border); border-radius: 999px; color: var(--fg); font-size: 11px; font-weight: 650; line-height: 22px; padding: 0 9px; }
 .baseTag { color: var(--info); }
 .downloadBar { align-items: center; display: flex; gap: 8px; }
+.platformPicker { align-items: center; color: var(--muted); display: inline-flex !important; flex: none; font-size: 12px; font-weight: 650; gap: 6px; line-height: 1.3; white-space: nowrap; }
+.platformPicker select { background: var(--solid); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font: inherit; min-height: 32px; padding: 0 8px; }
 .picker { align-items: center; background: var(--track); border: 1px solid var(--border); border-radius: 999px; color: var(--fg); display: flex; flex: 1; font: inherit; gap: 8px; min-height: 44px; min-width: 0; padding: 4px 12px 4px 6px; text-align: left; }
 .picker:hover:not(:disabled), .picker[data-state="open"] { background: var(--hover); }
 .picker:disabled { opacity: 1; }

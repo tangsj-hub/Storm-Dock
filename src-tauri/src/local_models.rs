@@ -1262,7 +1262,7 @@ fn group_weight_variants(files: &[RemoteModelFile]) -> (Vec<RemoteModelVariant>,
     let mut others = Vec::new();
     for file in files {
         let name = file_name(&file.path);
-        if is_sidecar(name) {
+        if is_sidecar(&file.path) {
             sidecars.push(file.path.clone());
             continue;
         }
@@ -1336,8 +1336,22 @@ fn make_variant(
     sidecars: &[String],
     by_path: &HashMap<&str, u64>,
 ) -> RemoteModelVariant {
+    let gguf_variant = id.starts_with("gguf:");
     for sidecar in sidecars {
-        if !weights.iter().any(|path| path == sidecar) {
+        let sidecar_lower = sidecar.to_ascii_lowercase();
+        let matches_gguf = !gguf_variant
+            || !sidecar_lower.ends_with(".gguf")
+            || weights.iter().any(|weight| {
+                let weight_lower = weight.to_ascii_lowercase();
+                let quant = ["q2_k_xl", "q3_k_xl", "q4_k_xl", "q5_k_xl", "q6_k_xl", "q8_0", "q4_k_m", "q5_k_m", "q6_k", "f16", "bf16"]
+                    .iter().find(|key| weight_lower.contains(**key));
+                quant.map(|key| {
+                    !["q2_k_xl", "q3_k_xl", "q4_k_xl", "q5_k_xl", "q6_k_xl", "q8_0", "q4_k_m", "q5_k_m", "q6_k", "f16", "bf16"]
+                        .iter().any(|candidate| sidecar_lower.contains(candidate))
+                        || sidecar_lower.contains(key)
+                }).unwrap_or(true)
+            });
+        if matches_gguf && !weights.iter().any(|path| path == sidecar) {
             weights.push(sidecar.clone());
         }
     }
@@ -1664,13 +1678,17 @@ fn stem_label(name: &str) -> String {
         .to_string()
 }
 
-fn is_sidecar(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.starts_with("mmproj")
-        || lower.starts_with("tokenizer")
-        || lower.starts_with("chat_template")
+fn is_sidecar(path: &str) -> bool {
+    let lower_path = path.to_ascii_lowercase();
+    let name = file_name(&lower_path);
+    lower_path.starts_with("additional_chat_templates/")
+        || name.starts_with("mmproj")
+        || name.starts_with("tokenizer")
+        || name.starts_with("chat_template")
+        || name.ends_with(".tiktoken")
+        || name.ends_with(".py")
         || matches!(
-            lower.as_str(),
+            name,
             "config.json"
                 | "generation_config.json"
                 | "configuration.json"
@@ -1680,6 +1698,20 @@ fn is_sidecar(name: &str) -> bool {
                 | "merges.txt"
                 | "added_tokens.json"
                 | "preprocessor_config.json"
+                | "processor_config.json"
+                | "video_preprocessor_config.json"
+                | "spiece.model"
+                | "spm.model"
+                | "normalizer.json"
+                | "tokenizer.model.v3"
+                | "sentencepiece.bpe.model"
+                | "sentencepiece.model"
+                | "source.spm"
+                | "target.spm"
+                | "bpe.codes"
+                | "vocab.bpe"
+                | "vocab-src.json"
+                | "vocab-tgt.json"
         )
 }
 
@@ -1896,7 +1928,7 @@ pub(crate) fn source_cache_model_dir(source: ModelSource, repo: &str) -> Result<
     })
 }
 
-fn copy_tree_without_links(source: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn copy_tree_without_links(source: &Path, destination: &Path) -> Result<(), String> {
     fs::create_dir_all(destination).map_err(|e| e.to_string())?;
     for entry in fs::read_dir(source).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -2594,6 +2626,23 @@ mod tests {
         assert_eq!(default, "safetensors");
         assert_eq!(variants[0].files.len(), 4);
         assert!(!variants[0].files.iter().any(|path| path == "LICENSE"));
+    }
+
+    #[test]
+    fn transformers_auxiliary_files_follow_each_variant() {
+        for path in [
+            "tokenizer_config.json",
+            "processor_config.json",
+            "video_preprocessor_config.json",
+            "spiece.model",
+            "sentencepiece.bpe.model",
+            "tokenizer.tiktoken",
+            "custom_modeling.py",
+            "additional_chat_templates/default.jinja",
+        ] {
+            assert!(is_sidecar(path), "expected auxiliary file: {path}");
+        }
+        assert!(!is_sidecar("README.md"));
     }
 
     #[test]

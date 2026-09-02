@@ -40,7 +40,8 @@ export const deleteCursorPlugin = (id: string, source: Plugin["source"]) => invo
 export const searchRemoteModels = (source: ModelSource, query: string, format?: ModelFormat) => invoke<RemoteModelHit[]>("search_remote_models", { source, query, format: format && format !== "all" ? format : null });
 export const probeRemoteModel = (source: ModelSource, repo: string, revision?: string) => invoke<RemoteModelProbe>("probe_remote_model", { source, repo, revision: revision || null });
 export const startModelDownload = (source: ModelSource, repo: string, revision?: string, files?: string[]) => invoke<string>("start_model_download", { source, repo, revision: revision || null, files: files ?? null });
-export const startModelDownloadFast = (source: ModelSource, repo: string, revision: string, files: RemoteModelFile[]) => invoke<string>("start_model_download_fast", { source, repo, revision, files });
+export type ModelPlatform = "generic" | "unsloth" | "llama-cpp";
+export const startModelDownloadFast = (source: ModelSource, repo: string, revision: string, files: RemoteModelFile[], platform: ModelPlatform = "generic") => invoke<string>("start_model_download_fast", { source, repo, revision, files, platform });
 export const cancelModelDownload = (jobId: string) => invoke("cancel_model_download", { jobId });
 export const listDownloadJobs = () => invoke<DownloadJob[]>("list_download_jobs");
 export const resumeDownloadJob = (jobId: string) => invoke("resume_download_job", { jobId });

@@ -16,7 +16,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::local_models::{
     auth_headers, ensure_disk_space, model_id, models_root, plan_chunks, probe,
     resolve_url, safe_file_path, status_error, LocalLlm, Manifest, ModelSource, RemoteModelFile,
-    source_cache_model_dir, CHUNK_SIZE, CHUNK_THRESHOLD, MAX_CHUNK_WORKERS,
+    source_cache_model_dir, copy_tree_without_links, CHUNK_SIZE, CHUNK_THRESHOLD, MAX_CHUNK_WORKERS,
 };
 use crate::store::AppState;
 
@@ -826,9 +826,6 @@ fn publish(
 ) -> Result<(), String> {
     let staging = staging_root(root).join(&job.id).join("data");
     let destination = source_cache_model_dir(job.source, &job.repo)?;
-    if destination.exists() {
-        return Err("目标模型目录已存在，拒绝覆盖".into());
-    };
     let manifest = Manifest {
         source: job.source,
         repo: job.repo.clone(),
@@ -856,14 +853,24 @@ fn publish(
             }
             let snapshot = destination.join("snapshots").join(revision);
             fs::create_dir_all(snapshot.parent().unwrap()).map_err(|e| e.to_string())?;
-            fs::rename(&staging, &snapshot).map_err(|e| e.to_string())?;
+            if snapshot.exists() {
+                copy_tree_without_links(&staging, &snapshot)?;
+                fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+            } else {
+                fs::rename(&staging, &snapshot).map_err(|e| e.to_string())?;
+            }
             fs::create_dir_all(destination.join("refs")).map_err(|e| e.to_string())?;
             fs::write(destination.join("refs").join("main"), revision).map_err(|e| e.to_string())?;
             destination
         }
         ModelSource::ModelScope => {
             if let Some(parent) = destination.parent() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
-            fs::rename(&staging, &destination).map_err(|e| e.to_string())?;
+            if destination.exists() {
+                copy_tree_without_links(&staging, &destination)?;
+                fs::remove_dir_all(&staging).map_err(|e| e.to_string())?;
+            } else {
+                fs::rename(&staging, &destination).map_err(|e| e.to_string())?;
+            }
             destination
         }
     };
@@ -1038,20 +1045,41 @@ pub(crate) fn start_model_download_fast(
     repo: String,
     revision: String,
     files: Vec<RemoteModelFile>,
+    platform: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     crate::local_models::bind_stored_hf_token(&state);
     let repo = repo.trim().to_string();
     let revision = revision.trim().to_string();
-    let selected: Vec<_> = files.into_iter().filter(|file| !file.path.is_empty() && file.size > 0).collect();
+    let platform = platform.as_deref().unwrap_or("generic");
+    let selected: Vec<_> = if platform == "unsloth" && files.iter().any(|file| file.path.to_ascii_lowercase().ends_with(".gguf")) {
+        let snapshot = probe(source, &repo, Some(&revision))?;
+        let selected_names: HashSet<_> = files.iter().map(|file| file.path.as_str()).collect();
+        let selected_quant = files.iter().find(|file| file.path.to_ascii_lowercase().ends_with(".gguf") && !file.path.to_ascii_lowercase().contains("mmproj")).map(|file| gguf_quant_key(&file.path));
+        snapshot.files.into_iter().filter(|file| is_gguf_file_for_variant(&repo, &file.path, &selected_names, selected_quant.as_deref())).collect()
+    } else if platform == "unsloth" {
+        let snapshot = probe(source, &repo, Some(&revision))?;
+        snapshot.files.into_iter().filter(|file| is_transformers_file(&file.path)).collect()
+    } else {
+        files.into_iter().filter(|file| !file.path.is_empty() && file.size > 0).collect()
+    };
     if repo.is_empty() || revision.is_empty() || selected.is_empty() {
         return Err("没有可下载的文件".into());
     }
     let root = models_root(&app)?;
     ensure_disk_space(&staging_root(&root), &selected)?;
     let conn = db(&root)?;
-    if let Ok(id) = conn.query_row("SELECT id FROM download_jobs WHERE source=?1 AND repo=?2 AND revision=?3 AND status!='completed'", params![source_value(source), repo, revision], |r| r.get::<_, String>(0)) {
-        conn.execute("UPDATE download_jobs SET status='queued',error=NULL,updated_at=?1 WHERE id=?2", params![now(), id]).map_err(|e| e.to_string())?;
+    if let Ok(id) = conn.query_row("SELECT id FROM download_jobs WHERE source=?1 AND repo=?2 AND revision=?3", params![source_value(source), repo, revision], |r| r.get::<_, String>(0)) {
+        conn.execute("DELETE FROM download_files WHERE job_id=?1", params![id]).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM download_manifest WHERE job_id=?1", params![id]).map_err(|e| e.to_string())?;
+        conn.execute("UPDATE download_jobs SET status='queued',phase='queued',error=NULL,updated_at=?1 WHERE id=?2", params![now(), id]).map_err(|e| e.to_string())?;
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        for (index, file) in selected.iter().enumerate() {
+            let file_revision = file.revision.clone().unwrap_or_else(|| revision.clone());
+            tx.execute("INSERT INTO download_files(job_id,file_index,path,size,sha256,revision) VALUES(?1,?2,?3,?4,?5,?6)", params![id, index as i64, file.path, file.size as i64, file.sha256, file_revision]).map_err(|e| e.to_string())?;
+            tx.execute("INSERT INTO download_manifest(job_id,file_index,protocol_version,path,size,sha256,revision) VALUES(?1,?2,2,?3,?4,?5,?6)", params![id, index as i64, file.path, file.size as i64, file.sha256, file_revision]).map_err(|e| e.to_string())?;
+        }
+        tx.commit().map_err(|e| e.to_string())?;
         pump(&app);
         return Ok(id);
     }
@@ -1066,6 +1094,73 @@ pub(crate) fn start_model_download_fast(
     tx.commit().map_err(|e| e.to_string())?;
     pump(&app);
     Ok(id)
+}
+
+fn gguf_quant_key(path: &str) -> String {
+    let name = path.rsplit('/').next().unwrap_or(path).to_ascii_lowercase();
+    ["q2_k_xl", "q3_k_xl", "q4_k_xl", "q5_k_xl", "q6_k_xl", "q8_0", "q4_k_m", "q5_k_m", "q6_k", "q4_k", "f16", "bf16"]
+        .iter().find(|key| name.contains(**key)).copied().unwrap_or("").into()
+}
+
+fn is_gguf_file_for_variant(repo: &str, path: &str, selected: &HashSet<&str>, quant: Option<&str>) -> bool {
+    let lower = path.to_ascii_lowercase();
+    if selected.contains(path) { return true; }
+    if let Some(adapter) = platform_repository_assets("unsloth", repo, quant.unwrap_or("")) {
+        if adapter.iter().any(|asset| asset.eq_ignore_ascii_case(&lower)) {
+            return true;
+        }
+    }
+    if !(lower.ends_with(".gguf") || is_gguf_auxiliary(path)) { return false; }
+    if !lower.ends_with(".gguf") { return true; }
+    if lower.contains("mmproj") || lower.contains("mtp") || lower.contains("dspark") || lower.contains("dflash") {
+        return quant.map(|q| q.is_empty() || lower.contains(q)).unwrap_or(true);
+    }
+    false
+}
+
+fn platform_repository_assets(platform: &str, repo: &str, quant: &str) -> Option<Vec<String>> {
+    let raw = match platform {
+        "unsloth" => include_str!("../../model-platforms/unsloth.json"),
+        "llama-cpp" => include_str!("../../model-platforms/llama-cpp.json"),
+        _ => return None,
+    };
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let entry = value.get("repositories")?.get(repo)?;
+    let mut assets = entry.get("assets")?.as_array()?.iter().filter_map(|v| v.as_str().map(str::to_ascii_lowercase)).collect::<Vec<_>>();
+    if let Some(extra) = entry.get("quantAssets").and_then(|v| v.as_object()) {
+        for (key, values) in extra {
+            if quant.contains(key) {
+                assets.extend(values.as_array()?.iter().filter_map(|v| v.as_str().map(str::to_ascii_lowercase)));
+            }
+        }
+    }
+    Some(assets)
+}
+
+fn is_gguf_auxiliary(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    let name = lower.rsplit('/').next().unwrap_or(&lower);
+    !lower.ends_with(".safetensors")
+        && !lower.ends_with(".bin")
+        && !lower.ends_with(".pt")
+        && !lower.ends_with(".pth")
+        && (name.starts_with("tokenizer")
+            || name.starts_with("chat_template")
+            || name.ends_with(".tiktoken")
+            || lower.starts_with("additional_chat_templates/")
+            || matches!(name, "config.json" | "generation_config.json" | "tokenizer_config.json" | "special_tokens_map.json" | "added_tokens.json" | "vocab.json" | "vocab.txt" | "merges.txt" | "spiece.model" | "spm.model" | "normalizer.json" | "preprocessor_config.json" | "processor_config.json" | "video_preprocessor_config.json"))
+}
+
+fn is_transformers_file(path: &str) -> bool {
+    let lower = path.to_ascii_lowercase();
+    let name = lower.rsplit('/').next().unwrap_or(&lower);
+    let sidecar = name.starts_with("tokenizer") || name.starts_with("chat_template") || name.ends_with(".py") || name.ends_with(".tiktoken") || lower.starts_with("additional_chat_templates/") || matches!(name, "config.json" | "generation_config.json" | "configuration.json" | "special_tokens_map.json" | "vocab.json" | "vocab.txt" | "merges.txt" | "added_tokens.json" | "preprocessor_config.json" | "processor_config.json" | "video_preprocessor_config.json" | "spiece.model" | "spm.model" | "normalizer.json" | "sentencepiece.bpe.model" | "sentencepiece.model" | "source.spm" | "target.spm" | "bpe.codes" | "vocab.bpe" | "vocab-src.json" | "vocab-tgt.json");
+    sidecar
+        || name.ends_with(".safetensors")
+        || name.ends_with(".safetensors.index.json")
+        || name.starts_with("pytorch_model") && name.ends_with(".bin")
+        || name == "model.safetensors.index.json"
+        || name == "pytorch_model.bin.index.json"
 }
 #[tauri::command]
 pub(crate) fn cancel_model_download(app: AppHandle, job_id: String) -> Result<(), String> {

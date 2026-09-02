@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "platform": "unsloth",
+  "generatedFrom": [
+    "unsloth/studio/backend/core/inference/video_families.py",
+    "unsloth/studio/backend/core/inference/diffusion_families.py",
+    "unsloth/studio/backend/core/inference/video_minimax_h3.py"
+  ],
+  "sourceSha256": "88ab2e427e5db38c92f96df302cf58ba168fc8a3520ac76900183f0610bb1b99",
+  "generic": {
+    "auxiliary": [
+      "config.json",
+      "configuration.json",
+      "generation_config.json",
+      "tokenizer*",
+      "chat_template*",
+      "special_tokens_map.json",
+      "added_tokens.json",
+      "vocab*",
+      "merges.txt",
+      "spiece.model",
+      "spm.model",
+      "normalizer.json",
+      "preprocessor_config.json",
+      "processor_config.json",
+      "video_preprocessor_config.json",
+      "*.tiktoken",
+      "*.py"
+    ],
+    "weights": [
+      "*.safetensors",
+      "*.safetensors.index.json",
+      "pytorch_model*.bin",
+      "pytorch_model*.bin.index.json"
+    ]
+  },
+  "repositories": {
+    "unsloth/FLUX.2-klein-9B-ComfyUI": {
+      "assets": [
+        "split_files/text_encoders/qwen_3_8b.safetensors"
+      ],
+      "quantAssets": {}
+    },
+    "unsloth/MiniMax-H3-GGUF": {
+      "assets": [
+        "vae/minimax_h3_audio_vae_fp32.safetensors",
+        "vae/minimax_h3_video_vae_fp16.safetensors"
+      ],
+      "quantAssets": {
+        "q2_k_m": [
+          "qwen3vl_32b_minimax_h3-Q2_K_M.gguf"
+        ],
+        "q4_k_m": [
+          "qwen3vl_32b_minimax_h3-Q4_K_M.gguf"
+        ]
+      }
+    }
+  }
+}

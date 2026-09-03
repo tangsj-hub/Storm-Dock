@@ -133,6 +133,10 @@ pub(crate) struct CursorUsageDetails {
     pub(crate) primary: UsageMetric,
     pub(crate) reset_at: Option<String>,
     pub(crate) on_demand: Option<UsageMetric>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) grok_bot: Option<UsageMetric>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) grok_bot_reset_at: Option<String>,
     pub(crate) models: Vec<ModelUsageSummary>,
     pub(crate) weekly: Vec<WeeklyUsageSummary>,
     pub(crate) weekly_available: bool,

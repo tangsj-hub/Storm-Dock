@@ -2048,6 +2048,29 @@ pub(crate) fn force_restart_cursor(
     Ok(())
 }
 
+fn grok_bot_session(id: &str, state: &State<'_, AppState>) -> std::result::Result<Session, String> {
+    state.0.lock().map_err(|_| "账户存储不可用".to_string()).and_then(|controller| {
+        let account = controller.account(id).map_err(error_text)?;
+        if account.application != ApplicationKind::Cursor { return Err("仅 Cursor 账号可启动 Grok Bot。".into()); }
+        let plan = account.subscription.plan.as_deref().unwrap_or_default().to_ascii_lowercase();
+        if !matches!(plan.as_str(), "pro" | "pro+" | "pro_plus" | "ultra") { return Err("Grok Bot 仅适用于 Pro、Pro+ 或 Ultra 账号。".into()); }
+        controller.load_session(id).map_err(error_text)
+    })
+}
+
+#[tauri::command]
+pub(crate) fn prepare_launch_grok_bot(
+    id: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<crate::grok_bot::LaunchPreparation, String> {
+    crate::grok_bot::prepare_for_session(&grok_bot_session(&id, &state)?).map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn confirm_launch_grok_bot(id: String, state: State<'_, AppState>) -> std::result::Result<(), String> {
+    crate::grok_bot::confirm_for_session(&grok_bot_session(&id, &state)?).map_err(error_text)
+}
+
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CodexApiKeyAccount {

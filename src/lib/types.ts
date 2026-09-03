@@ -188,6 +188,8 @@ export type CursorUsageDetails = {
   primary: { kind: "currency" | "percent" | "requests"; used: number; limit?: number; percent: number };
   resetAt?: string;
   onDemand?: { kind: "currency"; used: number; limit?: number; percent: number };
+  grokBot?: { kind: "percent"; used: number; percent: number };
+  grokBotResetAt?: string;
   models: { name: string; requests: number }[];
   weekly: { date: string; requests: number; onDemandCents: number; isOnDemand: boolean }[];
   weeklyAvailable: boolean;

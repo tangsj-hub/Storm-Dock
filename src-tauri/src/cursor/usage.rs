@@ -541,6 +541,32 @@ pub(crate) fn usage_pools(
     (primary, on_demand)
 }
 
+pub(crate) fn grok_bot_usage(summary: &serde_json::Value) -> Option<(UsageMetric, Option<String>)> {
+    let summary = summary.get("result").unwrap_or(summary);
+    if summary
+        .get("hasNonZeroIncludedLimit")
+        .and_then(serde_json::Value::as_bool)
+        == Some(false)
+        || summary
+            .get("includedLimitZero")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+        || summary
+            .get("usesPooledEnterpriseAllowance")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+    {
+        return None;
+    }
+    let percent = number_at(summary, &["usagePercent"])
+        .or_else(|| number_at(summary, &["usage_percent"]))?
+        .clamp(0.0, 100.0);
+    let reset_at = text_at(summary, &["nextResetTimestampUtc"])
+        .or_else(|| text_at(summary, &["next_reset_timestamp_utc"]))
+        .or_else(|| text_at(summary, &["nextReset"]));
+    Some((percent_metric(percent), reset_at))
+}
+
 pub(crate) fn update_export_usage(
     record: &mut serde_json::Value,
     raw: serde_json::Value,
@@ -651,6 +677,9 @@ pub(crate) fn update_export_usage(
     if let Some(value) = raw.get("hard_limit") {
         usage_raw.insert("hard_limit".into(), value.clone());
     }
+    if let Some(value) = raw.get("grok_bot_usage") {
+        usage_raw.insert("grok_bot_usage".into(), value.clone());
+    }
     record.insert("cursor_usage_raw".into(), compatibility);
 }
 
@@ -660,6 +689,7 @@ pub(crate) fn cursor_usage_from_snapshot(
 ) -> Option<CursorUsageDetails> {
     let summary = raw;
     let (primary, on_demand) = usage_pools(summary, summary.get("hard_limit"));
+    let grok_bot = raw.get("grok_bot_usage").and_then(grok_bot_usage);
     let mut models: Vec<_> = raw
         .get("used_models")
         .and_then(serde_json::Value::as_array)
@@ -686,6 +716,8 @@ pub(crate) fn cursor_usage_from_snapshot(
         primary,
         reset_at: text_at(summary, &["billingCycleEnd"]),
         on_demand,
+        grok_bot: grok_bot.as_ref().map(|(metric, _)| metric.clone()),
+        grok_bot_reset_at: grok_bot.and_then(|(_, reset_at)| reset_at),
         models,
         weekly_available: false,
         weekly: vec![],
@@ -707,6 +739,15 @@ pub(crate) fn fetch_cursor_usage(
     let me = dashboard_request(&cookie, "/auth/me", None)?;
     let summary = dashboard_request(&cookie, "/usage-summary", None)?;
     let usage = dashboard_request(&cookie, "/usage", None)?;
+    // Cursor calls the separate weekly Grok Bot allowance "Sand" internally.
+    // It is optional: plans without an included allowance return no personal meter.
+    let grok_bot_status = dashboard_request(
+        &cookie,
+        "/dashboard/get-sand-usage-status",
+        Some(serde_json::json!({})),
+    )
+    .ok();
+    let grok_bot = grok_bot_status.as_ref().and_then(grok_bot_usage);
     let email = text_at(&me, &["email"]);
     let enterprise = summary
         .get("membershipType")
@@ -776,6 +817,8 @@ pub(crate) fn fetch_cursor_usage(
         primary,
         reset_at: text_at(&summary, &["billingCycleEnd"]),
         on_demand,
+        grok_bot: grok_bot.as_ref().map(|(metric, _)| metric.clone()),
+        grok_bot_reset_at: grok_bot.and_then(|(_, reset_at)| reset_at),
         models,
         weekly_available: weekly.is_some(),
         weekly: weekly.unwrap_or_default(),
@@ -787,6 +830,10 @@ pub(crate) fn fetch_cursor_usage(
     raw.insert("auth_me".into(), me);
     raw.insert("usage_summary".into(), summary);
     raw.insert("usage".into(), usage);
+    raw.insert(
+        "grok_bot_usage".into(),
+        grok_bot_status.unwrap_or(serde_json::Value::Null),
+    );
     raw.insert(
         "usage_events".into(),
         usage_events.unwrap_or(serde_json::Value::Null),
@@ -859,6 +906,35 @@ mod tests {
         assert_eq!(on_demand.used, 2000.0);
         assert_eq!(on_demand.limit, Some(2000.0));
         assert_eq!(on_demand.percent, 100.0);
+    }
+
+    #[test]
+    fn grok_bot_usage_reads_the_separate_weekly_sand_pool() {
+        let status = serde_json::json!({
+            "usagePercent": 14.2,
+            "nextResetTimestampUtc": "2026-08-31T00:00:00.000Z",
+            "hasNonZeroIncludedLimit": true,
+            "usesPooledEnterpriseAllowance": false
+        });
+        let (usage, reset_at) = grok_bot_usage(&status).expect("Grok Bot usage");
+        assert_eq!(usage.kind, "percent");
+        assert_eq!(usage.percent, 14.2);
+        assert_eq!(reset_at.as_deref(), Some("2026-08-31T00:00:00.000Z"));
+    }
+
+    #[test]
+    fn grok_bot_usage_hides_missing_and_pooled_allowances() {
+        assert!(grok_bot_usage(&serde_json::json!({
+            "usagePercent": 20,
+            "hasNonZeroIncludedLimit": false
+        }))
+        .is_none());
+        assert!(grok_bot_usage(&serde_json::json!({
+            "usagePercent": 20,
+            "hasNonZeroIncludedLimit": true,
+            "usesPooledEnterpriseAllowance": true
+        }))
+        .is_none());
     }
 
     #[test]
@@ -1169,6 +1245,8 @@ mod tests {
             primary: usage_metric("currency", 25.0, Some(100.0)),
             reset_at: None,
             on_demand: None,
+            grok_bot: None,
+            grok_bot_reset_at: None,
             models: vec![],
             weekly: vec![],
             weekly_available: false,

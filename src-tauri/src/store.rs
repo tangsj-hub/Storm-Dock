@@ -1802,6 +1802,8 @@ INSERT INTO providers (id, app_type, name, settings_config, meta, is_current, in
             primary: crate::cursor::usage::usage_metric("percent", 10.0, None),
             reset_at: Some("2026-08-27T00:00:00.000Z".into()),
             on_demand: None,
+            grok_bot: None,
+            grok_bot_reset_at: None,
             models: vec![],
             weekly: vec![],
             weekly_available: false,

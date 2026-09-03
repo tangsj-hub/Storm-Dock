@@ -8,6 +8,7 @@ mod download;
 mod error;
 mod grok;
 mod grok_sessions;
+mod grok_bot;
 mod local_models;
 mod models;
 mod sql_backup;
@@ -127,6 +128,8 @@ pub fn run() {
             commands::delete_account,
             commands::switch_account,
             commands::force_restart_cursor,
+            commands::prepare_launch_grok_bot,
+            commands::confirm_launch_grok_bot,
             commands::get_codex_api_key_account,
             commands::update_codex_api_key_account,
             commands::duplicate_codex_api_key_account,

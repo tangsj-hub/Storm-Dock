@@ -5,6 +5,7 @@ import * as Progress from "@radix-ui/react-progress";
 import { Activity, Check, ChartNoAxesCombined, Copy, FileOutput, GripVertical, KeyRound, LogIn, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "../../../components/Tooltip";
+import grokBotIcon from "../../../assets/tools/grok-bot.png";
 import { canSwitchToDesktop, editAccountPath, type Account, type ApplicationKind } from "../../../lib/types";
 import { accountKindKey, endpointHost, subscriptionLabel, usageLabel } from "../lib/accountPresentation";
 import type { SwitchProgress } from "../types";
@@ -21,16 +22,18 @@ type Props = {
   testingId?: string;
   onRemove: (account: Account) => void;
   onSwitch: (account: Account) => void;
+  onLaunchBot: (account: Account) => void;
   onReorder: (activeId: string, targetId?: string) => void;
 };
 
-function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport, onRemove, onSwitch, onTest, progress }: Omit<Props, "accounts" | "onReorder"> & { account: Account }) {
+function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport, onRemove, onSwitch, onLaunchBot, onTest, progress }: Omit<Props, "accounts" | "onReorder"> & { account: Account }) {
   const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
   const subscription = subscriptionLabel(account, t);
   const usage = usageLabel(account, t);
   const host = kind !== "cursor" ? endpointHost(account.baseUrl) : undefined;
   const isApiKey = account.importType === "api_key";
+  const canLaunchBot = kind === "cursor" && ["pro", "pro+", "pro_plus", "ultra"].includes(account.subscription.plan?.toLowerCase() ?? "");
   return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical aria-label={t("drag", { account: account.label })} className={styles.dragHandle} size={24} {...attributes} {...listeners} />
     <div className={styles.accountCopy}><strong>{account.label}</strong><div className={styles.accountMeta}>
@@ -44,6 +47,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
     <div className={styles.accountActions}>
       {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : canSwitchToDesktop(account) ? <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button> : null}
       {progress?.status === "error" && canSwitchToDesktop(account) && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
+      {canLaunchBot && <Tooltip content={t("launchGrokBot")}><button aria-label={t("launchGrokBot")} className={styles.iconButton} disabled={busy} onClick={() => onLaunchBot(account)} type="button"><img alt="" aria-hidden="true" className={styles.grokBotIcon} src={grokBotIcon} /></button></Tooltip>}
       {isApiKey ? <>
         <Tooltip content={t("edit")}><a aria-disabled={busy || undefined} aria-label={t("editAccount", { account: account.label })} className={styles.iconButton} href={busy ? undefined : editAccountPath(kind, account.id)}><Pencil aria-hidden="true" size={16} /></a></Tooltip>
         <Tooltip content={t("duplicate")}><button aria-label={t("duplicate")} className={styles.iconButton} disabled={busy} onClick={() => onDuplicate(account)} type="button"><Copy aria-hidden="true" size={16} /></button></Tooltip>

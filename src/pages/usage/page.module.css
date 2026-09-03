@@ -33,6 +33,7 @@
 .badge { background: var(--badge); border: 1px solid var(--border); border-radius: 3px; color: var(--muted); font-size: 10px; font-weight: 650; line-height: 17px; padding: 0 6px; }
 .usageLines { display: grid; gap: 8px; padding-top: 16px; }
 .usageLine { color: var(--fg); font-size: 13px; font-variant-numeric: tabular-nums; font-weight: 650; margin: 0; }
+.poolReset { color: var(--muted); font-weight: 500; }
 .overLimit { color: var(--danger); }
 .charts { border-top: 1px solid var(--border); display: grid; gap: 36px; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); margin-top: 18px; padding-top: 20px; }
 .charts h2 { color: var(--muted); font-size: 11px; font-weight: 650; letter-spacing: .04em; margin: 0 0 14px; text-transform: uppercase; }

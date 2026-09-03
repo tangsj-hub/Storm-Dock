@@ -25,7 +25,7 @@ function membershipLabel(type?: string) {
 
 function usageUsedCopy(
   label: string,
-  value: CursorUsageDetails["primary"] | NonNullable<CursorUsageDetails["onDemand"]>,
+  value: CursorUsageDetails["primary"] | NonNullable<CursorUsageDetails["onDemand"]> | NonNullable<CursorUsageDetails["grokBot"]>,
   t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   const amount = metric(value);
@@ -131,6 +131,7 @@ function UsagePage() {
       <div className={styles.usageLines}>
         <p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(t("usagePrimary"), data.primary, t)}</p>
         {data.onDemand && <p className={isOverLimit(data.onDemand) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(t("usageOnDemand"), data.onDemand, t)}</p>}
+        {data.grokBot && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset}> · {resetCopy(data.grokBotResetAt, t)}</span>}</p>}
       </div>
       <div className={styles.charts}>
         <section><h2>{t("usageWeekly")}</h2>{data.weeklyAvailable ? <WeeklyChart days={data.weekly} events={data.events ?? []} /> : <p className={styles.muted}>{data.weeklyError ?? t("usageWeeklyUnavailable")}</p>}</section>

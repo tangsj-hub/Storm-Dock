@@ -543,6 +543,7 @@ export function HomePage() {
     account: Account;
     operationId: string;
   }>();
+  const [grokBotDialog, setGrokBotDialog] = useState<Account>();
   const [exportData, setExportData] = useState<unknown>();
   const [exportTarget, setExportTarget] = useState<Account>();
   const [testingId, setTestingId] = useState<string>();
@@ -750,6 +751,39 @@ export function HomePage() {
       setBusy(false);
     }
   };
+  const launchBot = async (account: Account) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await invoke<{ status: "same" | "ready" | "requiresConfirmation" }>("prepare_launch_grok_bot", { id: account.id });
+      if (result.status === "requiresConfirmation") {
+        setGrokBotDialog(account);
+        setCountdown(10);
+        return;
+      }
+      if (result.status === "ready") {
+        await invoke("confirm_launch_grok_bot", { id: account.id });
+      }
+      setNotice(result.status === "same" ? t("grokBotAlreadyActive") : t("grokBotLaunched"));
+    } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
+  const confirmLaunchBot = async () => {
+    const account = grokBotDialog;
+    if (!account || busy) return;
+    setGrokBotDialog(undefined);
+    setBusy(true);
+    try {
+      await invoke("confirm_launch_grok_bot", { id: account.id });
+      setNotice(t("grokBotLaunched"));
+    } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
+  const cancelLaunchBot = () => {
+    setGrokBotDialog(undefined);
+    setNotice(undefined);
+    setBusy(false);
+  };
   const cancelRestart = () => {
     setRestartDialog(undefined);
     setNotice(undefined);
@@ -786,19 +820,20 @@ export function HomePage() {
     }
   };
   useEffect(() => {
-    if (!restartDialog) return;
+    if (!restartDialog && !grokBotDialog) return;
     const timer = window.setInterval(() => {
       setCountdown((seconds) => {
         if (seconds <= 1) {
           window.clearInterval(timer);
-          cancelRestart();
+          if (restartDialog) cancelRestart();
+          else cancelLaunchBot();
           return 0;
         }
         return seconds - 1;
       });
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [restartDialog?.operationId]);
+  }, [restartDialog?.operationId, grokBotDialog?.id]);
   const remove = (account: Account) =>
     act(async () => {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -1563,7 +1598,7 @@ export function HomePage() {
         <p>{t("emptyDescription", { application: t(selected) })}</p>
       </div>
     ) : (
-      <AccountList accounts={accounts} busy={busy} kind={selected} key={selected} onDuplicate={(account) => void duplicateAccount(account)} onExport={(account) => void openAccountExport(account)} onRemove={remove} onReorder={(activeId, targetId) => void reorder(activeId, targetId)} onSwitch={switchTo} onTest={(account) => void testApiKey(account)} progress={switchProgress} testingId={testingId} />
+      <AccountList accounts={accounts} busy={busy} kind={selected} key={selected} onDuplicate={(account) => void duplicateAccount(account)} onExport={(account) => void openAccountExport(account)} onLaunchBot={(account) => void launchBot(account)} onRemove={remove} onReorder={(activeId, targetId) => void reorder(activeId, targetId)} onSwitch={switchTo} onTest={(account) => void testApiKey(account)} progress={switchProgress} testingId={testingId} />
     );
   };
 
@@ -1730,6 +1765,31 @@ export function HomePage() {
                 type="button"
               >
                 {t("forceRestart")}
+              </button>
+            </div>
+          </AlertDialog.Content>
+        </AlertDialog.Portal>
+      </AlertDialog.Root>
+      <AlertDialog.Root
+        onOpenChange={(open) => {
+          if (!open && grokBotDialog) cancelLaunchBot();
+        }}
+        open={Boolean(grokBotDialog)}
+      >
+        <AlertDialog.Portal>
+          <AlertDialog.Overlay className={styles.dialogOverlay} />
+          <AlertDialog.Content className={styles.dialogContent}>
+            <AlertDialog.Title>{t("grokBotSwitchTitle")}</AlertDialog.Title>
+            <AlertDialog.Description>
+              {t("grokBotSwitchDescription", { account: grokBotDialog?.label ?? "" })}
+            </AlertDialog.Description>
+            <p className={styles.dialogWarning}>{t("grokBotSwitchWarning")}</p>
+            <div className={styles.dialogActions}>
+              <AlertDialog.Cancel asChild>
+                <button className={styles.dialogCancel} onClick={cancelLaunchBot} type="button">{t("cancelCountdown", { seconds: countdown })}</button>
+              </AlertDialog.Cancel>
+              <button autoFocus className={styles.dialogConfirm} onClick={() => void confirmLaunchBot()} type="button">
+                {t("grokBotSwitchConfirm")}
               </button>
             </div>
           </AlertDialog.Content>

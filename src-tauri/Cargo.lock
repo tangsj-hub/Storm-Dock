@@ -3305,6 +3305,7 @@ dependencies = [
  "time",
  "toml 0.8.2",
  "uuid",
+ "winreg 0.55.0",
 ]
 
 [[package]]

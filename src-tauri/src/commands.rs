@@ -2059,16 +2059,27 @@ fn grok_bot_session(id: &str, state: &State<'_, AppState>) -> std::result::Resul
 }
 
 #[tauri::command]
-pub(crate) fn prepare_launch_grok_bot(
+pub(crate) async fn prepare_launch_grok_bot(
     id: String,
     state: State<'_, AppState>,
 ) -> std::result::Result<crate::grok_bot::LaunchPreparation, String> {
-    crate::grok_bot::prepare_for_session(&grok_bot_session(&id, &state)?).map_err(error_text)
+    let session = grok_bot_session(&id, &state)?;
+    tauri::async_runtime::spawn_blocking(move || crate::grok_bot::prepare_for_session(&session))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(error_text)
 }
 
 #[tauri::command]
-pub(crate) fn confirm_launch_grok_bot(id: String, state: State<'_, AppState>) -> std::result::Result<(), String> {
-    crate::grok_bot::confirm_for_session(&grok_bot_session(&id, &state)?).map_err(error_text)
+pub(crate) async fn confirm_launch_grok_bot(
+    id: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<(), String> {
+    let session = grok_bot_session(&id, &state)?;
+    tauri::async_runtime::spawn_blocking(move || crate::grok_bot::confirm_for_session(&session))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(error_text)
 }
 
 #[derive(Clone, serde::Serialize)]

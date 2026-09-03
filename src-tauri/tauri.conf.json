@@ -34,7 +34,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.icns"],
+    "icon": ["icons/icon.icns", "icons/icon.ico"],
     "macOS": { "bundleName": "Storm Dock" }
   }
 }

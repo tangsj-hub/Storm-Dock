@@ -15,6 +15,7 @@ mod sql_backup;
 mod store;
 mod tools;
 mod tray;
+mod window_chrome;
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -35,16 +36,27 @@ fn set_close_to_tray(enabled: bool) {
     CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
 }
 
+#[tauri::command]
+fn sync_window_chrome(window: tauri::Window) {
+    crate::window_chrome::apply(&window);
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::Builder::new().build())
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if CLOSE_TO_TRAY.load(Ordering::Relaxed) {
-                    api.prevent_close();
-                    let _ = window.hide();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if CLOSE_TO_TRAY.load(Ordering::Relaxed) {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    }
                 }
+                tauri::WindowEvent::ThemeChanged(theme) => {
+                    crate::window_chrome::apply_theme(window, *theme);
+                }
+                _ => {}
             }
         })
         .setup(|app| {
@@ -72,6 +84,9 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            if let Some(window) = app.get_webview_window("main") {
+                crate::window_chrome::apply_webview(&window);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -148,6 +163,7 @@ pub fn run() {
             local_models::open_local_model_dir,
             local_models::migrate_local_model,
             set_close_to_tray,
+            sync_window_chrome,
             tools::get_tool_versions,
             tools::run_tool_lifecycle_action,
             tools::probe_tool_installations

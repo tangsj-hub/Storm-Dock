@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveTheme } from "./theme";
+import { chromeColor, resolveTheme } from "./theme";
 
 describe("resolveTheme", () => {
   it("follows system appearance", () => {
@@ -12,5 +12,10 @@ describe("resolveTheme", () => {
     expect(resolveTheme("light", false)).toBe("light");
     expect(resolveTheme("dark", true)).toBe("dark");
     expect(resolveTheme("dark", false)).toBe("dark");
+  });
+
+  it("maps the page background onto native window chrome", () => {
+    expect(chromeColor("light")).toEqual({ red: 255, green: 255, blue: 255, alpha: 255 });
+    expect(chromeColor("dark")).toEqual({ red: 32, green: 32, blue: 32, alpha: 255 });
   });
 });

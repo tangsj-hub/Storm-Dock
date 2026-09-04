@@ -43,4 +43,4 @@
 .reset:hover { color: var(--fg); }
 @keyframes flash { 0% { color: var(--info); } 100% { color: var(--muted); } }
 @media (max-width: 860px) { .charts { grid-template-columns: 1fr; } }
-@media (max-width: 620px) { .shell { padding: 32px 18px; } .header { align-items: flex-start; } .refresh { white-space: nowrap; } }
+@media (max-width: 620px) { .shell { padding: var(--window-titlebar-height) 18px 18px; } .header { align-items: flex-start; } .refresh { white-space: nowrap; } }

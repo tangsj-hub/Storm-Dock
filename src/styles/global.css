@@ -1,7 +1,7 @@
 html {
   --page-content-width: 1060px;
   --page-shell-padding: 56px 28px 28px;
-  --window-titlebar-height: 40px;
+  --window-titlebar-height: 12px;
   --download-dock-offset: 0px;
   background: var(--bg);
   color: var(--fg);
@@ -12,7 +12,7 @@ html {
 html[data-theme="dark"] { color-scheme: dark; }
 
 html, html[data-theme="light"] {
-  --bg: #f6f7f9;
+  --bg: #ffffff;
   --fg: #20242c;
   --muted: #697482;
   --border: #e1e5eb;
@@ -72,7 +72,7 @@ html, html[data-theme="light"] {
 }
 
 html[data-theme="dark"] {
-  --bg: #16181d;
+  --bg: #202020;
   --fg: #e8eaee;
   --muted: #b7bfcb;
   --border: #5f656d;
@@ -132,7 +132,7 @@ html[data-theme="dark"] {
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 820px; overflow: hidden; }
+body { background: var(--bg); margin: 0; min-width: 820px; overflow: hidden; }
 #root { position: relative; z-index: 1; }
 html[data-app] body::before { background: url("../assets/cursor.svg") center / min(42vmin, 420px) no-repeat; content: ""; inset: 0; opacity: var(--watermark-opacity); pointer-events: none; position: fixed; z-index: 0; }
 html[data-app="codex"] body::before { background-image: url("../assets/codex.svg"); }

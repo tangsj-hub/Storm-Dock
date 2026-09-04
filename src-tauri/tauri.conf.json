@@ -17,6 +17,7 @@
         "title": "Storm Dock",
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
+        "backgroundColor": "#ffffff",
         "width": 920,
         "height": 640,
         "minWidth": 820,

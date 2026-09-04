@@ -1608,7 +1608,7 @@ export function HomePage() {
         <WindowDragSurface />
         <header className={styles.header}>
           <div className={styles.brand}>
-            <img alt="" src={logo} />
+            {!navigator.userAgent.includes("Windows") && <img alt="" src={logo} />}
             <span>{t("appName")}</span>
             <Tooltip content={t("settings")}>
               <a

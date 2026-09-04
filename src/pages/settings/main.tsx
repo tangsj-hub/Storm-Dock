@@ -1,7 +1,7 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tabs from "@radix-ui/react-tabs";
-import { Check, ChevronDown, Database, FolderSync, KeyRound, Languages, Monitor, PanelTop, Power } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Database, FolderSync, KeyRound, Languages, Monitor, PanelTop, Power } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
@@ -157,7 +157,7 @@ function SettingsPage() {
 
   return <Toast.Provider><main className={styles.shell}>
     <WindowDragSurface />
-    <header className={styles.header}><a aria-label={t("back")} className={styles.back} href={homePath(applicationKindFromQuery())}>←</a><h1>{t("settingsTitle")}</h1></header>
+    <header className={styles.header}><a aria-label={t("back")} className={styles.back} href={homePath(applicationKindFromQuery())}><ArrowLeft aria-hidden="true" size={20} /></a><h1>{t("settingsTitle")}</h1></header>
     <Tabs.Root className={styles.layout} defaultValue={new URLSearchParams(window.location.search).get("tab") === "huggingface" ? "huggingface" : "general"} orientation="vertical">
       <Tabs.List aria-label={t("settingsTabs")} className={styles.nav}>
         <Tabs.Trigger className={styles.tab} value="general">{t("settingsTabGeneral")}</Tabs.Trigger>

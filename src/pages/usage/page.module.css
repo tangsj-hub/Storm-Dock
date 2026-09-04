@@ -18,7 +18,7 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 .workspace, .error { margin: 34px auto 0; max-width: var(--page-content-width); }
 .workspace { flex: 1; min-height: 0; overflow-y: auto; width: 100%; }
-.empty { align-items: center; background: var(--panel); border: 1px dashed var(--border-strong); color: var(--muted); display: flex; flex-direction: column; justify-content: center; margin: 34px auto 0; max-width: var(--page-content-width); min-height: 270px; text-align: center; }
+.empty { align-items: center; background: var(--panel); border: 1px dashed var(--border-strong); border-radius: 6px; color: var(--muted); display: flex; flex: 1; flex-direction: column; justify-content: center; margin: 34px auto 0; max-width: var(--page-content-width); min-height: 0; text-align: center; width: 100%; }
 .empty svg { color: var(--info); }
 .empty h2 { color: var(--fg); font-size: 16px; margin: 15px 0 7px; }
 .empty p { font-size: 13px; margin: 0; max-width: 320px; }

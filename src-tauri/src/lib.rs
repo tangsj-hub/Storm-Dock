@@ -21,7 +21,7 @@ use std::sync::{
     Mutex,
 };
 
-use tauri::{menu::Menu, tray::TrayIconBuilder, Manager};
+use tauri::{tray::TrayIconBuilder, Manager};
 
 use crate::cursor::oauth::OauthLoginState;
 use crate::error::AppError;
@@ -47,7 +47,6 @@ pub fn run() {
                 }
             }
         })
-        .menu(Menu::default)
         .setup(|app| {
             let data_dir = app
                 .path()

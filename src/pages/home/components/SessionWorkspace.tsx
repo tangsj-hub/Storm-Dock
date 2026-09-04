@@ -25,6 +25,7 @@ import {
   groupSessions,
   removeSelectedIds,
   toggleSelectedIds,
+  uniqueSessions,
 } from "../lib/sessionPresentation";
 import { useLatestRequest } from "../hooks/useLatestRequest";
 
@@ -67,7 +68,7 @@ export const SessionWorkspace = memo(function SessionWorkspace({ provider, onErr
     setRefreshing(true);
     onRefreshingChange(true);
     try {
-      const next = await provider.list();
+      const next = uniqueSessions(await provider.list());
       setSessions(next);
       setExpandedProjects((current) => {
         const projects = new Set(next.map((session) => session.projectDir?.trim() || "__unknown__"));

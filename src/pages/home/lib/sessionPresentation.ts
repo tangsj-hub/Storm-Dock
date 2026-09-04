@@ -15,6 +15,15 @@ export function formatRelativeSessionTime(timestamp: number, t: Translate) {
   return new Date(timestamp).toLocaleDateString();
 }
 
+export function uniqueSessions(sessions: LocalSession[]) {
+  const seen = new Set<string>();
+  return sessions.filter((session) => {
+    if (seen.has(session.id)) return false;
+    seen.add(session.id);
+    return true;
+  });
+}
+
 export function filterSessions(sessions: LocalSession[], query: string) {
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return sessions;

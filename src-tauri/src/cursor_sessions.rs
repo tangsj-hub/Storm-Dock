@@ -28,15 +28,20 @@ pub(crate) fn list_sessions() -> Vec<CodexSession> {
     let metadata = load_cursor_metadata(
         &home.join("Library/Application Support/Cursor/User/globalStorage/state.vscdb"),
     );
+    list_sessions_from(&root, &metadata)
+}
+
+fn list_sessions_from(root: &Path, metadata: &CursorSessionMetadata) -> Vec<CodexSession> {
     let mut files = Vec::new();
-    collect_transcripts(&root, &mut files);
-    files.sort_by_key(|path| std::cmp::Reverse(modified_at(path)));
-    files.truncate(MAX_SESSIONS);
+    collect_transcripts(root, &mut files);
     let mut sessions = files
         .into_iter()
-        .filter_map(|path| parse_session(&path, &root, &metadata))
+        .filter_map(|path| parse_session(&path, root, metadata))
         .collect::<Vec<_>>();
-    sessions.sort_by_key(|session| std::cmp::Reverse(session.updated_at));
+    sessions.sort_by_key(|session| std::cmp::Reverse(session_rank(session)));
+    let mut seen = HashSet::new();
+    sessions.retain(|session| seen.insert(session.id.clone()));
+    sessions.truncate(MAX_SESSIONS);
     sessions
 }
 
@@ -88,21 +93,15 @@ fn delete_session_at(
     id: &str,
 ) -> Result<(), String> {
     let canonical_root = root.canonicalize().map_err(|error| error.to_string())?;
-    let canonical_dir = find_transcript(root, id)
-        .map(|transcript| {
-            transcript
-                .parent()
-                .map(Path::to_path_buf)
-                .ok_or_else(|| "无效的会话目录。".to_string())
-        })
-        .transpose()?
-        .map(|session_dir| {
-            session_dir
-                .canonicalize()
-                .map_err(|error| error.to_string())
-        })
-        .transpose()?;
-    if let Some(directory) = &canonical_dir {
+    let mut directories = Vec::new();
+    for transcript in find_transcripts(root, id) {
+        let session_dir = transcript
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| "无效的会话目录。".to_string())?;
+        let directory = session_dir
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
         if !directory.starts_with(&canonical_root)
             || directory.file_name().and_then(|value| value.to_str()) != Some(id)
             || directory
@@ -113,9 +112,10 @@ fn delete_session_at(
         {
             return Err("无效的会话目录。".into());
         }
+        directories.push(directory);
     }
     purge_cursor_metadata(state_db, search_db, id)?;
-    if let Some(directory) = canonical_dir {
+    for directory in directories {
         fs::remove_dir_all(directory).map_err(|error| error.to_string())?;
     }
     Ok(())
@@ -188,12 +188,39 @@ fn collect_transcripts(root: &Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-fn find_transcript(root: &Path, id: &str) -> Option<PathBuf> {
+fn find_transcripts(root: &Path, id: &str) -> Vec<PathBuf> {
     let mut files = Vec::new();
     collect_transcripts(root, &mut files);
     files
         .into_iter()
-        .find(|path| path.file_stem().and_then(|value| value.to_str()) == Some(id))
+        .filter(|path| path.file_stem().and_then(|value| value.to_str()) == Some(id))
+        .collect()
+}
+
+fn find_transcript(root: &Path, id: &str) -> Option<PathBuf> {
+    find_transcripts(root, id)
+        .into_iter()
+        .max_by_key(|path| transcript_rank(path, root))
+}
+
+fn transcript_rank(path: &Path, root: &Path) -> (u8, u64) {
+    let project = path
+        .strip_prefix(root)
+        .ok()
+        .and_then(|relative| relative.components().next())
+        .and_then(|component| component.as_os_str().to_str());
+    (project_rank(project), modified_at(path))
+}
+
+fn session_rank(session: &CodexSession) -> (u8, u64) {
+    (project_rank(session.project_dir.as_deref()), session.updated_at)
+}
+
+fn project_rank(project: Option<&str>) -> u8 {
+    match project {
+        Some("empty-window") | None => 0,
+        Some(_) => 1,
+    }
 }
 
 fn parse_session(
@@ -377,6 +404,71 @@ fn contains_sensitive_value(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_user_transcript(root: &Path, project: &str, id: &str) -> PathBuf {
+        let session_dir = root.join(project).join("agent-transcripts").join(id);
+        fs::create_dir_all(&session_dir).unwrap();
+        let path = session_dir.join(format!("{id}.jsonl"));
+        fs::write(
+            &path,
+            r#"{"role":"user","message":{"content":"<user_query>Shared prompt</user_query>"}}"#,
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn lists_a_copied_cursor_session_only_once() {
+        let root = std::env::temp_dir().join(format!("storm-dock-dedupe-{}", std::process::id()));
+        let id = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let project_copy = write_user_transcript(&root, "real-project", id);
+        let empty_copy = write_user_transcript(&root, "empty-window", id);
+        let newer = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(2_000);
+        File::options()
+            .write(true)
+            .open(&empty_copy)
+            .unwrap()
+            .set_modified(newer)
+            .unwrap();
+        File::options()
+            .write(true)
+            .open(&project_copy)
+            .unwrap()
+            .set_modified(std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1))
+            .unwrap();
+        let sessions = list_sessions_from(&root, &CursorSessionMetadata::default());
+        let _ = fs::remove_dir_all(&root);
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, id);
+        assert_eq!(sessions[0].project_dir.as_deref(), Some("real-project"));
+    }
+
+    #[test]
+    fn deletes_every_copy_of_a_duplicated_cursor_session() {
+        let root = std::env::temp_dir().join(format!("storm-dock-dup-del-{}", std::process::id()));
+        let id = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+        fs::create_dir_all(&root).unwrap();
+        let state_db = root.join("state.vscdb");
+        let search_db = root.join("conversation-search.db");
+        let state = Connection::open(&state_db).unwrap();
+        state.execute_batch("CREATE TABLE composerHeaders (composerId TEXT PRIMARY KEY); CREATE TABLE cursorDiskKV (key TEXT UNIQUE, value BLOB); CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB);").unwrap();
+        drop(state);
+        let search = Connection::open(&search_db).unwrap();
+        search.execute_batch("CREATE TABLE conversations (fts_rowid INTEGER PRIMARY KEY, id TEXT); CREATE VIRTUAL TABLE conversation_fts USING fts5(title);").unwrap();
+        drop(search);
+        let project_dir = write_user_transcript(&root, "real-project", id)
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        let empty_dir = write_user_transcript(&root, "empty-window", id)
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        delete_session_at(&root, &state_db, &search_db, id).unwrap();
+        assert!(!project_dir.exists());
+        assert!(!empty_dir.exists());
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn ignores_transcripts_without_a_displayable_user_message() {

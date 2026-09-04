@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "platform": "llama-cpp",
-  "generic": {
-    "auxiliary": ["config.json", "configuration.json", "tokenizer*", "chat_template*", "*.jinja"],
-    "weights": ["*.gguf"]
-  },
-  "repositories": {}
-}

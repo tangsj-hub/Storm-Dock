@@ -1325,8 +1325,98 @@ fn group_weight_variants(files: &[RemoteModelFile]) -> (Vec<RemoteModelVariant>,
             &by_path,
         ));
     }
+    attach_snapshot_companions(&mut variants, files, &by_path);
     let default_variant_id = pick_default_variant(&variants);
     (variants, default_variant_id)
+}
+
+fn attach_snapshot_companions(
+    variants: &mut [RemoteModelVariant],
+    files: &[RemoteModelFile],
+    by_path: &HashMap<&str, u64>,
+) {
+    for variant in variants.iter_mut() {
+        let selected_quant = variant_quant_key(variant);
+        for file in files {
+            if variant.files.iter().any(|path| path == &file.path) {
+                continue;
+            }
+            if should_attach_companion(variant, &file.path, selected_quant.as_deref()) {
+                variant.files.push(file.path.clone());
+            }
+        }
+        variant.size = variant
+            .files
+            .iter()
+            .map(|path| *by_path.get(path.as_str()).unwrap_or(&0))
+            .sum();
+    }
+}
+
+fn variant_quant_key(variant: &RemoteModelVariant) -> Option<String> {
+    if !variant.id.starts_with("gguf:") {
+        return None;
+    }
+    variant
+        .files
+        .iter()
+        .filter(|path| {
+            path.to_ascii_lowercase().ends_with(".gguf") && !is_gguf_runtime_sidecar(path)
+        })
+        .find_map(|path| gguf_quant_key(path))
+        .or_else(|| variant.files.iter().find_map(|path| gguf_quant_key(path)))
+}
+
+fn should_attach_companion(variant: &RemoteModelVariant, path: &str, selected_quant: Option<&str>) -> bool {
+    if is_sidecar(path) {
+        return gguf_sidecar_matches(path, selected_quant) || !variant.id.starts_with("gguf:");
+    }
+    if !variant.id.starts_with("gguf:") {
+        return false;
+    }
+    let lower = path.to_ascii_lowercase();
+    if is_runtime_companion_weight(path) && !lower.ends_with(".gguf") {
+        return true;
+    }
+    lower.ends_with(".gguf") && gguf_companion_matches(path, selected_quant)
+}
+
+fn is_runtime_companion_weight(path: &str) -> bool {
+    let hay = path.to_ascii_lowercase().replace('\\', "/");
+    hay.contains("vae/")
+        || hay.contains("text_encoder")
+        || hay.contains("split_files/")
+        || hay.contains("mmproj")
+        || hay.contains("projector")
+}
+
+fn is_gguf_runtime_sidecar(path: &str) -> bool {
+    let hay = path.to_ascii_lowercase();
+    hay.contains("mmproj")
+        || hay.contains("mtp")
+        || hay.contains("dspark")
+        || hay.contains("dflash")
+        || hay.contains("projector")
+}
+
+fn gguf_companion_matches(path: &str, selected_quant: Option<&str>) -> bool {
+    match (gguf_quant_key(path), selected_quant) {
+        (Some(quant), Some(selected)) => quant == selected,
+        (None, _) => is_gguf_runtime_sidecar(path),
+        (Some(_), None) => is_gguf_runtime_sidecar(path),
+    }
+}
+
+fn gguf_sidecar_matches(path: &str, selected_quant: Option<&str>) -> bool {
+    let lower = path.to_ascii_lowercase();
+    if !lower.ends_with(".gguf") {
+        return true;
+    }
+    gguf_companion_matches(path, selected_quant)
+}
+
+fn gguf_quant_key(path: &str) -> Option<String> {
+    gguf_quant(file_name(path)).map(|quant| quant.to_ascii_lowercase())
 }
 
 fn make_variant(
@@ -1686,6 +1776,7 @@ fn is_sidecar(path: &str) -> bool {
         || name.starts_with("tokenizer")
         || name.starts_with("chat_template")
         || name.ends_with(".tiktoken")
+        || name.ends_with(".jinja")
         || name.ends_with(".py")
         || matches!(
             name,
@@ -2643,6 +2734,77 @@ mod tests {
             assert!(is_sidecar(path), "expected auxiliary file: {path}");
         }
         assert!(!is_sidecar("README.md"));
+        assert!(is_sidecar("chat_template.jinja"), "expected root jinja template");
+    }
+
+    #[test]
+    fn gguf_variant_keeps_snapshot_companions_not_other_quants() {
+        let files = vec![
+            remote_file("config.json", 10),
+            remote_file("tokenizer.json", 20),
+            remote_file("MiniMax-H3-Q4_K_M.gguf", 4000),
+            remote_file("MiniMax-H3-Q8_0.gguf", 8000),
+            remote_file("qwen3vl_32b_minimax_h3-Q4_K_M.gguf", 3000),
+            remote_file("qwen3vl_32b_minimax_h3-Q2_K_M.gguf", 1500),
+            remote_file("vae/minimax_h3_video_vae_fp16.safetensors", 200),
+            remote_file("vae/minimax_h3_audio_vae_fp32.safetensors", 180),
+            remote_file("model.safetensors", 9000),
+            remote_file("README.md", 50),
+        ];
+        let (variants, _) = group_weight_variants(&files);
+        let q4 = variants
+            .iter()
+            .find(|variant| variant.files.iter().any(|path| path == "MiniMax-H3-Q4_K_M.gguf"))
+            .unwrap();
+        assert!(q4.files.contains(&"config.json".into()));
+        assert!(q4.files.contains(&"tokenizer.json".into()));
+        assert!(q4.files.contains(&"qwen3vl_32b_minimax_h3-Q4_K_M.gguf".into()));
+        assert!(q4.files.contains(&"vae/minimax_h3_video_vae_fp16.safetensors".into()));
+        assert!(q4.files.contains(&"vae/minimax_h3_audio_vae_fp32.safetensors".into()));
+        assert!(!q4.files.iter().any(|path| path.contains("Q8_0")));
+        assert!(!q4.files.iter().any(|path| path.contains("Q2_K_M")));
+        assert!(!q4.files.iter().any(|path| path == "model.safetensors"));
+        assert!(!q4.files.iter().any(|path| path == "README.md"));
+        assert_eq!(
+            q4.size,
+            10 + 20 + 4000 + 3000 + 200 + 180
+        );
+    }
+
+    #[test]
+    fn safetensors_variant_excludes_gguf_quants() {
+        let files = vec![
+            remote_file("config.json", 1),
+            remote_file("model.safetensors", 100),
+            remote_file("model-Q4_K_M.gguf", 40),
+            remote_file("model-Q8_0.gguf", 80),
+        ];
+        let (variants, _) = group_weight_variants(&files);
+        let tensors = variants.iter().find(|variant| variant.id == "safetensors").unwrap();
+        assert!(tensors.files.contains(&"model.safetensors".into()));
+        assert!(tensors.files.contains(&"config.json".into()));
+        assert!(!tensors.files.iter().any(|path| path.ends_with(".gguf")));
+    }
+
+    #[test]
+    fn mmproj_follows_matching_gguf_quant() {
+        let files = vec![
+            remote_file("config.json", 1),
+            remote_file("model-Q4_K_M.gguf", 40),
+            remote_file("model-Q8_0.gguf", 80),
+            remote_file("mmproj-Q4_K_M.gguf", 5),
+            remote_file("mmproj-Q8_0.gguf", 8),
+            remote_file("mmproj.gguf", 3),
+        ];
+        let (variants, _) = group_weight_variants(&files);
+        let q4 = variants
+            .iter()
+            .find(|variant| variant.files.iter().any(|path| path == "model-Q4_K_M.gguf"))
+            .unwrap();
+        assert!(q4.files.contains(&"mmproj-Q4_K_M.gguf".into()));
+        assert!(q4.files.contains(&"mmproj.gguf".into()));
+        assert!(!q4.files.iter().any(|path| path == "mmproj-Q8_0.gguf"));
+        assert!(!q4.files.iter().any(|path| path == "model-Q8_0.gguf"));
     }
 
     #[test]

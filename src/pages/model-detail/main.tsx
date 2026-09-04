@@ -9,7 +9,7 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { Tooltip } from "../../components/Tooltip";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
-import { cancelModelDownload, listDownloadJobs, probeRemoteModel, startModelDownloadFast, type ModelPlatform } from "../../lib/api";
+import { cancelModelDownload, listDownloadJobs, probeRemoteModel, startModelDownloadFast } from "../../lib/api";
 import { modelCenterPath, modelRepoFromQuery, modelSourceFromQuery, type DownloadJob, type DownloadSnapshot, type ModelCenterContext, type ModelFit, type RemoteModelProbe, type RemoteModelVariant } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "../add/page.module.css";
@@ -88,7 +88,6 @@ function ModelDetailPage() {
   const [loading, setLoading] = useState(true);
   const [probe, setProbe] = useState<RemoteModelProbe>();
   const [variantId, setVariantId] = useState("");
-  const [platform, setPlatform] = useState<ModelPlatform>("generic");
   const [job, setJob] = useState<DownloadJob>();
   const [starting, setStarting] = useState(false);
   const [notice, setNotice] = useState<string>();
@@ -117,7 +116,6 @@ function ModelDetailPage() {
         if (cancelled) return;
         setProbe(next);
         setVariantId(next.defaultVariantId);
-        setPlatform("generic");
       })
       .catch((error) => {
         if (!cancelled) showNotice(invokeMessage(error), true);
@@ -154,7 +152,7 @@ function ModelDetailPage() {
     setStarting(true);
     watching.current = true;
     try {
-      await startModelDownloadFast(probe.source, probe.repo, probe.revision, selected.files.map((path) => probe.files.find((file) => file.path === path)).filter((file): file is NonNullable<typeof file> => Boolean(file)), platform);
+      await startModelDownloadFast(probe.source, probe.repo, probe.revision, selected.files.map((path) => probe.files.find((file) => file.path === path)).filter((file): file is NonNullable<typeof file> => Boolean(file)));
       showNotice(t("modelDownloadStarted", { repo: probe.repo }));
     } catch (error) {
       showNotice(diskNotice(t, error), true);
@@ -201,7 +199,6 @@ function ModelDetailPage() {
                       ) : null}
                     </div>
                     <div className={extra.downloadBar}>
-                      <label className={extra.platformPicker}><span>{t("modelPlatform")}</span><select aria-label={t("modelPlatform")} disabled={downloading} onChange={(event) => setPlatform(event.target.value as ModelPlatform)} value={platform}><option value="generic">{t("modelPlatformGeneric")}</option><option value="unsloth">{t("modelPlatformUnsloth")}</option><option value="llama-cpp">{t("modelPlatformLlamaCpp")}</option></select></label>
                       <DropdownMenu.Root>
                         <DropdownMenu.Trigger asChild>
                           <button aria-label={t("modelWeightLabel")} className={extra.picker} disabled={downloading || probe.variants.length < 2} type="button">

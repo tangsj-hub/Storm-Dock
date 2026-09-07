@@ -121,10 +121,23 @@ export type RemoteModelHit = {
   params?: string;
   updatedAt?: string;
 };
+export type RemoteModelSearchResult = {
+  hits: RemoteModelHit[];
+  page: number;
+  hasMore: boolean;
+};
+export type RemoteModelBrowseResult = {
+  hits: RemoteModelHit[];
+  limit: number;
+  hasMore: boolean;
+  nextCursor?: string | null;
+};
 export type RemoteModelCard = {
   author: string;
   name: string;
   description: string;
+  /** Source-native README body (ModelScope ReadMeContent / HF README.md). */
+  readme?: string;
   tags: string[];
   license?: string;
   library?: string;

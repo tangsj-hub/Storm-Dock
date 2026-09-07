@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, DownloadJob, LocalLlm, LocalSession, LocalSessionMessage, McpServer, ModelFormat, ModelSource, Plugin, RemoteModelFile, RemoteModelHit, RemoteModelProbe, SessionDeleteBatchResult } from "./types";
+import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, DownloadJob, LocalLlm, LocalSession, LocalSessionMessage, McpServer, ModelFormat, ModelSource, Plugin, RemoteModelFile, RemoteModelProbe, RemoteModelBrowseResult, RemoteModelSearchResult, SessionDeleteBatchResult } from "./types";
 
 export const listApplications = () => invoke<ApplicationStatus[]>("list_applications");
 export const listAccounts = (kind: ApplicationKind) => invoke<Account[]>("list_accounts", { kind });
@@ -37,8 +37,10 @@ export const listMcpServers = (kind: ApplicationKind) => invoke<McpServer[]>("li
 export const setMcpServerEnabled = (kind: ApplicationKind, id: string, enabled: boolean) => invoke("set_mcp_server_enabled", { kind, id, enabled });
 export const setCursorPluginEnabled = (id: string, source: Plugin["source"], enabled: boolean) => invoke("set_cursor_plugin_enabled", { id, source, enabled });
 export const deleteCursorPlugin = (id: string, source: Plugin["source"]) => invoke("delete_cursor_plugin", { id, source });
-export const searchRemoteModels = (source: ModelSource, query: string, format?: ModelFormat) => invoke<RemoteModelHit[]>("search_remote_models", { source, query, format: format && format !== "all" ? format : null });
+export const searchRemoteModels = (source: ModelSource, query: string, format?: ModelFormat, page = 1) => invoke<RemoteModelSearchResult>("search_remote_models", { source, query, format: format && format !== "all" ? format : null, page });
+export const browseRemoteModels = (source: ModelSource, query: string, format?: ModelFormat, cursor?: string | null, limit = 48) => invoke<RemoteModelBrowseResult>("browse_remote_models", { source, query, format: format && format !== "all" ? format : null, cursor: cursor || null, limit });
 export const probeRemoteModel = (source: ModelSource, repo: string, revision?: string) => invoke<RemoteModelProbe>("probe_remote_model", { source, repo, revision: revision || null });
+export const fetchRemoteModelReadme = (source: ModelSource, repo: string, revision?: string) => invoke<string>("fetch_remote_model_readme", { source, repo, revision: revision || null });
 export const startModelDownload = (source: ModelSource, repo: string, revision?: string, files?: string[]) => invoke<string>("start_model_download", { source, repo, revision: revision || null, files: files ?? null });
 export const startModelDownloadFast = (source: ModelSource, repo: string, revision: string, files: RemoteModelFile[]) => invoke<string>("start_model_download_fast", { source, repo, revision, files });
 export const cancelModelDownload = (jobId: string) => invoke("cancel_model_download", { jobId });

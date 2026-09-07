@@ -27,7 +27,6 @@ import {
   ChevronsDownUp,
   ChevronsUpDown,
   Clock3,
-  Copy,
   Download,
   FileOutput,
   FolderOpen,
@@ -64,6 +63,7 @@ import { DownloadDock } from "../../components/DownloadDock";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import { ExportDialog } from "../../components/ExportDialog";
+import { CopyIconButton } from "../../components/CopyIconButton";
 import { Tooltip } from "../../components/Tooltip";
 import {
   cachedPluginCount,
@@ -1148,14 +1148,6 @@ export function HomePage() {
           setSelectedSessionIds((current) =>
             toggleSelectedIds(current, visibleSessions.map((session) => session.id)),
           );
-        const copySessionText = async (value: string) => {
-          try {
-            await navigator.clipboard.writeText(value);
-            setNotice(t("copied"));
-          } catch (error) {
-            showError(error);
-          }
-        };
         const deleteSelectedSessions = async () => {
           const targets = sessionDeleteTargets ?? [];
           if (!targets.length || sessionsDeleting) return;
@@ -1480,11 +1472,11 @@ export function HomePage() {
                       <dl className={styles.sessionDetailFields}>
                         <div>
                           <dt>{t("sessionsSourcePath")}</dt>
-                          <dd><code>{selectedSession.sourcePath}</code><Tooltip content={t("copy")}><button aria-label={t("copy")} onClick={() => void copySessionText(selectedSession.sourcePath)} type="button"><Copy aria-hidden="true" size={14} /></button></Tooltip></dd>
+                          <dd><code>{selectedSession.sourcePath}</code><CopyIconButton onCopied={() => setNotice(t("copied"))} onError={showError} text={selectedSession.sourcePath} /></dd>
                         </div>
                         {selected === "codex" && <div>
                           <dt>{t("sessionsResumeCommand")}</dt>
-                          <dd><code>{`codex resume ${selectedSession.id}`}</code><Tooltip content={t("copy")}><button aria-label={t("copy")} onClick={() => void copySessionText(`codex resume ${selectedSession.id}`)} type="button"><Copy aria-hidden="true" size={14} /></button></Tooltip></dd>
+                          <dd><code>{`codex resume ${selectedSession.id}`}</code><CopyIconButton onCopied={() => setNotice(t("copied"))} onError={showError} text={`codex resume ${selectedSession.id}`} /></dd>
                         </div>}
                       </dl>
                     </header>

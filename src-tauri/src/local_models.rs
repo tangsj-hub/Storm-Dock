@@ -99,6 +99,9 @@ pub(crate) struct RemoteModelCard {
     pub author: String,
     pub name: String,
     pub description: String,
+    /// Source-native README: ModelScope `ReadMeContent` or Hugging Face `README.md`.
+    #[serde(default)]
+    pub readme: String,
     pub tags: Vec<String>,
     pub license: Option<String>,
     pub library: Option<String>,
@@ -136,6 +139,23 @@ pub(crate) struct RemoteModelHit {
     pub tags: Vec<String>,
     pub params: Option<String>,
     pub updated_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoteModelSearchResult {
+    pub hits: Vec<RemoteModelHit>,
+    pub page: u32,
+    pub has_more: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RemoteModelBrowseResult {
+    pub hits: Vec<RemoteModelHit>,
+    pub limit: u32,
+    pub has_more: bool,
+    pub next_cursor: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -479,6 +499,7 @@ pub(crate) fn auth_headers(source: ModelSource) -> HeaderMap {
 pub(crate) fn status_error(source: ModelSource, status: StatusCode) -> String {
     match status {
         StatusCode::NOT_FOUND => "模型不存在".into(),
+        StatusCode::TOO_MANY_REQUESTS => "请求过于频繁，请稍后重试".into(),
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => match source {
             ModelSource::HuggingFace => "该模型需要 Hugging Face 令牌，请在设置中配置".into(),
             ModelSource::ModelScope => {
@@ -487,6 +508,22 @@ pub(crate) fn status_error(source: ModelSource, status: StatusCode) -> String {
         },
         other => format!("远程接口返回 HTTP {other}"),
     }
+}
+
+fn map_remote_error(source: ModelSource, error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        return match source {
+            ModelSource::HuggingFace => "连接 Hugging Face 超时，请稍后重试".into(),
+            ModelSource::ModelScope => "连接魔搭超时，请稍后重试".into(),
+        };
+    }
+    if error.is_connect() {
+        return match source {
+            ModelSource::HuggingFace => "无法连接 Hugging Face".into(),
+            ModelSource::ModelScope => "无法连接魔搭".into(),
+        };
+    }
+    error.to_string()
 }
 
 pub(crate) fn probe(
@@ -547,16 +584,7 @@ fn probe_huggingface(
         return Err(status_error(ModelSource::HuggingFace, info.status()));
     }
     let meta: serde_json::Value = info.json().map_err(|error| error.to_string())?;
-    let mut card = card_from_hf(&meta, repo);
-    if card.description.is_empty() {
-        if let Some(text) = fetch_plain(
-            &client,
-            &headers,
-            &format!("https://huggingface.co/{repo}/raw/{revision}/README.md"),
-        ) {
-            card.description = first_readme_paragraph(&text);
-        }
-    }
+    let card = card_from_hf(&meta, repo);
     let mut files = Vec::new();
     let mut url = format!("https://huggingface.co/api/models/{repo}/tree/{revision}?recursive=1");
     loop {
@@ -598,6 +626,7 @@ fn probe_huggingface(
             None => break,
         }
     }
+    // README is fetched separately via fetch_remote_model_readme (keeps probe snappy).
     Ok((card, files))
 }
 
@@ -780,6 +809,7 @@ fn card_from_hf(meta: &serde_json::Value, repo: &str) -> RemoteModelCard {
         description: json_text(&card_data, &["model_summary"])
             .or_else(|| json_text(meta, &["description"]))
             .unwrap_or_default(),
+        readme: String::new(),
         tags: useful_tags(tags, pipeline.as_deref()),
         license: json_text(&card_data, &["license"]).or_else(|| json_text(meta, &["license"])),
         library: json_text(meta, &["library_name"]),
@@ -808,15 +838,43 @@ fn card_from_modelscope(envelope: &serde_json::Value, repo: &str) -> RemoteModel
         author: json_text(data, &["Author", "Path"]).unwrap_or(fallback_author),
         name: json_text(data, &["ChineseName", "Name"]).unwrap_or(fallback_name),
         description: json_text(data, &["Description", "ChineseDescription"]).unwrap_or_default(),
+        // README loaded async on detail page — keep probe payload lean.
+        readme: String::new(),
         tags: useful_tags(tags, pipeline.as_deref()),
-        license: json_text(data, &["License"]),
-        library: json_text(data, &["LibraryName", "Frameworks"]),
+        license: json_text(data, &["License", "LicenseName"]),
+        library: json_text(data, &["LibraryName"])
+            .or_else(|| json_strings(data, "Libraries").into_iter().next())
+            .or_else(|| json_strings(data, "Frameworks").into_iter().next()),
         pipeline,
-        base_model: json_text(data, &["BaseModelId", "BaseModel"]),
+        base_model: json_text(data, &["BaseModelId"]).or_else(|| {
+            data.get("BaseModel").and_then(|value| match value {
+                serde_json::Value::String(text) => {
+                    Some(text.trim().to_string()).filter(|text| !text.is_empty())
+                }
+                serde_json::Value::Object(map) => map
+                    .get("Name")
+                    .or_else(|| map.get("Path"))
+                    .or_else(|| map.get("Id"))
+                    .and_then(|item| item.as_str())
+                    .map(str::to_string),
+                _ => None,
+            })
+        }),
         downloads: json_u64(data, &["Downloads", "DownloadCount", "DownloadsCount"]),
         likes: json_u64(data, &["Stars", "Likes", "StarCount"]),
-        params: json_text(data, &["Parameters", "ParameterSize"]),
-        updated_at: json_text(data, &["LastUpdatedTime", "GmtModified", "CreatedTime"]),
+        params: json_u64(data, &["Parameters", "ParameterSize", "params", "Params"])
+            .map(format_params)
+            .or_else(|| json_text(data, &["Parameters", "ParameterSize"])),
+        updated_at: json_text(
+            data,
+            &[
+                "LastUpdatedTime",
+                "GmtModified",
+                "CreatedTime",
+                "last_modified",
+                "created_at",
+            ],
+        ),
     }
 }
 
@@ -851,6 +909,24 @@ fn json_u64(value: &serde_json::Value, keys: &[&str]) -> Option<u64> {
 }
 
 const SEARCH_LIMIT: usize = 30;
+const BROWSE_DEFAULT_LIMIT: u32 = 48;
+
+fn clamp_browse_limit(limit: Option<u32>) -> u32 {
+    limit.unwrap_or(BROWSE_DEFAULT_LIMIT).clamp(1, 100)
+}
+
+fn parse_browse_cursor(cursor: Option<&str>) -> u32 {
+    cursor
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|page| *page >= 1)
+        .unwrap_or(1)
+}
+
+fn looks_like_repo_id(query: &str) -> bool {
+    parse_repo_id(query).is_ok()
+}
 
 fn hf_format_filter(format: &str) -> Option<&'static str> {
     match format {
@@ -956,14 +1032,22 @@ fn lookup_modelscope(repo: &str) -> Option<RemoteModelHit> {
 
 fn merge_exact(
     exact: Option<RemoteModelHit>,
+    hits: Vec<RemoteModelHit>,
+) -> Vec<RemoteModelHit> {
+    merge_exact_limited(exact, hits, SEARCH_LIMIT)
+}
+
+fn merge_exact_limited(
+    exact: Option<RemoteModelHit>,
     mut hits: Vec<RemoteModelHit>,
+    limit: usize,
 ) -> Vec<RemoteModelHit> {
     let Some(exact) = exact else {
         return hits;
     };
     hits.retain(|hit| !hit.repo.eq_ignore_ascii_case(&exact.repo));
     hits.insert(0, exact);
-    hits.truncate(SEARCH_LIMIT);
+    hits.truncate(limit.max(1));
     hits
 }
 
@@ -1027,11 +1111,19 @@ fn modelscope_model_items(value: &serde_json::Value) -> Vec<&serde_json::Value> 
 }
 
 fn hits_from_modelscope_value(value: &serde_json::Value, format: &str) -> Vec<RemoteModelHit> {
+    hits_from_modelscope_value_limited(value, format, SEARCH_LIMIT)
+}
+
+fn hits_from_modelscope_value_limited(
+    value: &serde_json::Value,
+    format: &str,
+    limit: usize,
+) -> Vec<RemoteModelHit> {
     modelscope_model_items(value)
         .into_iter()
         .filter_map(hit_from_modelscope)
         .filter(|hit| hit_matches_format(hit, format))
-        .take(SEARCH_LIMIT)
+        .take(limit.max(1))
         .collect()
 }
 
@@ -1064,50 +1156,97 @@ fn hit_from_modelscope(item: &serde_json::Value) -> Option<RemoteModelHit> {
     })
 }
 
-fn search_huggingface(query: &str, format: &str) -> Result<Vec<RemoteModelHit>, String> {
+fn modelscope_total_count(value: &serde_json::Value) -> Option<u64> {
+    value
+        .pointer("/data/total_count")
+        .or_else(|| value.pointer("/data/TotalCount"))
+        .or_else(|| value.pointer("/Data/total_count"))
+        .or_else(|| value.pointer("/Data/TotalCount"))
+        .and_then(|item| {
+            item.as_u64()
+                .or_else(|| item.as_i64().and_then(|n| u64::try_from(n).ok()))
+                .or_else(|| item.as_f64().and_then(|n| (n >= 0.0).then_some(n as u64)))
+        })
+}
+
+fn search_huggingface(query: &str, format: &str, page: u32) -> Result<(Vec<RemoteModelHit>, bool), String> {
+    let page = page.max(1);
     let client = http_client();
     let headers = auth_headers(ModelSource::HuggingFace);
     let mut url = reqwest::Url::parse("https://huggingface.co/api/models")
         .map_err(|error| error.to_string())?;
     {
         let mut pairs = url.query_pairs_mut();
-        pairs.append_pair("search", query);
+        if !query.is_empty() {
+            pairs.append_pair("search", query);
+        }
         pairs.append_pair("limit", &SEARCH_LIMIT.to_string());
-        pairs.append_pair("sort", "downloads");
+        // Discover default: Hub trendingScore (hot), desc-only.
+        pairs.append_pair("sort", "trendingScore");
+        pairs.append_pair("direction", "-1");
         if let Some(filter) = hf_format_filter(format) {
             pairs.append_pair("filter", filter);
         }
     }
-    let response = client
-        .get(url)
-        .headers(headers)
-        .timeout(Duration::from_secs(20))
-        .send()
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(status_error(ModelSource::HuggingFace, response.status()));
+    // HF list API paginates via Link rel=next cursors; walk forward for page > 1.
+    let mut current = 1u32;
+    loop {
+        let response = client
+            .get(url.clone())
+            .headers(headers.clone())
+            .timeout(Duration::from_secs(20))
+            .send()
+            .map_err(|error| error.to_string())?;
+        if !response.status().is_success() {
+            return Err(status_error(ModelSource::HuggingFace, response.status()));
+        }
+        let next = link_next(
+            response
+                .headers()
+                .get(reqwest::header::LINK)
+                .and_then(|value| value.to_str().ok()),
+        );
+        let body: serde_json::Value = response.json().map_err(|error| error.to_string())?;
+        if current == page {
+            let hits = hits_from_hf_value(&body, ModelSource::HuggingFace);
+            return Ok((hits, next.is_some()));
+        }
+        let Some(next_url) = next else {
+            return Ok((Vec::new(), false));
+        };
+        url = reqwest::Url::parse(&next_url).map_err(|error| error.to_string())?;
+        current = current.saturating_add(1);
+        if current > 100 {
+            return Err("页码超出范围".into());
+        }
     }
-    let body: serde_json::Value = response.json().map_err(|error| error.to_string())?;
-    Ok(hits_from_hf_value(&body, ModelSource::HuggingFace))
 }
 
-fn search_modelscope(query: &str, format: &str) -> Result<Vec<RemoteModelHit>, String> {
+fn search_modelscope(query: &str, format: &str, page: u32) -> Result<(Vec<RemoteModelHit>, bool), String> {
+    let page = page.max(1);
     let client = http_client();
     let headers = auth_headers(ModelSource::ModelScope);
     let mut url = reqwest::Url::parse("https://www.modelscope.cn/openapi/v1/models")
         .map_err(|error| error.to_string())?;
     {
         let mut pairs = url.query_pairs_mut();
-        pairs.append_pair("search", query);
+        if !query.is_empty() {
+            pairs.append_pair("search", query);
+        }
+        pairs.append_pair("page_number", &page.to_string());
         pairs.append_pair("page_size", &SEARCH_LIMIT.to_string());
-        pairs.append_pair("sort", "downloads");
+        // OpenAPI allows: default | downloads | likes | last_modified.
+        // ModelScope has no trendingScore; `default` is the platform hot/comprehensive
+        // ranking (Qwen/GLM/DeepSeek-style). `downloads` skews to ASR tool models (iic/...).
+        // Preserve API order — do not re-sort hits by downloads (would undo default ranking).
+        pairs.append_pair("sort", "default");
     }
     let response = client
         .get(url)
         .headers(headers)
         .timeout(Duration::from_secs(20))
         .send()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| map_remote_error(ModelSource::ModelScope, error))?;
     if !response.status().is_success() {
         return Err(status_error(ModelSource::ModelScope, response.status()));
     }
@@ -1122,7 +1261,113 @@ fn search_modelscope(query: &str, format: &str) -> Result<Vec<RemoteModelHit>, S
             .unwrap_or("无法搜索模型")
             .into());
     }
-    Ok(hits_from_modelscope_value(&body, format))
+    let hits = hits_from_modelscope_value(&body, format);
+    let has_more = match modelscope_total_count(&body) {
+        Some(total) => (u64::from(page)).saturating_mul(SEARCH_LIMIT as u64) < total,
+        None => hits.len() >= SEARCH_LIMIT,
+    };
+    Ok((hits, has_more))
+}
+
+fn browse_modelscope(
+    query: &str,
+    format: &str,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<RemoteModelBrowseResult, String> {
+    let page = parse_browse_cursor(cursor);
+    let limit_usize = limit as usize;
+    // Over-fetch when client-filtering by format so pages are not starved.
+    let page_size = if format_needle(format).is_some() {
+        (limit.saturating_mul(3)).clamp(limit, 100)
+    } else {
+        limit
+    };
+    let client = http_client();
+    let headers = auth_headers(ModelSource::ModelScope);
+    let mut url = reqwest::Url::parse("https://www.modelscope.cn/openapi/v1/models")
+        .map_err(|error| error.to_string())?;
+    {
+        let mut pairs = url.query_pairs_mut();
+        if !query.is_empty() {
+            pairs.append_pair("search", query);
+        }
+        pairs.append_pair("page_number", &page.to_string());
+        pairs.append_pair("page_size", &page_size.to_string());
+        // OpenAPI allows: default | downloads | likes | last_modified.
+        // ModelScope has no trendingScore; `default` is the platform hot/comprehensive
+        // ranking (Qwen/GLM/DeepSeek-style). `downloads` skews to ASR tool models (iic/...).
+        // Preserve API order — do not re-sort hits by downloads (would undo default ranking).
+        pairs.append_pair("sort", "default");
+    }
+    let response = client
+        .get(url)
+        .headers(headers)
+        .timeout(Duration::from_secs(20))
+        .send()
+        .map_err(|error| map_remote_error(ModelSource::ModelScope, error))?;
+    if !response.status().is_success() {
+        return Err(status_error(ModelSource::ModelScope, response.status()));
+    }
+    let body: serde_json::Value = response.json().map_err(|error| error.to_string())?;
+    if body.get("success").and_then(|value| value.as_bool()) == Some(false)
+        || body.get("Success").and_then(|value| value.as_bool()) == Some(false)
+    {
+        return Err(body
+            .get("message")
+            .or_else(|| body.get("Message"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("无法浏览模型")
+            .into());
+    }
+    let raw_count = modelscope_model_items(&body).len();
+    let mut hits = hits_from_modelscope_value_limited(&body, format, limit_usize);
+    let api_has_more = match modelscope_total_count(&body) {
+        Some(total) => (u64::from(page)).saturating_mul(u64::from(page_size)) < total,
+        None => raw_count >= page_size as usize,
+    };
+    if page == 1 && looks_like_repo_id(query) {
+        hits = merge_exact_limited(lookup_exact(ModelSource::ModelScope, query), hits, limit_usize);
+    }
+    let has_more = api_has_more || (hits.len() >= limit_usize && raw_count >= page_size as usize);
+    let next_cursor = if has_more {
+        Some(page.saturating_add(1).to_string())
+    } else {
+        None
+    };
+    Ok(RemoteModelBrowseResult {
+        hits,
+        limit,
+        has_more,
+        next_cursor,
+    })
+}
+
+fn browse_huggingface(
+    query: &str,
+    format: &str,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<RemoteModelBrowseResult, String> {
+    // Optional backend fallback; primary HF path is the frontend @huggingface/hub SDK.
+    let page = parse_browse_cursor(cursor);
+    let (hits, has_more) = search_huggingface(query, format, page)?;
+    let limit_usize = limit as usize;
+    let mut hits = hits.into_iter().take(limit_usize).collect::<Vec<_>>();
+    if page == 1 && looks_like_repo_id(query) {
+        hits = merge_exact_limited(lookup_exact(ModelSource::HuggingFace, query), hits, limit_usize);
+    }
+    let next_cursor = if has_more {
+        Some(page.saturating_add(1).to_string())
+    } else {
+        None
+    };
+    Ok(RemoteModelBrowseResult {
+        hits,
+        limit,
+        has_more,
+        next_cursor,
+    })
 }
 
 fn json_strings(value: &serde_json::Value, key: &str) -> Vec<String> {
@@ -1204,11 +1449,14 @@ fn format_params(count: u64) -> String {
 
 fn params_from_label(raw: &str) -> Option<String> {
     let tag = raw.trim();
-    let (number, unit) = tag.split_at(tag.len().checked_sub(1)?);
-    let unit = unit.to_ascii_uppercase();
-    if unit != "B" && unit != "M" {
+    // Tags from ModelScope/HF may be Chinese or mixed UTF-8; never split by byte index.
+    let mut chars = tag.char_indices();
+    let (unit_start, unit_ch) = chars.next_back()?;
+    let unit = unit_ch.to_ascii_uppercase();
+    if unit != 'B' && unit != 'M' {
         return None;
     }
+    let number = &tag[..unit_start];
     number.parse::<f64>().ok().filter(|value| *value > 0.0)?;
     Some(format!("{number}{unit}"))
 }
@@ -1218,8 +1466,15 @@ fn hit_params(item: &serde_json::Value, tags: &[String]) -> Option<String> {
         item.get("safetensors").unwrap_or(&serde_json::Value::Null),
         &["total"],
     )
+    .or_else(|| {
+        // ModelScope OpenAPI list uses numeric `params` (parameter count).
+        json_u64(
+            item,
+            &["params", "Parameters", "ParameterSize", "param_count", "ParamCount"],
+        )
+    })
     .map(format_params)
-    .or_else(|| json_text(item, &["Parameters", "ParameterSize"]))
+    .or_else(|| json_text(item, &["Parameters", "ParameterSize", "params"]))
     .or_else(|| tags.iter().find_map(|tag| params_from_label(tag)))
 }
 
@@ -1228,10 +1483,13 @@ fn hit_updated(item: &serde_json::Value) -> Option<String> {
         item,
         &[
             "lastModified",
+            "last_modified",
             "LastUpdatedTime",
             "GmtModified",
             "UpdatedTime",
             "gmt_modified",
+            "created_at",
+            "CreatedTime",
         ],
     )
     .or_else(|| {
@@ -1239,9 +1497,11 @@ fn hit_updated(item: &serde_json::Value) -> Option<String> {
             item,
             &[
                 "lastModified",
+                "last_modified",
                 "LastUpdatedTime",
                 "GmtModified",
                 "UpdatedTime",
+                "created_at",
             ],
         )
         .map(|value| value.to_string())
@@ -2466,14 +2726,97 @@ fn open_dir(path: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub(crate) fn probe_remote_model(
+pub(crate) async fn probe_remote_model(
     source: ModelSource,
     repo: String,
     revision: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<RemoteModelProbe, String> {
     bind_stored_hf_token(&state);
-    probe(source, &repo, revision.as_deref())
+    // Keep HTTP + recursive file tree off the UI/main thread (same pattern as browse).
+    tauri::async_runtime::spawn_blocking(move || probe(source, &repo, revision.as_deref()))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn fetch_remote_model_readme(
+    source: ModelSource,
+    repo: String,
+    revision: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    bind_stored_hf_token(&state);
+    tauri::async_runtime::spawn_blocking(move || {
+        fetch_readme(source, &repo, revision.as_deref())
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+fn fetch_readme(
+    source: ModelSource,
+    repo: &str,
+    revision: Option<&str>,
+) -> Result<String, String> {
+    let repo = parse_repo_id(repo)?;
+    let revision = revision
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| source.default_revision())
+        .to_string();
+    let client = http_client();
+    let headers = auth_headers(source);
+    match source {
+        ModelSource::HuggingFace => {
+            for branch in [&revision, "main", "master"] {
+                if let Some(text) = fetch_plain(
+                    &client,
+                    &headers,
+                    &format!("https://huggingface.co/{repo}/raw/{branch}/README.md"),
+                ) {
+                    if !text.trim().is_empty() {
+                        return Ok(text);
+                    }
+                }
+            }
+            Ok(String::new())
+        }
+        ModelSource::ModelScope => {
+            // Prefer model card ReadMeContent (full markdown); fall back to repo README file.
+            let info = client
+                .get(format!("https://www.modelscope.cn/api/v1/models/{repo}"))
+                .headers(headers.clone())
+                .timeout(Duration::from_secs(20))
+                .send()
+                .map_err(|error| error.to_string())?;
+            if info.status().is_success() {
+                if let Ok(envelope) = info.json::<serde_json::Value>() {
+                    let data = envelope.get("Data").unwrap_or(&envelope);
+                    if let Some(text) = json_text(data, &["ReadMeContent", "ReadmeContent", "readme"])
+                    {
+                        if !text.trim().is_empty() {
+                            return Ok(text);
+                        }
+                    }
+                }
+            }
+            for branch in [&revision, "master", "main"] {
+                if let Some(text) = fetch_plain(
+                    &client,
+                    &headers,
+                    &format!(
+                        "https://www.modelscope.cn/models/{repo}/resolve/{branch}/README.md"
+                    ),
+                ) {
+                    if !text.trim().is_empty() {
+                        return Ok(text);
+                    }
+                }
+            }
+            Ok(String::new())
+        }
+    }
 }
 
 #[tauri::command]
@@ -2481,30 +2824,76 @@ pub(crate) async fn search_remote_models(
     source: ModelSource,
     query: String,
     format: Option<String>,
+    page: Option<u32>,
     state: State<'_, AppState>,
-) -> Result<Vec<RemoteModelHit>, String> {
+) -> Result<RemoteModelSearchResult, String> {
     bind_stored_hf_token(&state);
     let query = query.trim().to_string();
-    if query.is_empty() { return Err("请输入搜索关键词".into()); }
     let format = format.unwrap_or_else(|| "all".into());
+    let page = page.unwrap_or(1).max(1);
     tauri::async_runtime::spawn_blocking(move || {
-        // Exact lookup and ranked search hit independent endpoints; run them
-        // concurrently so latency is bounded by the slower request.
+        // Exact lookup only on page 1 with a non-empty query; browse/search share
+        // the same ranked endpoint. Run concurrently when both are needed.
+        let want_exact = page == 1 && !query.is_empty();
         std::thread::scope(|scope| {
-            let exact = scope.spawn(|| lookup_exact(source, &query));
+            let exact = want_exact.then(|| scope.spawn(|| lookup_exact(source, &query)));
             let searched = scope.spawn(|| match source {
-                ModelSource::HuggingFace => search_huggingface(&query, &format),
-                ModelSource::ModelScope => search_modelscope(&query, &format),
+                ModelSource::HuggingFace => search_huggingface(&query, &format, page),
+                ModelSource::ModelScope => search_modelscope(&query, &format, page),
             }).join().map_err(|_| "搜索线程异常退出".to_string())?;
-            let exact = exact.join().map_err(|_| "搜索线程异常退出".to_string())?;
+            let exact = match exact {
+                Some(handle) => handle.join().map_err(|_| "搜索线程异常退出".to_string())?,
+                None => None,
+            };
             match (exact, searched) {
-                (Some(exact), Ok(hits)) => Ok(merge_exact(Some(exact), hits)),
-                (Some(exact), Err(_)) => Ok(vec![exact]),
-                (None, Ok(hits)) => Ok(hits),
+                (Some(exact), Ok((hits, has_more))) => Ok(RemoteModelSearchResult {
+                    hits: merge_exact(Some(exact), hits),
+                    page,
+                    has_more,
+                }),
+                (Some(exact), Err(_)) => Ok(RemoteModelSearchResult {
+                    hits: vec![exact],
+                    page,
+                    has_more: false,
+                }),
+                (None, Ok((hits, has_more))) => Ok(RemoteModelSearchResult {
+                    hits,
+                    page,
+                    has_more,
+                }),
                 (None, Err(error)) => Err(error),
             }
         })
     }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn browse_remote_models(
+    source: ModelSource,
+    query: String,
+    format: Option<String>,
+    cursor: Option<String>,
+    limit: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<RemoteModelBrowseResult, String> {
+    bind_stored_hf_token(&state);
+    let query = query.trim().to_string();
+    let format = format.unwrap_or_else(|| "all".into());
+    let limit = clamp_browse_limit(limit);
+    let cursor = cursor.and_then(|value| {
+        let trimmed = value.trim().to_string();
+        (!trimmed.is_empty()).then_some(trimmed)
+    });
+    tauri::async_runtime::spawn_blocking(move || match source {
+        ModelSource::ModelScope => {
+            browse_modelscope(&query, &format, cursor.as_deref(), limit)
+        }
+        ModelSource::HuggingFace => {
+            browse_huggingface(&query, &format, cursor.as_deref(), limit)
+        }
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -2871,10 +3260,46 @@ mod tests {
     }
 
     #[test]
+    fn card_from_modelscope_keeps_short_desc_without_inline_readme() {
+        let item = serde_json::json!({
+            "Data": {
+                "Name": "Demo",
+                "ChineseName": "演示",
+                "Description": "短介绍文案",
+                "ReadMeContent": "# Title\n\n完整 README 正文"
+            }
+        });
+        let card = card_from_modelscope(&item, "org/Demo");
+        assert_eq!(card.description, "短介绍文案");
+        assert_eq!(card.readme, "");
+    }
+
+    #[test]
+    fn hit_from_modelscope_reads_openapi_params_and_last_modified() {
+        let item = serde_json::json!({
+            "id": "Qwen/Qwen3.8-Flash-Next",
+            "display_name": "千问3.8-Flash-Next",
+            "downloads": 28516,
+            "likes": 1079,
+            "tasks": ["image-text-to-text"],
+            "created_at": "2026-08-24T08:27:50Z",
+            "last_modified": "2026-08-27T05:08:13Z",
+            "params": 179999981459_u64,
+            "tags": ["license:other", "model_type:qwen4_exp"]
+        });
+        let hit = hit_from_modelscope(&item).expect("hit");
+        assert_eq!(hit.params.as_deref(), Some("180B"));
+        assert_eq!(hit.updated_at.as_deref(), Some("2026-08-27T05:08:13Z"));
+    }
+
+    #[test]
     fn params_from_label_reads_compact_size_tags() {
         assert_eq!(params_from_label("20b").as_deref(), Some("20B"));
         assert_eq!(params_from_label("1.5B").as_deref(), Some("1.5B"));
         assert_eq!(params_from_label("gguf"), None);
+        // Chinese / multi-byte tags must not panic (byte-index split would).
+        assert_eq!(params_from_label("custom_tag:中文模型"), None);
+        assert_eq!(params_from_label("中文7B"), None);
         assert_eq!(format_params(20_000_000_000), "20B");
         assert_eq!(format_params(284_300_000_000), "284.3B");
     }
@@ -3347,5 +3772,67 @@ mod tests {
             "gguf"
         ));
         assert!(!hit_matches_format(&sample_hit("qwen/Qwen2.5-7B"), "gguf"));
+    }
+
+    #[test]
+    fn browse_cursor_parses_page_number_string() {
+        assert_eq!(parse_browse_cursor(None), 1);
+        assert_eq!(parse_browse_cursor(Some("")), 1);
+        assert_eq!(parse_browse_cursor(Some("  ")), 1);
+        assert_eq!(parse_browse_cursor(Some("2")), 2);
+        assert_eq!(parse_browse_cursor(Some("0")), 1);
+        assert_eq!(parse_browse_cursor(Some("abc")), 1);
+        assert_eq!(clamp_browse_limit(None), 48);
+        assert_eq!(clamp_browse_limit(Some(0)), 1);
+        assert_eq!(clamp_browse_limit(Some(200)), 100);
+        assert_eq!(clamp_browse_limit(Some(48)), 48);
+    }
+
+    #[test]
+    fn empty_browse_omits_search_and_keeps_cursor_opaque() {
+        assert!(!looks_like_repo_id(""));
+        assert!(!looks_like_repo_id("qwen"));
+        assert!(looks_like_repo_id("qwen/Qwen2.5-7B"));
+        let result = RemoteModelBrowseResult {
+            hits: Vec::new(),
+            limit: 48,
+            has_more: false,
+            next_cursor: None,
+        };
+        assert!(result.hits.is_empty());
+        assert_eq!(result.limit, 48);
+        assert!(!result.has_more);
+        assert!(result.next_cursor.is_none());
+    }
+
+    #[test]
+    fn chinese_tags_stay_utf8_safe_in_params_and_hits() {
+        assert_eq!(params_from_label("custom_tag:中文模型"), None);
+        assert_eq!(params_from_label("中文7B"), None);
+        assert_eq!(params_from_label("7B"), Some("7B".into()));
+        let body = serde_json::json!({
+            "data": {
+                "models": [{
+                    "id": "qwen/中文演示",
+                    "Name": "中文演示",
+                    "Author": "qwen",
+                    "Tags": ["中文", "7B", "gguf"],
+                    "Downloads": 12
+                }]
+            }
+        });
+        let hits = hits_from_modelscope_value(&body, "all");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].repo, "qwen/中文演示");
+        assert_eq!(hits[0].params.as_deref(), Some("7B"));
+        assert!(hits[0].tags.iter().any(|tag| tag == "中文"));
+    }
+
+    #[test]
+    fn status_error_maps_rate_limit() {
+        assert_eq!(
+            status_error(ModelSource::ModelScope, StatusCode::TOO_MANY_REQUESTS),
+            "请求过于频繁，请稍后重试"
+        );
     }
 }

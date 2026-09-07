@@ -4,6 +4,7 @@ import { ArrowLeft, BookOpen, Calendar, CheckCircle2, ChevronDown, CircleX, Cpu,
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
+import { CopyIconButton } from "../../components/CopyIconButton";
 import { DownloadDock } from "../../components/DownloadDock";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { Tooltip } from "../../components/Tooltip";
@@ -14,6 +15,8 @@ import { modelCenterPath, modelRepoFromQuery, modelSourceFromQuery, type Downloa
 import "../../styles/global.css";
 import styles from "../add/page.module.css";
 import extra from "../add-model/page.module.css";
+import { ModelReadme } from "./ModelReadme";
+import { useModelReadme } from "./useModelReadme";
 
 function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -84,7 +87,6 @@ function ModelDetailPage() {
   const params = new URLSearchParams(window.location.search);
   const context: ModelCenterContext = { query: params.get("query") ?? "", source: params.get("listSource") === "huggingface" ? "huggingface" : params.get("listSource") === "modelscope" ? "modelscope" : undefined, format: (params.get("format") as ModelCenterContext["format"]) ?? "all", tab: params.get("tab") === "downloaded" ? "downloaded" : "discover" };
   const search = modelCenterPath(context);
-  const home = modelCenterPath();
   const [loading, setLoading] = useState(true);
   const [probe, setProbe] = useState<RemoteModelProbe>();
   const [variantId, setVariantId] = useState("");
@@ -99,6 +101,7 @@ function ModelDetailPage() {
     [probe, variantId],
   );
   const card = probe?.card;
+  const readme = useModelReadme(source, repo, probe?.revision, Boolean(probe));
   const showNotice = (text: string, failed = false) => {
     setNoticeFailed(failed);
     setNotice(text);
@@ -190,7 +193,10 @@ function ModelDetailPage() {
                   <div className={extra.modelCard}>
                     <div className={extra.modelHead}>
                       <strong className={extra.modelTitle}>{card.name || probe.repo}</strong>
-                      {card.author ? <span className={extra.modelAuthor}>{card.author}</span> : null}
+                      <div className={extra.modelIdRow}>
+                        <span className={extra.modelAuthor}>{probe.repo}</span>
+                        <CopyIconButton label={t("copyModelId")} text={probe.repo} />
+                      </div>
                       {card.tags.length || card.baseModel ? (
                         <div className={extra.tags}>
                           {card.tags.map((tag) => <span className={extra.tag} key={tag}>{tag}</span>)}
@@ -239,17 +245,28 @@ function ModelDetailPage() {
                       {card.library ? <span className={extra.stat}><BookOpen aria-hidden="true" size={13} />{card.library}</span> : null}
                       {card.license ? <span className={extra.stat}><FileText aria-hidden="true" size={13} />{card.license}</span> : null}
                     </div>
-                    {card.description ? (
-                      <div className={extra.intro}>
-                        <span className={extra.introLabel}>{t("modelIntro")}</span>
-                        <p>{card.description}</p>
-                      </div>
-                    ) : null}
+                    <div className={extra.intro}>
+                      <span className={extra.introLabel}>{t("modelReadme")}</span>
+                      {readme.loading ? <p className={extra.readmeStatus}>{t("modelReadmeLoading")}</p> : null}
+                      {!readme.loading && readme.error ? <p className={extra.readmeStatus}>{t("modelReadmeFailed")}</p> : null}
+                      {!readme.loading && !readme.error && !readme.markdown ? (
+                        card.description?.trim()
+                          ? <p>{card.description}</p>
+                          : <p className={extra.readmeStatus}>{t("modelReadmeMissing")}</p>
+                      ) : null}
+                      {!readme.loading && readme.markdown ? (
+                        <ModelReadme
+                          markdown={readme.markdown}
+                          repo={probe.repo}
+                          revision={probe.revision}
+                          source={probe.source}
+                          titleHint={card.name || probe.repo}
+                        />
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
-                <div className={styles.actions}>
-                  {downloading ? null : <a className={styles.secondary} href={home}>{t("cancel")}</a>}
-                </div>
+
               </div>
             </div>
           </div>

@@ -1,0 +1,44 @@
+.tile {
+  align-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  display: inline-flex;
+  flex: none;
+  font-size: 13px;
+  font-weight: 700;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.tone0 { background: var(--info-bg); color: var(--info); }
+.tone1 { background: var(--ok-bg); color: var(--ok); }
+.tone2 { background: var(--kind-key-bg); color: var(--kind-key-fg); }
+
+.logoBgWhite { background: #fff; color: #111; }
+.logoBgTransparent { background: transparent; color: var(--fg); }
+
+.img {
+  display: block;
+  height: 75%;
+  object-fit: contain;
+  width: 75%;
+}
+
+.imgCover {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.mono {
+  display: block;
+  height: 62%;
+  width: 62%;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}

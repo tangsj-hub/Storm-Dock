@@ -1,4 +1,4 @@
-import { Search, X } from "lucide-react";
+import { Loader2, Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ModelFormat, ModelSource } from "../../lib/types";
 import styles from "../add/page.module.css";
@@ -82,9 +82,13 @@ export function DiscoverToolbar({
           <option value="modelscope">{t("modelSourceModelScope")}</option>
           <option value="huggingface">{t("modelSourceHuggingFace")}</option>
         </select>
-        <button className={styles.primary} disabled={busy} type="submit">
-          <Search aria-hidden="true" size={16} />
-          {busy ? t("modelProbing") : t("modelProbe")}
+        <button aria-busy={busy || undefined} className={styles.primary} disabled={busy} type="submit">
+          {busy ? (
+            <Loader2 aria-hidden="true" className={extra.searchSpin} size={16} />
+          ) : (
+            <Search aria-hidden="true" size={16} />
+          )}
+          {t("modelProbe")}
         </button>
       </div>
       {source === "huggingface" ? (

@@ -127,6 +127,7 @@ export function DiscoverPanel({
           ) : (
             <ModelListLayout
               context={context}
+              onNotice={onNotice}
               footer={(
                 <>
                   <div className={extra.sentinel} ref={sentinelRef} />

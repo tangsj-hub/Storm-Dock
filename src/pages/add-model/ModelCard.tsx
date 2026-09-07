@@ -1,16 +1,17 @@
 import { Download } from "lucide-react";
+import { memo } from "react";
 import { modelDetailPath, type RemoteModelHit } from "../../lib/types";
 import { CapabilityIcons } from "./CapabilityIcons";
 import { MetricSummary } from "./MetricCells";
 import { ModelIdentity } from "./ModelIdentity";
 import type { DiscoverHitContext } from "./ModelCompactRow";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 /**
  * Soft discover card — zones: avatar | title stack | meta/tags | quiet stats | trailing action.
  * Structure inspired by Hub ResultCard maturity; Storm tokens only (no hub.css).
  */
-export function ModelCard({
+export const ModelCard = memo(function ModelCard({
   hit,
   context,
 }: {
@@ -31,4 +32,4 @@ export function ModelCard({
       </div>
     </a>
   );
-}
+});

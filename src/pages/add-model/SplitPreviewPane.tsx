@@ -2,7 +2,7 @@ import { ArrowLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { RemoteModelHit } from "../../lib/types";
 import { ModelDetailView } from "../model-detail/ModelDetailView";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 export function SplitPreviewPane({
   hit,

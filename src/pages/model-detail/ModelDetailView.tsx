@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { ModelIdentity } from "../add-model/ModelIdentity";
 import { Tooltip } from "../../components/Tooltip";
 import { cancelModelDownload, listDownloadJobs, probeRemoteModel, startModelDownloadFast } from "../../lib/api";
+import { modelHubOpenLabelKey, modelHubUrl } from "../../lib/modelHub";
 import {
   modelCenterPath,
   type DownloadJob,
@@ -16,7 +17,7 @@ import {
   type RemoteModelVariant,
 } from "../../lib/types";
 import styles from "../add/page.module.css";
-import extra from "../add-model/page.module.css";
+import extra from "../add-model/detail.module.css";
 import { DetailSkeleton } from "./DetailSkeleton";
 import { ModelReadme } from "./ModelReadme";
 import { useModelReadme } from "./useModelReadme";
@@ -72,6 +73,22 @@ function VariantChip({ variant }: { variant: RemoteModelVariant }) {
   );
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 function invokeMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -96,6 +113,7 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [probe, setProbe] = useState<RemoteModelProbe>();
+  const [probeError, setProbeError] = useState<string>();
   const [variantId, setVariantId] = useState("");
   const [job, setJob] = useState<DownloadJob>();
   const [starting, setStarting] = useState(false);
@@ -116,15 +134,23 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
     let cancelled = false;
     setLoading(true);
     setProbe(undefined);
+    setProbeError(undefined);
     setVariantId("");
-    void probeRemoteModel(source, repo)
+    const probeTimeoutMs = source === "huggingface" ? 30_000 : 45_000;
+    const probeTimeoutMsg = source === "huggingface" ? "modelHfUnreachable" : "modelReadmeFailed";
+    void withTimeout(probeRemoteModel(source, repo), probeTimeoutMs, probeTimeoutMsg)
       .then((next) => {
         if (cancelled) return;
         setProbe(next);
-        setVariantId(next.defaultVariantId);
+        setVariantId(next.defaultVariantId || next.variants[0]?.id || "");
+        setProbeError(undefined);
       })
       .catch((error) => {
-        if (!cancelled) notify(invokeMessage(error), true);
+        if (!cancelled) {
+          const raw = invokeMessage(error);
+          setProbeError(raw);
+          notify(raw === "modelHfUnreachable" ? t("modelHfUnreachable") : raw, true);
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -156,7 +182,7 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
   }, [repo, embedded, t]);
 
   const download = async () => {
-    if (!probe || !selected || starting) return;
+    if (!probe || !selected || selected.files.length === 0 || starting) return;
     setStarting(true);
     watching.current = true;
     try {
@@ -190,7 +216,22 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
     return <DetailSkeleton />;
   }
 
-  if (!probe || !selected || !card) {
+  if (!probe || !card) {
+    const raw = probeError || "";
+    const message =
+      raw === "modelHfUnreachable"
+        ? t("modelHfUnreachable")
+        : raw
+          ? raw
+          : source === "huggingface"
+            ? t("modelHfUnreachable")
+            : t("modelReadmeFailed");
+    return <p className={extra.readmeStatus}>{message}</p>;
+  }
+
+  // Empty-file probes still render card + README; download stays disabled.
+  const activeVariant = selected ?? probe.variants[0];
+  if (!activeVariant) {
     return <p className={extra.readmeStatus}>{t("modelReadmeFailed")}</p>;
   }
 
@@ -213,12 +254,8 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
               updatedAt: card.updatedAt,
             }}
             hubLink={{
-              href: probe.source === "huggingface"
-                ? `https://huggingface.co/${probe.repo}`
-                : `https://www.modelscope.cn/models/${probe.repo}`,
-              label: probe.source === "huggingface"
-                ? t("modelOpenOnHuggingFace")
-                : t("modelOpenOnModelScope"),
+              href: modelHubUrl(probe.source, probe.repo),
+              label: t(modelHubOpenLabelKey(probe.source)),
             }}
             variant="detail"
           />
@@ -243,11 +280,11 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
                 type="button"
               >
                 <span className={extra.pickerMain}>
-                  <VariantChip variant={selected} />
+                  <VariantChip variant={activeVariant} />
                 </span>
                 <span className={extra.pickerMeta}>
-                  <span className={extra.format}>{variantFormat(selected)}</span>
-                  <span className={extra.size}>{formatBytes(selected.size)}</span>
+                  <span className={extra.format}>{variantFormat(activeVariant)}</span>
+                  <span className={extra.size}>{formatBytes(activeVariant.size)}</span>
                   {probe.variants.length > 1 ? <ChevronDown aria-hidden="true" className={extra.chevron} size={16} /> : null}
                 </span>
               </button>
@@ -257,7 +294,7 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
                 {probe.variants.map((variant) => (
                   <DropdownMenu.Item
                     className={extra.pickerItem}
-                    data-selected={variant.id === selected.id}
+                    data-selected={variant.id === activeVariant.id}
                     key={variant.id}
                     onSelect={() => setVariantId(variant.id)}
                   >
@@ -274,7 +311,7 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
               {t("modelCancelDownload")}
             </button>
           ) : (
-            <button className={styles.primary} disabled={selected.files.length === 0} onClick={() => void download()} type="button">
+            <button className={styles.primary} disabled={activeVariant.files.length === 0 || starting} onClick={() => void download()} type="button">
               <Download aria-hidden="true" size={16} />
               {t("modelDownload")}
             </button>
@@ -322,7 +359,11 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
       <div className={extra.detailReadme}>
         <span className={extra.introLabel}>{t("modelReadme")}</span>
         {readme.loading ? <DetailSkeleton readmeOnly /> : null}
-        {!readme.loading && readme.error ? <p className={extra.readmeStatus}>{t("modelReadmeFailed")}</p> : null}
+        {!readme.loading && readme.error ? (
+          <p className={extra.readmeStatus}>
+            {t(readme.error === "modelHfUnreachable" ? "modelHfUnreachable" : "modelReadmeFailed")}
+          </p>
+        ) : null}
         {!readme.loading && !readme.error && !readme.markdown ? (
           card.description?.trim() ? (
             <p className={extra.readmeStatus}>{card.description}</p>

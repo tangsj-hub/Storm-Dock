@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { DiscoverListView } from "./discoverListView";
 import { ViewToggle } from "./ViewToggle";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 export function DiscoverListChrome({
   view,

@@ -2,7 +2,7 @@ import { Columns2, LayoutList, PanelLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "../../components/Tooltip";
 import { DISCOVER_VIEW_ORDER, type DiscoverListView } from "./discoverListView";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 const VIEW_META: Record<DiscoverListView, { icon: typeof Columns2; labelKey: string }> = {
   cards: { icon: Columns2, labelKey: "modelViewCards" },

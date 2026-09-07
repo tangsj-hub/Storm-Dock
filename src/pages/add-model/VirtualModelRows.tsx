@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { RemoteModelHit } from "../../lib/types";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 export type VirtualLaneConfig = {
   columns: number;

@@ -537,20 +537,8 @@ pub(crate) fn probe(
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| source.default_revision())
         .to_string();
-    if source == ModelSource::HuggingFace && revision.len() < 40 {
-        let client = http_client();
-        if let Ok(response) = client
-            .get(format!("https://huggingface.co/api/models/{repo}"))
-            .headers(auth_headers(source))
-            .send()
-        {
-            if let Ok(meta) = response.json::<serde_json::Value>() {
-                if let Some(commit) = meta.get("sha").and_then(|value| value.as_str()) {
-                    revision = commit.to_string();
-                }
-            }
-        }
-    }
+    // Keep branch/tag for HF README/CDN URLs. Resolving to SHA made raw/README
+    // and tree calls slower and easier to time out on flaky networks.
     let (card, files) = match source {
         ModelSource::HuggingFace => probe_huggingface(&repo, &revision)?,
         ModelSource::ModelScope => probe_modelscope(&repo, &revision)?,
@@ -574,57 +562,80 @@ fn probe_huggingface(
 ) -> Result<(RemoteModelCard, Vec<RemoteModelFile>), String> {
     let client = http_client();
     let headers = auth_headers(ModelSource::HuggingFace);
+    // Card first — detail header/README must not wait on recursive tree.
     let info = client
         .get(format!("https://huggingface.co/api/models/{repo}"))
         .headers(headers.clone())
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(12))
         .send()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| map_remote_error(ModelSource::HuggingFace, error))?;
     if !info.status().is_success() {
         return Err(status_error(ModelSource::HuggingFace, info.status()));
     }
     let meta: serde_json::Value = info.json().map_err(|error| error.to_string())?;
     let card = card_from_hf(&meta, repo);
     let mut files = Vec::new();
-    let mut url = format!("https://huggingface.co/api/models/{repo}/tree/{revision}?recursive=1");
-    loop {
-        let response = client
-            .get(&url)
-            .headers(headers.clone())
-            .timeout(Duration::from_secs(30))
-            .send()
-            .map_err(|error| error.to_string())?;
-        if !response.status().is_success() {
-            return Err(status_error(ModelSource::HuggingFace, response.status()));
-        }
-        let next = link_next(
-            response
-                .headers()
-                .get(reqwest::header::LINK)
-                .and_then(|value| value.to_str().ok()),
-        );
-        let items: Vec<HfTreeItem> = response.json().map_err(|error| error.to_string())?;
-        for item in items {
-            if item.kind != "file" {
-                continue;
+    // Prefer the requested revision; fall back to default branch tip from meta.
+    let tree_rev = if revision.trim().is_empty() {
+        meta.get("sha")
+            .and_then(|value| value.as_str())
+            .unwrap_or("main")
+    } else {
+        revision
+    };
+    let mut url = format!("https://huggingface.co/api/models/{repo}/tree/{tree_rev}?recursive=1");
+    let tree_result = (|| -> Result<Vec<RemoteModelFile>, String> {
+        let mut out = Vec::new();
+        let mut pages = 0u32;
+        loop {
+            pages += 1;
+            if pages > 20 {
+                break;
             }
-            let lfs = item.lfs;
-            let size = lfs.as_ref().map(|lfs| lfs.size).or(item.size).unwrap_or(0);
-            files.push(RemoteModelFile {
-                path: item.path,
-                size,
-                sha256: lfs.and_then(|value| value.oid).and_then(|oid| {
-                    oid.strip_prefix("sha256:")
-                        .map(str::to_string)
-                        .or(Some(oid))
-                }),
-                revision: Some(revision.to_string()),
-            });
+            let response = client
+                .get(&url)
+                .headers(headers.clone())
+                .timeout(Duration::from_secs(12))
+                .send()
+                .map_err(|error| map_remote_error(ModelSource::HuggingFace, error))?;
+            if !response.status().is_success() {
+                return Err(status_error(ModelSource::HuggingFace, response.status()));
+            }
+            let next = link_next(
+                response
+                    .headers()
+                    .get(reqwest::header::LINK)
+                    .and_then(|value| value.to_str().ok()),
+            );
+            let items: Vec<HfTreeItem> = response.json().map_err(|error| error.to_string())?;
+            for item in items {
+                if item.kind != "file" {
+                    continue;
+                }
+                let lfs = item.lfs;
+                let size = lfs.as_ref().map(|lfs| lfs.size).or(item.size).unwrap_or(0);
+                out.push(RemoteModelFile {
+                    path: item.path,
+                    size,
+                    sha256: lfs.and_then(|value| value.oid).and_then(|oid| {
+                        oid.strip_prefix("sha256:")
+                            .map(str::to_string)
+                            .or(Some(oid))
+                    }),
+                    revision: Some(tree_rev.to_string()),
+                });
+            }
+            match next {
+                Some(next_url) => url = next_url,
+                None => break,
+            }
         }
-        match next {
-            Some(next_url) => url = next_url,
-            None => break,
-        }
+        Ok(out)
+    })();
+    match tree_result {
+        Ok(listed) => files = listed,
+        // Detail/README should still render; download bar may be empty until retry.
+        Err(_) => files = Vec::new(),
     }
     // README is fetched separately via fetch_remote_model_readme (keeps probe snappy).
     Ok((card, files))
@@ -745,16 +756,51 @@ fn fetch_plain(
     headers: &HeaderMap,
     url: &str,
 ) -> Option<String> {
+    fetch_plain_timeout(client, headers, url, Duration::from_secs(15))
+}
+
+fn fetch_plain_timeout(
+    client: &reqwest::blocking::Client,
+    headers: &HeaderMap,
+    url: &str,
+    timeout: Duration,
+) -> Option<String> {
+    fetch_text_timeout(client, headers, url, timeout).ok()
+}
+
+enum FetchTextError {
+    NotFound,
+    Network(String),
+}
+
+fn fetch_text_timeout(
+    client: &reqwest::blocking::Client,
+    headers: &HeaderMap,
+    url: &str,
+    timeout: Duration,
+) -> Result<String, FetchTextError> {
     let response = client
         .get(url)
         .headers(headers.clone())
-        .timeout(Duration::from_secs(15))
+        .timeout(timeout)
         .send()
-        .ok()?;
+        .map_err(|error| {
+            if error.is_timeout() || error.is_connect() {
+                FetchTextError::Network("modelHfUnreachable".into())
+            } else {
+                FetchTextError::Network(error.to_string())
+            }
+        })?;
+    let status = response.status();
+    if status == StatusCode::NOT_FOUND {
+        return Err(FetchTextError::NotFound);
+    }
+    if !status.is_success() {
+        return Err(FetchTextError::Network(format!("HTTP {status}")));
+    }
     response
-        .status()
-        .is_success()
-        .then(|| response.text().ok())?
+        .text()
+        .map_err(|error| FetchTextError::Network(error.to_string()))
 }
 
 fn first_readme_paragraph(raw: &str) -> String {
@@ -2769,16 +2815,37 @@ fn fetch_readme(
     let headers = auth_headers(source);
     match source {
         ModelSource::HuggingFace => {
-            for branch in [&revision, "main", "master"] {
-                if let Some(text) = fetch_plain(
-                    &client,
-                    &headers,
-                    &format!("https://huggingface.co/{repo}/raw/{branch}/README.md"),
-                ) {
-                    if !text.trim().is_empty() {
-                        return Ok(text);
+            // Prefer branch names over commit SHA — SHA raw URLs are slower / flakier in CN.
+            const HF_README_TIMEOUT: Duration = Duration::from_secs(8);
+            let mut candidates: Vec<&str> = Vec::new();
+            if revision.len() < 40 {
+                candidates.push(revision.as_str());
+            }
+            for branch in ["main", "master"] {
+                if !candidates.contains(&branch) {
+                    candidates.push(branch);
+                }
+            }
+            let mut saw_empty = false;
+            let mut last_network: Option<String> = None;
+            for branch in candidates {
+                for path in [
+                    format!("https://huggingface.co/{repo}/raw/{branch}/README.md"),
+                    format!("https://huggingface.co/{repo}/resolve/{branch}/README.md"),
+                ] {
+                    match fetch_text_timeout(&client, &headers, &path, HF_README_TIMEOUT) {
+                        Ok(body) if !body.trim().is_empty() => return Ok(body),
+                        Ok(_) => saw_empty = true,
+                        Err(FetchTextError::NotFound) => {}
+                        Err(FetchTextError::Network(msg)) => last_network = Some(msg),
                     }
                 }
+            }
+            if saw_empty {
+                return Ok(String::new());
+            }
+            if let Some(msg) = last_network {
+                return Err(msg);
             }
             Ok(String::new())
         }

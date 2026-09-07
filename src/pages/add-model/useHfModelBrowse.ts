@@ -1,37 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ModelFormat, RemoteModelHit } from "../../lib/types";
-import { HF_FETCH_TIMEOUT_MESSAGE } from "../../lib/fetchTimeout";
-import { createHfModelIterator, HF_BATCH_SIZE, pullBatch, type HfModelIterator } from "./hfListModels";
+import { createHfModelIterator, HF_BATCH_SIZE, pullBatch, type HfModelIterator } from "../../lib/hfListModels";
+import {
+  BROWSE_DEBOUNCE_MS,
+  browseFailSoftMessage,
+  type BrowseState,
+} from "./modelBrowseShared";
 
-export type BrowseState = {
-  hits: RemoteModelHit[];
-  isLoading: boolean;
-  isLoadingMore: boolean;
-  hasMore: boolean;
-  error?: string;
-  fetchMore: () => void;
-  reload: () => void;
-};
-
-function isAbortError(error: unknown) {
-  if (error instanceof DOMException && error.name === "AbortError") return true;
-  if (error instanceof Error && error.name === "AbortError") return true;
-  return false;
-}
-
-function isHfUnreachable(error: unknown) {
-  if (error instanceof Error && error.message === HF_FETCH_TIMEOUT_MESSAGE) return true;
-  if (error instanceof TypeError) return true;
-  const message = error instanceof Error ? error.message : String(error);
-  return /failed to fetch|networkerror|load failed|network request failed|fetch failed/i.test(message);
-}
-
-function invokeMessage(error: unknown, unreachableLabel: string) {
-  if (isAbortError(error)) return;
-  if (isHfUnreachable(error)) return unreachableLabel;
-  return error instanceof Error ? error.message : String(error);
-}
+export type { BrowseState };
 
 export function useHfModelBrowse(query: string, format: ModelFormat, enabled: boolean): BrowseState {
   const { t } = useTranslation();
@@ -72,7 +49,7 @@ export function useHfModelBrowse(query: string, format: ModelFormat, enabled: bo
       setHasMore(!batch.done);
     } catch (err) {
       if (gen !== generationRef.current) return;
-      const message = invokeMessage(err, t("modelHfUnreachable"));
+      const message = browseFailSoftMessage(err, t("modelHfUnreachable"));
       if (message) {
         setHits([]);
         setHasMore(false);
@@ -98,7 +75,7 @@ export function useHfModelBrowse(query: string, format: ModelFormat, enabled: bo
     const gen = ++generationRef.current;
     const timer = window.setTimeout(() => {
       void loadInitial(query, format, gen);
-    }, 350);
+    }, BROWSE_DEBOUNCE_MS);
     return () => {
       window.clearTimeout(timer);
       abortRef.current?.abort();
@@ -120,7 +97,7 @@ export function useHfModelBrowse(query: string, format: ModelFormat, enabled: bo
         setHasMore(!batch.done);
       } catch (err) {
         if (gen !== generationRef.current) return;
-        const message = invokeMessage(err, t("modelHfUnreachable"));
+        const message = browseFailSoftMessage(err, t("modelHfUnreachable"));
         if (message) setError(message);
       } finally {
         if (gen === generationRef.current) {

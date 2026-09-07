@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 export function CompactColumnHeader() {
   const { t } = useTranslation();

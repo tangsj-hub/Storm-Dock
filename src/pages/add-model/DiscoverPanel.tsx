@@ -1,5 +1,5 @@
 import { Search } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { modelCenterPath, type ModelCenterTab, type ModelFormat, type ModelSource } from "../../lib/types";
 import styles from "../add/page.module.css";
@@ -9,7 +9,7 @@ import { ModelListLayout } from "./ModelListLayout";
 import { readDiscoverListView, writeDiscoverListView, type DiscoverListView } from "./discoverListView";
 import { useDiscoverInfiniteScroll } from "./useDiscoverInfiniteScroll";
 import { useRemoteModelBrowse } from "./useRemoteModelBrowse";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 function DiscoverSkeleton() {
   return (
@@ -85,7 +85,10 @@ export function DiscoverPanel({
   }, []);
 
   const busy = browse.isLoading;
-  const context = { query, source, format, tab: "discover" as const };
+  const context = useMemo(
+    () => ({ query, source, format, tab: "discover" as const }),
+    [query, source, format],
+  );
 
   return (
     <form

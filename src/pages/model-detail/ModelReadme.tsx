@@ -5,7 +5,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { prepareReadmeMarkdown, readmeAssetBase, resolveReadmeUrl } from "../../lib/modelReadme";
 import type { ModelSource } from "../../lib/types";
-import extra from "../add-model/page.module.css";
+import extra from "../add-model/detail.module.css";
 
 type ModelReadmeProps = {
   markdown: string;

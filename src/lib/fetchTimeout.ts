@@ -10,7 +10,7 @@ export type FetchWithTimeoutOptions = RequestInit & {
   fetch?: typeof fetch;
 };
 
-function isAbortError(error: unknown): boolean {
+export function isAbortError(error: unknown): boolean {
   if (error instanceof DOMException && error.name === "AbortError") return true;
   if (error instanceof Error && error.name === "AbortError") return true;
   return false;
@@ -20,6 +20,23 @@ function abortedError(signal?: AbortSignal): Error {
   const reason = signal?.reason;
   if (reason instanceof Error) return reason;
   return new DOMException("Aborted", "AbortError");
+}
+
+/** Compose multiple AbortSignals; aborts when any input aborts. */
+export function composeAbortSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
+  if (!b) return a;
+  const anyFn = (AbortSignal as typeof AbortSignal & { any?: (signals: AbortSignal[]) => AbortSignal }).any;
+  if (typeof anyFn === "function") return anyFn([a, b]);
+  if (a.aborted || b.aborted) {
+    const controller = new AbortController();
+    controller.abort();
+    return controller.signal;
+  }
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  a.addEventListener("abort", onAbort, { once: true });
+  b.addEventListener("abort", onAbort, { once: true });
+  return controller.signal;
 }
 
 /**

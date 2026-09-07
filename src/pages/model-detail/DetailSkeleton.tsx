@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
-import extra from "../add-model/page.module.css";
+import detail from "../add-model/detail.module.css";
+import discover from "../add-model/discover.module.css";
+const extra = { ...detail, ...discover };
 
 /** Layout-matching skeleton for model detail / split preview. */
 export function DetailSkeleton({ readmeOnly = false }: { readmeOnly?: boolean }) {

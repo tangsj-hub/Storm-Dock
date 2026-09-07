@@ -2,7 +2,7 @@ import { Loader2, Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ModelFormat, ModelSource } from "../../lib/types";
 import styles from "../add/page.module.css";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 const FORMATS: ModelFormat[] = ["all", "gguf", "safetensors", "mlx", "finetune"];
 

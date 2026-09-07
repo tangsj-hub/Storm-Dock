@@ -1,9 +1,10 @@
 import { Eye, Image, Volume2 } from "lucide-react";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "../../components/Tooltip";
 import { hitCapabilities, type HitCapability } from "../../lib/modelHits";
 import type { RemoteModelHit } from "../../lib/types";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 const CAP_ICON = {
   vision: Eye,
@@ -35,7 +36,7 @@ function CapabilityIcon({ kind }: { kind: HitCapability }) {
   );
 }
 
-export function CapabilityIcons({ hit }: { hit: RemoteModelHit }) {
+export const CapabilityIcons = memo(function CapabilityIcons({ hit }: { hit: RemoteModelHit }) {
   const caps = hitCapabilities(hit);
   if (caps.length === 0) return <div className={extra.hitCaps} />;
   return (
@@ -43,4 +44,4 @@ export function CapabilityIcons({ hit }: { hit: RemoteModelHit }) {
       {caps.map((kind) => <CapabilityIcon key={kind} kind={kind} />)}
     </div>
   );
-}
+});

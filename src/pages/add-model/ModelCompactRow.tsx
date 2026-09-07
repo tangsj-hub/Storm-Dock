@@ -1,11 +1,12 @@
 import { Download, Heart } from "lucide-react";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { formatCount } from "../../lib/modelHits";
 import { modelDetailPath, type ModelCenterTab, type ModelFormat, type ModelSource, type RemoteModelHit } from "../../lib/types";
 import { CapabilityIcons } from "./CapabilityIcons";
 import { agoLabel } from "./MetricCells";
 import { ModelIdentity } from "./ModelIdentity";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 export type DiscoverHitContext = {
   query: string;
@@ -17,7 +18,7 @@ export type DiscoverHitContext = {
 /**
  * Compact table row — same grid columns as CompactColumnHeader for vertical alignment.
  */
-export function ModelCompactRow({
+export const ModelCompactRow = memo(function ModelCompactRow({
   hit,
   context,
 }: {
@@ -58,7 +59,7 @@ export function ModelCompactRow({
       </span>
     </a>
   );
-}
+});
 
 /** @deprecated Prefer ModelCompactRow — kept as a thin alias for any residual imports. */
 export const HitRow = ModelCompactRow;

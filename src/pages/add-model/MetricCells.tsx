@@ -1,8 +1,9 @@
 import { Download, Heart } from "lucide-react";
+import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { agoParts, formatCount } from "../../lib/modelHits";
 import type { RemoteModelHit } from "../../lib/types";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 export function agoLabel(value: string | undefined, t: (key: string, opts?: { count: number }) => string) {
   const ago = agoParts(value);
@@ -14,7 +15,7 @@ export function agoLabel(value: string | undefined, t: (key: string, opts?: { co
 }
 
 /** Compact mid-zone secondary text (params · updated). */
-export function MetricSecondary({ hit }: { hit: RemoteModelHit }) {
+export const MetricSecondary = memo(function MetricSecondary({ hit }: { hit: RemoteModelHit }) {
   const { t } = useTranslation();
   const parts: string[] = [];
   if (hit.params) parts.push(hit.params);
@@ -22,10 +23,10 @@ export function MetricSecondary({ hit }: { hit: RemoteModelHit }) {
   if (ago) parts.push(ago);
   if (parts.length === 0) return null;
   return <span className={extra.hitSecondary}>{parts.join(" · ")}</span>;
-}
+});
 
 /** Quiet download/like pills for compact scan path. */
-export function CompactStatPills({ hit }: { hit: RemoteModelHit }) {
+export const CompactStatPills = memo(function CompactStatPills({ hit }: { hit: RemoteModelHit }) {
   if (hit.downloads == null && hit.likes == null) {
     return null;
   }
@@ -45,20 +46,20 @@ export function CompactStatPills({ hit }: { hit: RemoteModelHit }) {
       ) : null}
     </div>
   );
-}
+});
 
 /** @deprecated Spreadsheet cells — prefer CompactStatPills / MetricSecondary. */
-export function MetricCells({ hit }: { hit: RemoteModelHit }) {
+export const MetricCells = memo(function MetricCells({ hit }: { hit: RemoteModelHit }) {
   return (
     <>
       <MetricSecondary hit={hit} />
       <CompactStatPills hit={hit} />
     </>
   );
-}
+});
 
 /** Card meta: secondary text + quiet download/like pills. */
-export function MetricSummary({ hit }: { hit: RemoteModelHit }) {
+export const MetricSummary = memo(function MetricSummary({ hit }: { hit: RemoteModelHit }) {
   const { t } = useTranslation();
   const textParts: string[] = [];
   if (hit.params) textParts.push(hit.params);
@@ -83,10 +84,10 @@ export function MetricSummary({ hit }: { hit: RemoteModelHit }) {
       ) : null}
     </div>
   );
-}
+});
 
 /** Split master trailing stats (likes / downloads / updated). */
-export function SplitTrailStats({ hit }: { hit: RemoteModelHit }) {
+export const SplitTrailStats = memo(function SplitTrailStats({ hit }: { hit: RemoteModelHit }) {
   const { t } = useTranslation();
   const ago = agoLabel(hit.updatedAt, t);
   if (hit.downloads == null && hit.likes == null && !ago) return null;
@@ -109,4 +110,4 @@ export function SplitTrailStats({ hit }: { hit: RemoteModelHit }) {
       {ago ? <span className={extra.splitTrailAgo}>{ago}</span> : null}
     </div>
   );
-}
+});

@@ -6,7 +6,7 @@ import { Tooltip } from "../../components/Tooltip";
 import { isGgufHit } from "../../lib/modelHits";
 import { splitModelRepo } from "../../lib/providerLogos";
 import type { RemoteModelHit } from "../../lib/types";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 export type ModelIdentityVariant = "card" | "compact" | "split" | "detail";
 

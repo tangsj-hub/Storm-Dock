@@ -8,7 +8,7 @@ import { ModelCompactRow } from "./ModelCompactRow";
 import { ModelSplitRow } from "./ModelSplitRow";
 import { SplitPreviewPane } from "./SplitPreviewPane";
 import { VirtualModelRows, type VirtualLaneConfig } from "./VirtualModelRows";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 const LIST_GAP = 8;
 const NARROW_SPLIT_MQ = "(max-width: 860px)";

@@ -9,8 +9,11 @@ import "../../i18n";
 import { modelCenterPath, modelRepoFromQuery, modelSourceFromQuery, type ModelCenterContext } from "../../lib/types";
 import "../../styles/global.css";
 import styles from "../add/page.module.css";
-import extra from "../add-model/page.module.css";
+import page from "../add-model/page.module.css";
+import detail from "../add-model/detail.module.css";
 import { ModelDetailView } from "./ModelDetailView";
+
+const extra = { ...page, ...detail };
 
 function ModelDetailPage() {
   const { t } = useTranslation();

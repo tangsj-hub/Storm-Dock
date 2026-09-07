@@ -1,8 +1,8 @@
 import { listModels } from "@huggingface/hub";
-import type { ModelFormat, RemoteModelHit } from "../../lib/types";
-import { fetchWithTimeout, HF_FETCH_TIMEOUT_MS } from "../../lib/fetchTimeout";
+import type { ModelFormat, RemoteModelHit } from "./types";
+import { composeAbortSignals, fetchWithTimeout, HF_FETCH_TIMEOUT_MS } from "./fetchTimeout";
 
-export { HF_FETCH_TIMEOUT_MESSAGE, HF_FETCH_TIMEOUT_MS } from "../../lib/fetchTimeout";
+export { HF_FETCH_TIMEOUT_MESSAGE, HF_FETCH_TIMEOUT_MS } from "./fetchTimeout";
 
 export const HF_BATCH_SIZE = 48;
 
@@ -99,22 +99,6 @@ export function makeSortFetch(
   };
 }
 
-function composeSignals(a: AbortSignal, b?: AbortSignal): AbortSignal {
-  if (!b) return a;
-  const anyFn = (AbortSignal as typeof AbortSignal & { any?: (signals: AbortSignal[]) => AbortSignal }).any;
-  if (typeof anyFn === "function") return anyFn([a, b]);
-  if (a.aborted || b.aborted) {
-    const controller = new AbortController();
-    controller.abort();
-    return controller.signal;
-  }
-  const controller = new AbortController();
-  const onAbort = () => controller.abort();
-  a.addEventListener("abort", onAbort, { once: true });
-  b.addEventListener("abort", onAbort, { once: true });
-  return controller.signal;
-}
-
 export function createHfModelIterator(opts: {
   query: string;
   format: ModelFormat;
@@ -128,7 +112,7 @@ export function createHfModelIterator(opts: {
   const innerFetch = opts.fetch ?? fetch;
   const userSignal = opts.signal;
   const baseFetch: typeof fetch = userSignal
-    ? (input, init) => innerFetch(input, { ...init, signal: composeSignals(userSignal, init?.signal ?? undefined) })
+    ? (input, init) => innerFetch(input, { ...init, signal: composeAbortSignals(userSignal, init?.signal ?? undefined) })
     : innerFetch;
   return listModels({
     search: {

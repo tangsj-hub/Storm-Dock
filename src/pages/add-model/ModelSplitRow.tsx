@@ -1,15 +1,15 @@
-import type { KeyboardEvent } from "react";
+import { memo, type KeyboardEvent } from "react";
 import type { RemoteModelHit } from "../../lib/types";
 import { CapabilityIcons } from "./CapabilityIcons";
 import { SplitTrailStats } from "./MetricCells";
 import { ModelIdentity } from "./ModelIdentity";
-import extra from "./page.module.css";
+import extra from "./discover.module.css";
 
 /**
  * Split master row — denser: avatar | title/owner | caps | trailing quiet stats.
  * Preview pane role unchanged.
  */
-export function ModelSplitRow({
+export const ModelSplitRow = memo(function ModelSplitRow({
   hit,
   selected,
   onSelect,
@@ -40,4 +40,4 @@ export function ModelSplitRow({
       <SplitTrailStats hit={hit} />
     </div>
   );
-}
+});

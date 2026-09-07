@@ -27,6 +27,12 @@ export function applyTheme(pref = getPreference()) {
   const resolved = resolveTheme(pref, window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = resolved;
   document.documentElement.style.colorScheme = resolved;
+  const ua = navigator.userAgent;
+  document.documentElement.dataset.platform = ua.includes("Windows")
+    ? "windows"
+    : ua.includes("Macintosh") || ua.includes("Mac OS")
+      ? "macos"
+      : "other";
   void syncNativeTheme(resolved);
   watchSystem(pref);
 }

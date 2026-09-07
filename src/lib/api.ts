@@ -65,4 +65,5 @@ export const refreshLocalModels = () => invoke<LocalLlm[]>("refresh_local_models
 export const reorderLocalModels = (ids: string[]) => invoke("reorder_local_models", { ids });
 export const deleteLocalModel = (id: string) => invoke("delete_local_model", { id });
 export const openLocalModelDir = (id: string) => invoke("open_local_model_dir", { id });
+export const openExternalUrl = (url: string) => invoke<void>("open_external_url", { url });
 export const migrateLocalModel = (id: string, target: ModelSource) => invoke<void>("migrate_local_model", { id, target });

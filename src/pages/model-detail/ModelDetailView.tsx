@@ -257,6 +257,7 @@ export function ModelDetailView({ source, repo, embedded = false, onNotice }: Mo
               href: modelHubUrl(probe.source, probe.repo),
               label: t(modelHubOpenLabelKey(probe.source)),
             }}
+            onNotice={notify}
             variant="detail"
           />
           {card.tags.length || card.baseModel ? (

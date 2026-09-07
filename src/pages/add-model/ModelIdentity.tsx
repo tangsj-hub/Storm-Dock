@@ -1,7 +1,9 @@
 import { ExternalLink } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CopyIconButton } from "../../components/CopyIconButton";
 import { ModelVendorIcon } from "../../components/ModelVendorIcon";
+import { OpenExternalLinkDialog } from "../../components/OpenExternalLinkDialog";
 import { Tooltip } from "../../components/Tooltip";
 import { isGgufHit } from "../../lib/modelHits";
 import { splitModelRepo } from "../../lib/providerLogos";
@@ -22,16 +24,19 @@ export function ModelIdentity({
   variant = "compact",
   avatarSize,
   hubLink,
+  onNotice,
 }: {
   hit: RemoteModelHit;
   /** @deprecated Prefer `variant`. Kept so dense callers still compile during transition. */
   dense?: boolean;
   variant?: ModelIdentityVariant;
   avatarSize?: number;
-  /** Detail-only: icon that opens the official Hub page. */
+  /** Detail-only: icon that opens the official Hub page (confirm + system browser). */
   hubLink?: { href: string; label: string };
+  onNotice?: (message: string, failed?: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const [pendingUrl, setPendingUrl] = useState<string>();
   const { owner, repoName } = splitModelRepo(hit.repo);
   const meta = VARIANT[variant];
   const size = avatarSize ?? meta.avatar;
@@ -62,15 +67,14 @@ export function ModelIdentity({
           />
           {hubLink ? (
             <Tooltip content={hubLink.label}>
-              <a
+              <button
                 aria-label={hubLink.label}
                 className={extra.hubLink}
-                href={hubLink.href}
-                rel="noreferrer"
-                target="_blank"
+                onClick={() => setPendingUrl(hubLink.href)}
+                type="button"
               >
                 <ExternalLink aria-hidden="true" size={14} />
-              </a>
+              </button>
             </Tooltip>
           ) : null}
         </div>
@@ -82,6 +86,14 @@ export function ModelIdentity({
           </div>
         ) : null}
       </div>
+      <OpenExternalLinkDialog
+        onError={(message) => onNotice?.(message, true)}
+        onOpenChange={(open) => {
+          if (!open) setPendingUrl(undefined);
+        }}
+        title={hubLink?.label}
+        url={pendingUrl}
+      />
     </div>
   );
 }

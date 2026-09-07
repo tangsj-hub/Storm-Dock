@@ -139,6 +139,7 @@ pub fn run() {
             commands::start_official_login,
             commands::cancel_official_login,
             commands::open_official_login_url,
+            commands::open_external_url,
             commands::delete_account,
             commands::switch_account,
             commands::force_restart_cursor,

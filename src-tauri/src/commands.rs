@@ -1955,6 +1955,15 @@ pub(crate) fn open_official_login_url(
 }
 
 #[tauri::command]
+pub(crate) fn open_external_url(url: String) -> std::result::Result<(), String> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+        return Err("只允许打开 http(s) 链接。".into());
+    }
+    open_browser(trimmed).map_err(error_text)
+}
+
+#[tauri::command]
 pub(crate) fn delete_account(
     id: String,
     app: AppHandle,

@@ -984,6 +984,13 @@ fn hf_format_filter(format: &str) -> Option<&'static str> {
     }
 }
 
+/// ModelScope OpenAPI `filter.library` (gguf / safetensors / mlx / peft).
+/// Without this, hot `sort=default` pages are almost all non-GGUF and client-side
+/// format filtering starves the Discover list.
+fn ms_format_library(format: &str) -> Option<&'static str> {
+    hf_format_filter(format)
+}
+
 fn format_needle(format: &str) -> Option<&'static str> {
     hf_format_filter(format)
 }
@@ -1173,6 +1180,19 @@ fn hits_from_modelscope_value_limited(
         .collect()
 }
 
+fn library_from_ms_tags(tags: &[String]) -> Option<String> {
+    for tag in tags {
+        let lower = tag.to_ascii_lowercase();
+        if let Some(rest) = lower.strip_prefix("library:") {
+            let value = rest.trim();
+            if !value.is_empty() {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
 fn hit_from_modelscope(item: &serde_json::Value) -> Option<RemoteModelHit> {
     let repo = json_text(item, &["id", "Path", "ModelId", "Name"])?;
     let (author, name) = split_repo(&repo);
@@ -1181,6 +1201,23 @@ fn hit_from_modelscope(item: &serde_json::Value) -> Option<RemoteModelHit> {
     tags.extend(json_strings(item, "Libraries"));
     tags.extend(json_strings(item, "Tasks"));
     tags.extend(json_strings(item, "tasks"));
+    let library = json_strings(item, "Libraries")
+        .into_iter()
+        .next()
+        .or_else(|| library_from_ms_tags(&tags));
+    let pipeline = json_strings(item, "tasks")
+        .into_iter()
+        .next()
+        .or_else(|| json_strings(item, "Tasks").into_iter().next())
+        .or_else(|| {
+            tags.iter().find_map(|tag| {
+                let lower = tag.to_ascii_lowercase();
+                lower
+                    .strip_prefix("task:")
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            })
+        });
     Some(RemoteModelHit {
         source: ModelSource::ModelScope,
         name: json_text(item, &["display_name", "ChineseName", "Name"]).unwrap_or(name),
@@ -1190,11 +1227,8 @@ fn hit_from_modelscope(item: &serde_json::Value) -> Option<RemoteModelHit> {
             &["downloads", "Downloads", "DownloadCount", "DownloadsCount"],
         ),
         likes: json_u64(item, &["likes", "Stars", "Likes", "StarCount"]),
-        library: json_strings(item, "Libraries").into_iter().next(),
-        pipeline: json_strings(item, "tasks")
-            .into_iter()
-            .next()
-            .or_else(|| json_strings(item, "Tasks").into_iter().next()),
+        library,
+        pipeline,
         params: hit_params(item, &tags),
         updated_at: hit_updated(item),
         tags,
@@ -1286,6 +1320,9 @@ fn search_modelscope(query: &str, format: &str, page: u32) -> Result<(Vec<Remote
         // ranking (Qwen/GLM/DeepSeek-style). `downloads` skews to ASR tool models (iic/...).
         // Preserve API order — do not re-sort hits by downloads (would undo default ranking).
         pairs.append_pair("sort", "default");
+        if let Some(library) = ms_format_library(format) {
+            pairs.append_pair("filter.library", library);
+        }
     }
     let response = client
         .get(url)
@@ -1323,8 +1360,11 @@ fn browse_modelscope(
 ) -> Result<RemoteModelBrowseResult, String> {
     let page = parse_browse_cursor(cursor);
     let limit_usize = limit as usize;
-    // Over-fetch when client-filtering by format so pages are not starved.
-    let page_size = if format_needle(format).is_some() {
+    // Server-side `filter.library` returns already-filtered pages; only over-fetch when
+    // we fall back to client-only filtering (should be rare once the API param is set).
+    let page_size = if ms_format_library(format).is_some() {
+        limit
+    } else if format_needle(format).is_some() {
         (limit.saturating_mul(3)).clamp(limit, 100)
     } else {
         limit
@@ -1345,6 +1385,9 @@ fn browse_modelscope(
         // ranking (Qwen/GLM/DeepSeek-style). `downloads` skews to ASR tool models (iic/...).
         // Preserve API order — do not re-sort hits by downloads (would undo default ranking).
         pairs.append_pair("sort", "default");
+        if let Some(library) = ms_format_library(format) {
+            pairs.append_pair("filter.library", library);
+        }
     }
     let response = client
         .get(url)
@@ -3731,6 +3774,15 @@ mod tests {
     }
 
     #[test]
+    fn ms_format_library_maps_known_values() {
+        assert_eq!(ms_format_library("gguf"), Some("gguf"));
+        assert_eq!(ms_format_library("safetensors"), Some("safetensors"));
+        assert_eq!(ms_format_library("mlx"), Some("mlx"));
+        assert_eq!(ms_format_library("finetune"), Some("peft"));
+        assert_eq!(ms_format_library("all"), None);
+    }
+
+    #[test]
     fn hits_from_hf_json_read_repo_and_stats() {
         let body = serde_json::json!([
             {
@@ -3801,6 +3853,7 @@ mod tests {
         assert_eq!(gguf.len(), 1);
         assert_eq!(gguf[0].repo, "unsloth/MiniMax-H3-GGUF");
         assert_eq!(gguf[0].name, "MiniMax-H3-GGUF");
+        assert_eq!(gguf[0].library.as_deref(), Some("gguf"));
         let all = hits_from_modelscope_value(&body, "all");
         assert_eq!(all.len(), 2);
     }

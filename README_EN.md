@@ -4,14 +4,14 @@
 
 Storm Dock is a local desktop application for managing multiple accounts used by
 developer tools and switching the active local login when needed. Cursor and
-Codex desktop are currently supported.
+ChatGPT desktop is currently supported.
 
 ## Feature status
 
 | Platform | Status | Capabilities |
 | --- | --- | --- |
 | Cursor | Supported | Official OAuth login, import current account, Access Token / JSON import, account ordering and switching |
-| Codex desktop | Supported | Official device OAuth login, current-login import, API key / custom Base URL import and switching, account refresh |
+| ChatGPT desktop | Supported | Official device OAuth login, current-login import, API key / custom Base URL import and switching, account refresh |
 
 Storm Dock supports macOS and Windows. Cursor switching updates Cursor's local
 login state. If Cursor is running, Storm Dock asks for confirmation before
@@ -49,7 +49,7 @@ dependencies. Exact dependency versions are recorded in `package-lock.json` and
 ## Third-party brands and services
 
 Storm Dock is an independent, unofficial open-source project. It is not
-affiliated with, authorized, sponsored, or endorsed by Cursor, OpenAI, Codex, or
+affiliated with, authorized, sponsored, or endorsed by Cursor, OpenAI, ChatGPT, or
 any other third party. Product names and trademarks belong to their respective
 owners. The MIT License covers this project's code only; it does not grant any
 right to use third-party trademarks or services, and does not permit bypassing

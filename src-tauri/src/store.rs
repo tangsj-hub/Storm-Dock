@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection};
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -11,7 +11,6 @@ use crate::apps::{ApplicationAdapter, CodexAdapter, CursorAdapter, GrokAdapter};
 use crate::cursor::session::{raw_export_from_session, session_display_label};
 use crate::cursor::usage::{cursor_usage_from_snapshot, update_export_usage, usage_pools};
 use crate::error::{AppError, Result};
-use crate::local_models::{source_from, LocalLlm};
 use crate::models::{
     days_remaining, matching_account_index, now, subscription_from_session, Account,
     AccountSummary, ApplicationKind, ApplicationStatus, CursorUsageDetails, ImportType, Session,
@@ -85,17 +84,6 @@ impl Controller {
              CREATE TABLE IF NOT EXISTS app_kv (
                key TEXT PRIMARY KEY, value TEXT NOT NULL
              );
-             CREATE TABLE IF NOT EXISTS local_models (
-               id TEXT PRIMARY KEY,
-               source TEXT NOT NULL,
-               repo TEXT NOT NULL,
-               revision TEXT NOT NULL,
-               path TEXT NOT NULL,
-               size INTEGER NOT NULL,
-               files INTEGER NOT NULL,
-               sort_order INTEGER NOT NULL DEFAULT 0,
-               updated_at INTEGER NOT NULL
-             );
              PRAGMA user_version=1;",
         )?;
         let columns = database
@@ -116,26 +104,6 @@ impl Controller {
                 "ALTER TABLE accounts ADD COLUMN usage_summary_json TEXT",
                 [],
             )?;
-        }
-        let model_columns = database
-            .prepare("PRAGMA table_info(local_models)")?
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        if !model_columns.iter().any(|name| name == "sort_order") {
-            database.execute(
-                "ALTER TABLE local_models ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
-                [],
-            )?;
-            let ids: Vec<String> = database
-                .prepare("SELECT id FROM local_models ORDER BY repo COLLATE NOCASE")?
-                .query_map([], |row| row.get(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            for (position, id) in ids.iter().enumerate() {
-                database.execute(
-                    "UPDATE local_models SET sort_order = ?1 WHERE id = ?2",
-                    params![position as i64, id],
-                )?;
-            }
         }
         Ok(database)
     }
@@ -290,196 +258,6 @@ impl Controller {
             params!["preserve_codex_official_auth", if enabled { "1" } else { "0" }],
         )?;
         self.codex.preserve_official_auth = enabled;
-        Ok(())
-    }
-
-    pub(crate) fn hf_token(&self) -> Option<String> {
-        self.database
-            .query_row(
-                "SELECT value FROM app_kv WHERE key=?1",
-                params!["hf_token"],
-                |row| row.get::<_, String>(0),
-            )
-            .ok()
-            .map(|value| value.trim().to_string())
-            .filter(|value| !value.is_empty())
-    }
-
-    pub(crate) fn hf_token_configured(&self) -> bool {
-        self.hf_token().is_some()
-    }
-
-    pub(crate) fn set_hf_token(&mut self, token: String) -> Result<()> {
-        let token = token.trim();
-        if token.is_empty() {
-            self.database
-                .execute("DELETE FROM app_kv WHERE key=?1", params!["hf_token"])?;
-        } else {
-            self.database.execute(
-                "INSERT INTO app_kv (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                params!["hf_token", token],
-            )?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn sync_local_models(&mut self, models: &[LocalLlm]) -> Result<()> {
-        let mut existing = HashMap::new();
-        {
-            let mut statement = self
-                .database
-                .prepare("SELECT id, sort_order FROM local_models")?;
-            let mut rows = statement.query([])?;
-            while let Some(row) = rows.next()? {
-                existing.insert(row.get::<_, String>(0)?, row.get::<_, i64>(1)?);
-            }
-        }
-        let scanned: HashSet<_> = models.iter().map(|model| model.id.clone()).collect();
-        let tx = self.database.transaction()?;
-        for id in existing.keys() {
-            if !scanned.contains(id) {
-                tx.execute("DELETE FROM local_models WHERE id=?1", params![id])?;
-            }
-        }
-        let mut next_order = existing.values().copied().max().unwrap_or(-1) + 1;
-        {
-            let mut upsert = tx.prepare(
-                "INSERT INTO local_models (id, source, repo, revision, path, size, files, sort_order, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-                 ON CONFLICT(id) DO UPDATE SET
-                   source=excluded.source, repo=excluded.repo, revision=excluded.revision,
-                   path=excluded.path, size=excluded.size, files=excluded.files, updated_at=excluded.updated_at",
-            )?;
-            let checked_at = now() as i64;
-            for model in models {
-                let order = existing.get(&model.id).copied().unwrap_or_else(|| {
-                    let order = next_order;
-                    next_order += 1;
-                    order
-                });
-                upsert.execute(params![
-                    model.id,
-                    model.source.as_str(),
-                    model.repo,
-                    model.revision,
-                    model.path,
-                    model.size as i64,
-                    model.files as i64,
-                    order,
-                    checked_at,
-                ])?;
-            }
-        }
-        tx.commit()?;
-        Ok(())
-    }
-
-    pub(crate) fn upsert_local_model(&mut self, model: &LocalLlm) -> Result<()> {
-        let next_order: i64 = self.database.query_row(
-            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM local_models",
-            [],
-            |row| row.get(0),
-        )?;
-        self.database.execute(
-            "INSERT INTO local_models (id, source, repo, revision, path, size, files, sort_order, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-             ON CONFLICT(id) DO UPDATE SET
-               source=excluded.source, repo=excluded.repo, revision=excluded.revision,
-               path=excluded.path, size=excluded.size, files=excluded.files, updated_at=excluded.updated_at",
-            params![
-                model.id,
-                model.source.as_str(),
-                model.repo,
-                model.revision,
-                model.path,
-                model.size as i64,
-                model.files as i64,
-                next_order,
-                now() as i64,
-            ],
-        )?;
-        Ok(())
-    }
-
-    pub(crate) fn reorder_local_models(&mut self, ids: Vec<String>) -> Result<()> {
-        let existing: Vec<String> = {
-            let mut statement = self.database.prepare("SELECT id FROM local_models")?;
-            let mut rows = statement.query([])?;
-            let mut found = Vec::new();
-            while let Some(row) = rows.next()? {
-                found.push(row.get(0)?);
-            }
-            found
-        };
-        if ids.len() != existing.len()
-            || ids.iter().collect::<BTreeSet<_>>().len() != ids.len()
-            || ids
-                .iter()
-                .any(|id| !existing.iter().any(|found| found == id))
-        {
-            return Err(AppError::Message("模型排序无效".into()));
-        }
-        let transaction = self.database.transaction()?;
-        for (position, id) in ids.iter().enumerate() {
-            transaction.execute(
-                "UPDATE local_models SET sort_order = ?1 WHERE id = ?2",
-                params![position as i64, id],
-            )?;
-        }
-        transaction.commit()?;
-        Ok(())
-    }
-
-    pub(crate) fn listed_local_models(&self) -> Result<Vec<LocalLlm>> {
-        let mut statement = self.database.prepare(
-            "SELECT id, source, repo, revision, path, size, files FROM local_models ORDER BY sort_order, repo COLLATE NOCASE",
-        )?;
-        let mut rows = statement.query([])?;
-        let mut models = Vec::new();
-        while let Some(row) = rows.next()? {
-            let Ok(source) = source_from(&row.get::<_, String>(1)?) else {
-                continue;
-            };
-            models.push(LocalLlm {
-                id: row.get(0)?,
-                source,
-                repo: row.get(2)?,
-                revision: row.get(3)?,
-                path: row.get(4)?,
-                size: row.get::<_, i64>(5)? as u64,
-                files: row.get::<_, i64>(6)? as u32,
-            });
-        }
-        Ok(models)
-    }
-
-    pub(crate) fn local_model(&self, id: &str) -> Result<LocalLlm> {
-        let mut statement = self.database.prepare(
-            "SELECT id, source, repo, revision, path, size, files FROM local_models WHERE id=?1",
-        )?;
-        let mut rows = statement.query(params![id])?;
-        let row = rows
-            .next()?
-            .ok_or_else(|| AppError::Message("模型不存在".into()))?;
-        let source = source_from(&row.get::<_, String>(1)?).map_err(AppError::Message)?;
-        Ok(LocalLlm {
-            id: row.get(0)?,
-            source,
-            repo: row.get(2)?,
-            revision: row.get(3)?,
-            path: row.get(4)?,
-            size: row.get::<_, i64>(5)? as u64,
-            files: row.get::<_, i64>(6)? as u32,
-        })
-    }
-
-    pub(crate) fn delete_local_model_row(&mut self, id: &str) -> Result<()> {
-        let changed = self
-            .database
-            .execute("DELETE FROM local_models WHERE id=?1", params![id])?;
-        if changed == 0 {
-            return Err(AppError::Message("模型不存在".into()));
-        }
         Ok(())
     }
 
@@ -1913,18 +1691,4 @@ INSERT INTO providers (id, app_type, name, settings_config, meta, is_current, in
         let _ = fs::remove_dir_all(data_dir);
     }
 
-    #[test]
-    fn hf_token_persists_and_clears() {
-        let data_dir = env::temp_dir().join(format!("storm-dock-hf-{}", uuid::Uuid::new_v4()));
-        let mut controller = Controller::new(data_dir.clone()).unwrap();
-        assert!(!controller.hf_token_configured());
-        controller.set_hf_token(" hf_test ".into()).unwrap();
-        assert_eq!(controller.hf_token().as_deref(), Some("hf_test"));
-        drop(controller);
-        let mut controller = Controller::new(data_dir.clone()).unwrap();
-        assert!(controller.hf_token_configured());
-        controller.set_hf_token(String::new()).unwrap();
-        assert!(!controller.hf_token_configured());
-        let _ = fs::remove_dir_all(data_dir);
-    }
 }

@@ -1369,29 +1369,7 @@ pub(crate) fn set_preserve_codex_official_auth(
         .map_err(error_text)
 }
 
-#[tauri::command]
-pub(crate) fn get_hf_token_configured(
-    state: State<'_, AppState>,
-) -> std::result::Result<bool, String> {
-    state
-        .0
-        .lock()
-        .map_err(|_| "账户存储不可用".to_string())
-        .map(|controller| controller.hf_token_configured())
-}
 
-#[tauri::command]
-pub(crate) fn set_hf_token(
-    token: String,
-    state: State<'_, AppState>,
-) -> std::result::Result<(), String> {
-    state
-        .0
-        .lock()
-        .map_err(|_| "账户存储不可用".to_string())?
-        .set_hf_token(token)
-        .map_err(error_text)
-}
 
 #[tauri::command]
 pub(crate) fn move_database(
@@ -1954,14 +1932,6 @@ pub(crate) fn open_official_login_url(
     open_browser(&url).map_err(error_text)
 }
 
-#[tauri::command]
-pub(crate) fn open_external_url(url: String) -> std::result::Result<(), String> {
-    let trimmed = url.trim();
-    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
-        return Err("只允许打开 http(s) 链接。".into());
-    }
-    open_browser(trimmed).map_err(error_text)
-}
 
 #[tauri::command]
 pub(crate) fn delete_account(

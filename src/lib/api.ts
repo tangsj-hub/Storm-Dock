@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { fetchHfReadme, probeHfModel } from "./hfProbe";
-import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, DownloadJob, LocalLlm, LocalSession, LocalSessionMessage, McpServer, ModelFormat, ModelSource, Plugin, RemoteModelFile, RemoteModelProbe, RemoteModelBrowseResult, RemoteModelSearchResult, SessionDeleteBatchResult } from "./types";
+import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, LocalSession, LocalSessionMessage, McpServer, Plugin, SessionDeleteBatchResult } from "./types";
 
 export const listApplications = () => invoke<ApplicationStatus[]>("list_applications");
 export const listAccounts = (kind: ApplicationKind) => invoke<Account[]>("list_accounts", { kind });
@@ -10,8 +9,6 @@ export const exportDatabase = (file: string) => invoke<void>("export_database", 
 export const importDatabase = (file: string) => invoke<string>("import_database", { file });
 export const getPreserveCodexOfficialAuth = () => invoke<boolean>("get_preserve_codex_official_auth");
 export const setPreserveCodexOfficialAuth = (enabled: boolean) => invoke<void>("set_preserve_codex_official_auth", { enabled });
-export const getHfTokenConfigured = () => invoke<boolean>("get_hf_token_configured");
-export const setHfToken = (token: string) => invoke<void>("set_hf_token", { token });
 export const listCursorPlugins = () => invoke<Plugin[]>("list_cursor_plugins");
 export const listCodexPlugins = () => invoke<Plugin[]>("list_codex_plugins");
 export const listGrokPlugins = () => invoke<Plugin[]>("list_grok_plugins");
@@ -38,32 +35,3 @@ export const listMcpServers = (kind: ApplicationKind) => invoke<McpServer[]>("li
 export const setMcpServerEnabled = (kind: ApplicationKind, id: string, enabled: boolean) => invoke("set_mcp_server_enabled", { kind, id, enabled });
 export const setCursorPluginEnabled = (id: string, source: Plugin["source"], enabled: boolean) => invoke("set_cursor_plugin_enabled", { id, source, enabled });
 export const deleteCursorPlugin = (id: string, source: Plugin["source"]) => invoke("delete_cursor_plugin", { id, source });
-export const searchRemoteModels = (source: ModelSource, query: string, format?: ModelFormat, page = 1) => invoke<RemoteModelSearchResult>("search_remote_models", { source, query, format: format && format !== "all" ? format : null, page });
-export const browseRemoteModels = (source: ModelSource, query: string, format?: ModelFormat, cursor?: string | null, limit = 48) => invoke<RemoteModelBrowseResult>("browse_remote_models", { source, query, format: format && format !== "all" ? format : null, cursor: cursor || null, limit });
-/** HF probe/README use browser Hub SDK (same path as Discover). ModelScope stays on Rust. */
-export async function probeRemoteModel(source: ModelSource, repo: string, revision?: string) {
-  if (source === "huggingface") {
-    return probeHfModel(repo, revision || "main");
-  }
-  return invoke<RemoteModelProbe>("probe_remote_model", { source, repo, revision: revision || null });
-}
-
-export async function fetchRemoteModelReadme(source: ModelSource, repo: string, revision?: string) {
-  if (source === "huggingface") {
-    return fetchHfReadme(repo, revision || "main");
-  }
-  return invoke<string>("fetch_remote_model_readme", { source, repo, revision: revision || null });
-}
-export const startModelDownload = (source: ModelSource, repo: string, revision?: string, files?: string[]) => invoke<string>("start_model_download", { source, repo, revision: revision || null, files: files ?? null });
-export const startModelDownloadFast = (source: ModelSource, repo: string, revision: string, files: RemoteModelFile[]) => invoke<string>("start_model_download_fast", { source, repo, revision, files });
-export const cancelModelDownload = (jobId: string) => invoke("cancel_model_download", { jobId });
-export const listDownloadJobs = () => invoke<DownloadJob[]>("list_download_jobs");
-export const resumeDownloadJob = (jobId: string) => invoke("resume_download_job", { jobId });
-export const dismissDownloadJob = (jobId: string) => invoke("dismiss_download_job", { jobId });
-export const listLocalModels = () => invoke<LocalLlm[]>("list_local_models");
-export const refreshLocalModels = () => invoke<LocalLlm[]>("refresh_local_models");
-export const reorderLocalModels = (ids: string[]) => invoke("reorder_local_models", { ids });
-export const deleteLocalModel = (id: string) => invoke("delete_local_model", { id });
-export const openLocalModelDir = (id: string) => invoke("open_local_model_dir", { id });
-export const openExternalUrl = (url: string) => invoke<void>("open_external_url", { url });
-export const migrateLocalModel = (id: string, target: ModelSource) => invoke<void>("migrate_local_model", { id, target });

@@ -31,7 +31,6 @@ import {
   FileOutput,
   FolderOpen,
   GripVertical,
-  HardDrive,
   KeyRound,
   LogIn,
   MessageSquareText,
@@ -59,7 +58,6 @@ import {
 } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
-import { DownloadDock } from "../../components/DownloadDock";
 import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import { ExportDialog } from "../../components/ExportDialog";
@@ -110,8 +108,6 @@ import {
   applicationKindFromQuery,
   canSwitchToDesktop,
   homePath,
-  homeModeFromQuery,
-  modelsHomePath,
   syncDocumentAppKind,
   type Account,
   type ApplicationKind,
@@ -136,7 +132,6 @@ import {
 import { useLatestRequest } from "./hooks/useLatestRequest";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { AccountList } from "./components/AccountList";
-import { ModelCenter } from "./components/ModelCenter";
 import { SessionWorkspace, type SessionProvider } from "./components/SessionWorkspace";
 import type { WorkspaceSection, SwitchProgress } from "./types";
 
@@ -497,9 +492,6 @@ export function HomePage() {
   const { t } = useTranslation();
   const [applications, setApplications] = useState<ApplicationStatus[]>([]);
   const [selected, setSelected] = useState<ApplicationKind>(applicationKindFromQuery);
-  const [homeMode, setHomeMode] = useState<"apps" | "models">(homeModeFromQuery);
-  const [modelRefreshKey, setModelRefreshKey] = useState(0);
-  const [modelsRefreshing, setModelsRefreshing] = useState(false);
   const [workspaceSection, setWorkspaceSection] =
     useState<WorkspaceSection>("accounts");
   const [pluginsExpanded, setPluginsExpanded] = useState(false);
@@ -560,18 +552,13 @@ export function HomePage() {
   );
   const isCursor = selected === "cursor";
   useLayoutEffect(() => {
-    if (homeMode === "models") syncDocumentAppKind();
-    else syncDocumentAppKind(selected);
-  }, [homeMode, selected]);
+    syncDocumentAppKind(selected);
+  }, [selected]);
   const showError = useCallback(
     (error: unknown) =>
       setNotice(error instanceof Error ? error.message : String(error)),
     [],
   );
-  const onModelsNotice = useCallback((message: string, status?: "success" | "error") => {
-    if (status === "error") showError(message);
-    else setNotice(message);
-  }, [showError]);
   const loadAccounts = useCallback(async () => {
     const isCurrent = beginAccountsRequest();
     const [nextApplications, nextAccounts] = await Promise.all([
@@ -583,7 +570,6 @@ export function HomePage() {
     setAccounts(nextAccounts);
   }, [beginAccountsRequest, selected]);
   const selectApplication = (next: ApplicationKind) => {
-    setHomeMode("apps");
     if (next === selected) {
       window.history.replaceState({}, "", homePath(next));
       return;
@@ -1618,7 +1604,7 @@ export function HomePage() {
             onValueChange={(value) =>
               selectApplication(value as ApplicationKind)
             }
-            value={homeMode === "models" ? "__none__" : selected}
+            value={selected}
           >
             <Tabs.List aria-label={t("applications")}>
               {APPLICATION_KINDS.map((kind) => (
@@ -1632,27 +1618,13 @@ export function HomePage() {
               ))}
             </Tabs.List>
           </Tabs.Root>
-          <button
-            aria-pressed={homeMode === "models"}
-            className={`${styles.modelCenterTab} ${homeMode === "models" ? styles.modelCenterTabActive : ""}`}
-            onClick={() => {
-              setHomeMode("models");
-              window.history.replaceState({}, "", modelsHomePath());
-            }}
-            type="button"
-          >
-            {t("modelCenter")}
-          </button>
           </div>
           <WorkspaceToolbar
             busy={busy}
             canManageAccounts
             hasAccounts={accounts.some((account) => account.importType !== "api_key")}
-            homeMode={homeMode}
             kind={selected}
-            modelsRefreshing={modelsRefreshing}
             onExport={() => void exportAccounts()}
-            onModelsRefresh={() => setModelRefreshKey((current) => current + 1)}
             onPluginsExpandedChange={setPluginsExpanded}
             onRefresh={() => void refresh()}
             onSessionsRefresh={() => setSessionRefreshKey((current) => current + 1)}
@@ -1663,20 +1635,9 @@ export function HomePage() {
           />
         </header>
         <section className={styles.workspace}>
-          <aside aria-label={homeMode === "models" ? t("modelCenterOnDevice") : t("accountSections")} className={styles.sidebar}>
+          <aside aria-label={t("accountSections")} className={styles.sidebar}>
             <nav className={styles.sidebarNav}>
-              {homeMode === "models" ? (
-                <Tooltip content={t("modelCenterOnDevice")}>
-                  <button
-                    aria-current="page"
-                    aria-label={t("modelCenterOnDevice")}
-                    className={`${styles.sidebarItem} ${styles.sidebarItemActive}`}
-                    type="button"
-                  >
-                    <HardDrive aria-hidden="true" size={18} />
-                  </button>
-                </Tooltip>
-              ) : workspaceSections.map(({ id, icon: Icon, labelKey }) => {
+              {workspaceSections.map(({ id, icon: Icon, labelKey }) => {
                 const count =
                   id === "accounts"
                     ? accounts.length
@@ -1723,7 +1684,7 @@ export function HomePage() {
               })}
             </nav>
           </aside>
-          <div className={styles.content}>{homeMode === "models" ? <ModelCenter onBusyChange={setModelsRefreshing} onNotice={onModelsNotice} refreshKey={modelRefreshKey} /> : renderSection()}</div>
+          <div className={styles.content}>{renderSection()}</div>
         </section>
       </main>
       <AlertDialog.Root
@@ -1805,7 +1766,6 @@ export function HomePage() {
         status={refreshing ? "loading" : refreshFailed ? "error" : "success"}
       />
       <Toast.Viewport className={styles.toastViewport} />
-      <DownloadDock />
     </Toast.Provider>
   );
 }

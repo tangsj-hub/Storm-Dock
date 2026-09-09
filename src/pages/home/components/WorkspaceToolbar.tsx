@@ -1,13 +1,12 @@
 import { ChevronsDownUp, ChevronsUpDown, Download, Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "../../../components/Tooltip";
-import { addModelPath, type ApplicationKind } from "../../../lib/types";
+import type { ApplicationKind } from "../../../lib/types";
 import type { WorkspaceSection } from "../types";
 import styles from "../page.module.css";
 
 type Props = {
   section: WorkspaceSection;
-  homeMode?: "apps" | "models";
   busy: boolean;
   canManageAccounts: boolean;
   kind: ApplicationKind;
@@ -15,23 +14,15 @@ type Props = {
   pluginsExpanded: boolean;
   refreshing: boolean;
   sessionsRefreshing: boolean;
-  modelsRefreshing?: boolean;
   onExport: () => void;
   onPluginsExpandedChange: (expanded: boolean) => void;
   onRefresh: () => void;
   onSessionsRefresh: () => void;
-  onModelsRefresh?: () => void;
 };
 
 export function WorkspaceToolbar(props: Props) {
   const { t } = useTranslation();
-  const { section, homeMode, busy, canManageAccounts, hasAccounts, kind, pluginsExpanded, refreshing, sessionsRefreshing, modelsRefreshing } = props;
-  if (homeMode === "models") {
-    return <div aria-label={t("sectionActions")} className={styles.contextToolbar} data-section="models">
-      <Tooltip content={t("modelRefreshList")}><button aria-label={t("modelRefreshList")} className={styles.iconButton} disabled={modelsRefreshing} onClick={props.onModelsRefresh} type="button"><RefreshCw aria-hidden="true" className={modelsRefreshing ? styles.spinning : undefined} size={19} /></button></Tooltip>
-      <a className={styles.addButton} href={addModelPath()}><Plus aria-hidden="true" size={18} />{t("addModel")}</a>
-    </div>;
-  }
+  const { section, busy, canManageAccounts, hasAccounts, kind, pluginsExpanded, refreshing, sessionsRefreshing } = props;
   return <div aria-label={t("sectionActions")} className={styles.contextToolbar} data-section={section}>
     {section === "accounts" && <>
       <Tooltip content={t("export")}><button aria-label={t("export")} className={styles.iconButton} disabled={busy || !canManageAccounts || !hasAccounts} onClick={props.onExport} type="button"><Download aria-hidden="true" size={19} /></button></Tooltip>

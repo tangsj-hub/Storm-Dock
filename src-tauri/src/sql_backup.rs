@@ -13,7 +13,6 @@ const DUMP_TABLES: &[&str] = &[
     "sessions",
     "application_state",
     "app_kv",
-    "local_models",
 ];
 
 pub(crate) enum BackupKind {

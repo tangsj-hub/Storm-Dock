@@ -4,7 +4,7 @@
 
 Storm Dock is a local desktop application for managing multiple accounts used by
 developer tools and switching the active local login when needed. Cursor and
-ChatGPT desktop is currently supported.
+ChatGPT desktop and Grok Build are currently supported.
 
 ## Feature status
 
@@ -12,6 +12,7 @@ ChatGPT desktop is currently supported.
 | --- | --- | --- |
 | Cursor | Supported | Official OAuth login, import current account, Access Token / JSON import, account ordering and switching |
 | ChatGPT desktop | Supported | Official device OAuth login, current-login import, API key / custom Base URL import and switching, account refresh |
+| Grok Build | Supported | xAI device login, current-login import, API key / custom Base URL import and switching, account refresh |
 
 Storm Dock supports macOS and Windows. Cursor switching updates Cursor's local
 login state. If Cursor is running, Storm Dock asks for confirmation before
@@ -32,6 +33,15 @@ restarting it, helping avoid loss of unsaved work.
   rejected.
 - Official login opens Cursor's authorization page and uses the same OAuth/PKCE
   polling flow as the Cursor CLI. The verifier is never placed in the login URL.
+
+## Session and plugin management
+
+- Browse Cursor, ChatGPT, and Grok Build sessions grouped by project, read messages,
+  launch sessions, and delete sessions in bulk.
+- Manage Cursor, Claude, ChatGPT, and Grok Build plugins by enabling, disabling,
+  or removing them, with separate controls for Skills, MCP, and Hooks.
+- Manage MCP configurations for Cursor and ChatGPT. Some changes
+  take effect after restarting the corresponding application.
 
 ## Technology
 

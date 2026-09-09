@@ -2,7 +2,7 @@
 
 [English](./README_EN.md) | [Gitee](https://gitee.com/mqlwyz/storm-dock) | [GitHub](https://github.com/tangsj-hub/Storm-Dock)
 
-Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个账号，并在需要时切换本机登录状态。当前支持 Cursor 和 ChatGPT。
+Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个账号，并在需要时切换本机登录状态。当前支持 Cursor、ChatGPT 和 Grok Build。
 
 ## 功能状态
 
@@ -10,6 +10,7 @@ Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个
 | --- | --- | --- |
 | Cursor | 已支持 | 官方 OAuth 登录、导入当前登录账户、Access Token / JSON 导入、账号排序与切换 |
 | ChatGPT 桌面端 | 已支持 | 官方设备 OAuth 登录、当前登录导入、API Key / 自定义 Base URL 导入与切换、账号刷新 |
+| Grok Build | 已支持 | xAI 设备登录、当前登录导入、API Key / 自定义 Base URL 导入与切换、账号刷新 |
 
 支持 macOS 和 Windows。Cursor 切换会更新该应用的本地登录状态；若 Cursor 正在运行，Storm Dock 会要求确认后才强制重启，避免未保存内容丢失。
 
@@ -21,6 +22,12 @@ Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个
 - 切换 Cursor 前会备份当前会话；写入后会验证结果，验证失败即尝试恢复原会话。
 - 只处理已识别的 Cursor 本地数据结构；未知结构会被拒绝。
 - “官方登录”打开 Cursor 官方授权页，使用与 Cursor CLI 相同的 OAuth / PKCE 流程轮询获取会话后导入账户。Storm Dock 不会把 verifier 放进登录链接。
+
+## 会话与插件管理
+
+- 支持按项目查看 Cursor、ChatGPT 与 Grok Build 会话，读取消息、启动会话，以及批量删除会话。
+- 支持管理 Cursor、Claude、ChatGPT 与 Grok Build 插件，可启用、停用或删除插件，并分别管理插件能力（Skills、MCP、Hooks）。
+- 支持管理 Cursor 与 ChatGPT 的 MCP 配置；部分变更需要重启对应应用后生效。
 
 ## 技术栈
 

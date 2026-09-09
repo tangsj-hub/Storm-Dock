@@ -32,6 +32,18 @@ Storm Dock 使用 MIT License。第三方 npm 与 Cargo 依赖的许可证清单
 [`THIRD_PARTY_NOTICES`](./THIRD_PARTY_NOTICES)；依赖的精确版本分别以
 `package-lock.json` 和 `src-tauri/Cargo.lock` 为准。
 
+## 第三方品牌与服务
+
+Storm Dock 是独立的非官方开源项目，与 Cursor、OpenAI、Codex 或其他第三方
+公司不存在隶属、授权、赞助或认可关系。项目中出现的产品名称和商标归其各自
+权利人所有；MIT License 仅授予本项目代码的版权许可，不授予任何第三方商标、
+品牌或服务的使用权，也不允许绕过登录、访问控制、速率限制或其他服务限制。
+
+使用 Storm Dock 连接第三方服务前，请阅读并遵守相应的最新条款及政策，包括
+[Cursor Terms of Service](https://www.cursor.com/terms-of-service) 和
+[OpenAI Terms of Use](https://openai.com/policies/terms-of-use)。用户应自行确认
+其账号、地区和具体使用场景符合这些条款；第三方条款变更时，以官方页面为准。
+
 ## 开发
 
 前置条件：Node.js 20+、Rust stable，以及目标平台所需的 Tauri 系统依赖。

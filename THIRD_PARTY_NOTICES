@@ -1,0 +1,56 @@
+Third-Party Notices
+====================
+
+Storm Dock includes or distributes software from the following third-party
+projects. Their licenses apply to those components and are separate from the
+MIT license for Storm Dock itself.
+
+JavaScript / npm dependencies
+-----------------------------
+
+The direct runtime dependencies in package.json are released under the
+following licenses (the exact versions are recorded in package-lock.json):
+
+- @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities: MIT
+- @huggingface/hub: MIT
+- @radix-ui/*: MIT
+- @tanstack/react-virtual: MIT
+- @tauri-apps/api: Apache-2.0 OR MIT
+- @tauri-apps/plugin-autostart, @tauri-apps/plugin-dialog: MIT OR Apache-2.0
+- i18next, react, react-dom, react-i18next, react-markdown, rehype-raw,
+  rehype-sanitize, remark-gfm: MIT
+- lucide-react: ISC
+
+Notable transitive npm dependencies include:
+
+- caniuse-lite: CC BY 4.0
+- entities and source-map-js: BSD-2-Clause and BSD-3-Clause respectively
+- baseline-browser-mapping: Apache-2.0
+- @ungap/structured-clone, electron-to-chromium, lru-cache, picocolors,
+  semver, siginfo, yallist: ISC
+- tslib: 0BSD
+
+All other npm packages in the lockfile are MIT, Apache-2.0, ISC, BSD, or
+similarly permissive licensed packages.
+
+Rust / Cargo dependencies
+-------------------------
+
+The direct crates in src-tauri/Cargo.toml use permissive licenses, primarily
+MIT OR Apache-2.0. In particular, ring is ISC; rusqlite, reqwest, serde,
+serde_json, regex, uuid, time, toml, thiserror, aes, base64, cbc, pbkdf2,
+sha1, sha2, once_cell, dirs, libc, winreg, tauri, tauri-build,
+tauri-plugin-autostart, and tauri-plugin-dialog are MIT, Apache-2.0, or
+MIT OR Apache-2.0 licensed according to their upstream package metadata.
+
+The complete resolved Rust dependency set and versions are recorded in
+src-tauri/Cargo.lock. Cargo's bundled SQLite build is distributed under the
+SQLite public domain dedication.
+
+License texts
+-------------
+
+Please retain the copyright and license notices of these dependencies when
+redistributing Storm Dock. Upstream license texts are available from each
+package's repository or registry entry; this file records the audit summary,
+not a replacement for those upstream notices.

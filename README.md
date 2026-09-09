@@ -26,6 +26,12 @@ Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个
 - React / TypeScript / Vite
 - SQLite（单文件同步模式）
 
+## 许可证
+
+Storm Dock 使用 MIT License。第三方 npm 与 Cargo 依赖的许可证清单见
+[`THIRD_PARTY_NOTICES`](./THIRD_PARTY_NOTICES)；依赖的精确版本分别以
+`package-lock.json` 和 `src-tauri/Cargo.lock` 为准。
+
 ## 开发
 
 前置条件：Node.js 20+、Rust stable，以及目标平台所需的 Tauri 系统依赖。

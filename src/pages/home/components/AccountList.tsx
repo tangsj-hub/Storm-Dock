@@ -33,7 +33,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
   const usage = usageLabel(account, t);
   const host = kind !== "cursor" ? endpointHost(account.baseUrl) : undefined;
   const isApiKey = account.importType === "api_key";
-  const canLaunchBot = kind === "cursor" && ["pro", "pro+", "pro_plus", "ultra"].includes(account.subscription.plan?.toLowerCase() ?? "");
+  const canLaunchBot = kind === "cursor" && account.subscription.plan?.toLowerCase() !== "free";
   return <article className={`${styles.accountCard} ${account.isCurrent ? styles.current : ""} ${isDragging ? styles.dragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical aria-label={t("drag", { account: account.label })} className={styles.dragHandle} size={24} {...attributes} {...listeners} />
     <div className={styles.accountCopy}><strong>{account.label}</strong><div className={styles.accountMeta}>

@@ -1,5 +1,7 @@
 # Storm Dock
 
+[English](./README_EN.md) | [Gitee](https://gitee.com/mqlwyz/storm-dock) | [GitHub](https://github.com/tangsj-hub/Storm-Dock)
+
 Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个账号，并在需要时切换本机登录状态。当前支持 Cursor，Codex 桌面端已列入管理入口，认证数据支持仍在开发中。
 
 ## 功能状态

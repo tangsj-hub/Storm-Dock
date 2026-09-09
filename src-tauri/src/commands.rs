@@ -2027,12 +2027,15 @@ pub(crate) fn force_restart_cursor(
     Ok(())
 }
 
+fn grok_bot_plan_allowed(plan: Option<&str>) -> bool {
+    !plan.is_some_and(|plan| plan.eq_ignore_ascii_case("free"))
+}
+
 fn grok_bot_session(id: &str, state: &State<'_, AppState>) -> std::result::Result<Session, String> {
     state.0.lock().map_err(|_| "账户存储不可用".to_string()).and_then(|controller| {
         let account = controller.account(id).map_err(error_text)?;
         if account.application != ApplicationKind::Cursor { return Err("仅 Cursor 账号可启动 Grok Bot。".into()); }
-        let plan = account.subscription.plan.as_deref().unwrap_or_default().to_ascii_lowercase();
-        if !matches!(plan.as_str(), "pro" | "pro+" | "pro_plus" | "ultra") { return Err("Grok Bot 仅适用于 Pro、Pro+ 或 Ultra 账号。".into()); }
+        if !grok_bot_plan_allowed(account.subscription.plan.as_deref()) { return Err("Grok Bot 不适用于 Free 账号。".into()); }
         controller.load_session(id).map_err(error_text)
     })
 }
@@ -2239,6 +2242,15 @@ pub(crate) fn error_text(error: AppError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grok_bot_allows_every_non_free_plan() {
+        assert!(!grok_bot_plan_allowed(Some("Free")));
+        assert!(grok_bot_plan_allowed(Some("Pro")));
+        assert!(grok_bot_plan_allowed(Some("Team")));
+        assert!(grok_bot_plan_allowed(Some("ChatGPT")));
+        assert!(grok_bot_plan_allowed(None));
+    }
 
     #[test]
     fn empty_config_has_no_mcp_servers() {

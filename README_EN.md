@@ -3,16 +3,15 @@
 [中文](./README.md) | [Gitee](https://gitee.com/mqlwyz/storm-dock) | [GitHub](https://github.com/tangsj-hub/Storm-Dock)
 
 Storm Dock is a local desktop application for managing multiple accounts used by
-developer tools and switching the active local login when needed. Cursor is
-currently supported; the Codex desktop entry is under development and does not
-yet read, write, or import Codex login data.
+developer tools and switching the active local login when needed. Cursor and
+Codex desktop are currently supported.
 
 ## Feature status
 
 | Platform | Status | Capabilities |
 | --- | --- | --- |
 | Cursor | Supported | Official OAuth login, import current account, Access Token / JSON import, account ordering and switching |
-| Codex desktop | In development | Authentication data support is not available yet |
+| Codex desktop | Supported | Official device OAuth login, current-login import, API key / custom Base URL import and switching, account refresh |
 
 Storm Dock supports macOS and Windows. Cursor switching updates Cursor's local
 login state. If Cursor is running, Storm Dock asks for confirmation before

@@ -2,14 +2,14 @@
 
 [English](./README_EN.md) | [Gitee](https://gitee.com/mqlwyz/storm-dock) | [GitHub](https://github.com/tangsj-hub/Storm-Dock)
 
-Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个账号，并在需要时切换本机登录状态。当前支持 Cursor，Codex 桌面端已列入管理入口，认证数据支持仍在开发中。
+Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个账号，并在需要时切换本机登录状态。当前支持 Cursor 和 Codex。
 
 ## 功能状态
 
 | 平台 | 状态 | 能力 |
 | --- | --- | --- |
 | Cursor | 已支持 | 官方 OAuth 登录、导入当前登录账户、Access Token / JSON 导入、账号排序与切换 |
-| Codex 桌面端 | 开发中 | 当前不会读取、写入或导入 Codex 登录数据 |
+| Codex 桌面端 | 已支持 | 官方设备 OAuth 登录、当前登录导入、API Key / 自定义 Base URL 导入与切换、账号刷新 |
 
 支持 macOS 和 Windows。Cursor 切换会更新该应用的本地登录状态；若 Cursor 正在运行，Storm Dock 会要求确认后才强制重启，避免未保存内容丢失。
 

@@ -1,4 +1,7 @@
-name: Build installers
+# Storm Dock release pipeline
+# Tag v* → build macOS + Windows → publish GitHub Release → assemble latest.json
+# Design goals: stable asset names, fail-closed updater artifacts, no partial manifests.
+name: Release
 
 on:
   workflow_dispatch:
@@ -9,6 +12,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build ${{ matrix.name }}
@@ -18,26 +25,27 @@ jobs:
       matrix:
         include:
           - name: macOS
-            os: macos-latest
+            os: macos-14
             bundles: app,dmg
-            artifact: storm-dock-macos
-            path: |
-              src-tauri/target/release/bundle/dmg/*.dmg
-              src-tauri/target/release/bundle/macos/*.app.tar.gz
-              src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
           - name: Windows
             os: windows-latest
             bundles: nsis,msi
-            artifact: storm-dock-windows
-            path: |
-              src-tauri/target/release/bundle/nsis/*.exe
-              src-tauri/target/release/bundle/msi/*.msi
-              src-tauri/target/release/bundle/msi/*.msi.sig
-              src-tauri/target/release/bundle/nsis/*.exe.sig
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve version tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "VERSION_TAG=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            VER=$(node -p "require('./package.json').version")
+            echo "VERSION_TAG=v${VER}" >> "$GITHUB_ENV"
+          fi
+          echo "Resolved VERSION_TAG for packaging"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -46,6 +54,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          shared-key: ${{ matrix.name }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -58,154 +67,118 @@ jobs:
 
       - name: Prepare Tauri signing key
         shell: bash
-        run: |
-          set -euo pipefail
-          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
-            echo "❌ TAURI_SIGNING_PRIVATE_KEY Secret is empty or missing." >&2
-            echo "Add the contents of .tauri/storm-dock.key as a repository secret." >&2
-            echo "See docs/updater.md. Tag releases require this secret; workflow_dispatch also needs it because createUpdaterArtifacts is enabled." >&2
-            exit 1
-          fi
+        env:
+          TAURI_SIGNING_PRIVATE_KEY_RAW: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: bash scripts/ci/prepare-signing-key.sh
 
-          RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
-          KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
-
-          if echo "$RAW" | head -n1 | grep -q '^untrusted comment:'; then
-            printf '%s\n' "$RAW" > "$KEY_PATH"
-            echo "✅ Using raw two-line key file format"
-          else
-            if DECODED=$(printf '%s' "$RAW" | (base64 --decode 2>/dev/null || base64 -D 2>/dev/null)) \
-               && echo "$DECODED" | head -n1 | grep -q '^untrusted comment:'; then
-              printf '%s\n' "$DECODED" > "$KEY_PATH"
-              echo "✅ Decoded base64-wrapped key into two-line file"
-            elif echo "$RAW" | grep -Eq '^[A-Za-z0-9+/=]+$'; then
-              # Single-line base64 blob (Tauri sometimes writes keys this way)
-              if DECODED=$(printf '%s' "$RAW" | (base64 --decode 2>/dev/null || base64 -D 2>/dev/null)) \
-                 && echo "$DECODED" | head -n1 | grep -q '^untrusted comment:'; then
-                printf '%s\n' "$DECODED" > "$KEY_PATH"
-                echo "✅ Decoded single-line base64 key"
-              else
-                ONE=$(printf '%s' "$RAW" | tr -d '\r\n')
-                printf '%s\n%s\n' "untrusted comment: tauri signing key" "$ONE" > "$KEY_PATH"
-                echo "✅ Constructed two-line file from one-line Base64"
-              fi
-            else
-              echo "❌ TAURI_SIGNING_PRIVATE_KEY format not recognized" >&2
-              exit 1
-            fi
-          fi
-
-          if command -v base64 >/dev/null 2>&1; then
-            KEY_B64=$(base64 < "$KEY_PATH" | tr -d '\r\n')
-          else
-            KEY_B64=$(KEY_PATH="$KEY_PATH" node -e "process.stdout.write(require('fs').readFileSync(process.env.KEY_PATH).toString('base64'))")
-          fi
-          if [ -z "$KEY_B64" ]; then
-            echo "❌ Failed to base64-encode signing key" >&2
-            exit 1
-          fi
-          echo "TAURI_SIGNING_PRIVATE_KEY=$KEY_B64" >> "$GITHUB_ENV"
-          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
-            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" >> "$GITHUB_ENV"
-          fi
-          echo "✅ Tauri signing key prepared"
-
-      - name: Build installer
-        run: npm run tauri build -- --bundles ${{ matrix.bundles }}
-
-      - name: Ensure macOS updater artifacts
-        if: matrix.name == 'macOS'
+      - name: Build Tauri bundles
         shell: bash
         run: |
           set -euo pipefail
-          MACOS_DIR="src-tauri/target/release/bundle/macos"
-          echo "Contents of $MACOS_DIR:"
-          ls -la "$MACOS_DIR"
+          npm run tauri build -- --bundles "${{ matrix.bundles }}"
 
-          APP=$(find "$MACOS_DIR" -maxdepth 1 -name '*.app' -type d | head -1 || true)
-          if [ -z "$APP" ]; then
-            echo "❌ No .app bundle found in $MACOS_DIR" >&2
-            exit 1
-          fi
-          echo "Using app: $APP"
+      - name: Package macOS release assets
+        if: matrix.name == 'macOS'
+        shell: bash
+        run: bash scripts/ci/package-macos-assets.sh
 
-          TAR=$(find "$MACOS_DIR" -maxdepth 1 -name '*.app.tar.gz' -type f | head -1 || true)
-          if [ -z "$TAR" ]; then
-            # Product names with spaces sometimes skip automatic updater packaging.
-            TAR="$MACOS_DIR/$(basename "$APP").tar.gz"
-            echo "Creating updater archive: $TAR"
-            tar -czf "$TAR" -C "$MACOS_DIR" "$(basename "$APP")"
-          fi
+      - name: Package Windows release assets
+        if: matrix.name == 'Windows'
+        shell: bash
+        run: bash scripts/ci/package-windows-assets.sh
 
-          if [ ! -f "$TAR.sig" ]; then
-            KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
-            if [ ! -f "$KEY_PATH" ]; then
-              RAW="${TAURI_SIGNING_PRIVATE_KEY:-}"
-              if [ -z "$RAW" ]; then
-                echo "❌ Missing TAURI_SIGNING_PRIVATE_KEY to sign macOS updater archive" >&2
-                exit 1
-              fi
-              if echo "$RAW" | head -n1 | grep -q '^untrusted comment:'; then
-                printf '%s\n' "$RAW" > "$KEY_PATH"
-              else
-                printf '%s' "$RAW" | (base64 --decode 2>/dev/null || base64 -D 2>/dev/null) > "$KEY_PATH" || {
-                  ONE=$(printf '%s' "$RAW" | tr -d '\r\n')
-                  printf '%s\n%s\n' "untrusted comment: tauri signing key" "$ONE" > "$KEY_PATH"
-                }
-              fi
-            fi
-            echo "Signing $TAR"
-            npx tauri signer sign "$TAR" -f "$KEY_PATH"
-          fi
-
-          ls -la "$TAR" "$TAR.sig"
-          echo "✅ macOS updater artifacts ready"
-
-      - name: Upload installer
+      - name: Upload release assets
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.path }}
+          name: release-assets-${{ matrix.name }}
+          path: release-assets/*
           if-no-files-found: error
           retention-days: 14
 
-  release:
-    name: Publish release
+  publish-release:
+    name: Publish GitHub Release
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout (for CHANGELOG)
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download installers
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: installers
+          pattern: release-assets-*
+          path: collected
           merge-multiple: true
 
-      - name: Create GitHub release
+      - name: Stage release-assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          # download-artifact may nest by artifact name depending on merge-multiple
+          find collected -type f -print
+          find collected -type f -exec cp -n {} release-assets/ \;
+          echo "=== staged ==="
+          ls -la release-assets/
+
+          need_mac_tar=0
+          need_mac_sig=0
+          need_mac_dmg=0
+          need_win_msi=0
+          need_win_msi_sig=0
+          for f in release-assets/*; do
+            case "$(basename "$f")" in
+              Storm-Dock-*-macOS.app.tar.gz) need_mac_tar=1 ;;
+              Storm-Dock-*-macOS.app.tar.gz.sig) need_mac_sig=1 ;;
+              Storm-Dock-*-macOS.dmg) need_mac_dmg=1 ;;
+              Storm-Dock-*-Windows-x64.msi) need_win_msi=1 ;;
+              Storm-Dock-*-Windows-x64.msi.sig) need_win_msi_sig=1 ;;
+            esac
+          done
+          if [ "$need_mac_tar" -ne 1 ] || [ "$need_mac_sig" -ne 1 ] || [ "$need_mac_dmg" -ne 1 ]; then
+            echo "❌ Incomplete macOS assets in release-assets/" >&2
+            ls -la release-assets/ >&2
+            exit 1
+          fi
+          if [ "$need_win_msi" -ne 1 ] || [ "$need_win_msi_sig" -ne 1 ]; then
+            echo "❌ Incomplete Windows updater assets in release-assets/" >&2
+            ls -la release-assets/ >&2
+            exit 1
+          fi
+          echo "✅ Release asset gate passed"
+
+      - name: Build release notes
+        id: notes
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/changelog-notes.py > notes.json
+          python3 -c "import json,pathlib; pathlib.Path('notes.md').write_text(json.load(open('notes.json')), encoding='utf-8')"
+          echo "notes file ready"
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          files: |
-            installers/**/*.dmg
-            installers/**/*.exe
-            installers/**/*.msi
-            installers/**/*.tar.gz
-            installers/**/*.sig
+          name: Storm Dock ${{ github.ref_name }}
+          body_path: notes.md
+          files: release-assets/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   assemble-latest-json:
     name: Assemble latest.json
-    needs: release
+    needs: publish-release
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      - name: Checkout (for CHANGELOG notes)
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Download release assets
@@ -216,7 +189,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           mkdir -p dl
           gh release download "$TAG" --dir dl --repo "$GITHUB_REPOSITORY"
-          ls -la dl || true
+          ls -la dl
 
       - name: Generate latest.json
         env:
@@ -226,10 +199,39 @@ jobs:
           set -euo pipefail
           python3 scripts/generate-latest-json.py
           test -f latest.json
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open("latest.json"))
+          plats = data.get("platforms") or {}
+          required = ["darwin-aarch64", "darwin-aarch64-app", "windows-x86_64"]
+          missing = [k for k in required if k not in plats]
+          if missing:
+              raise SystemExit(f"latest.json missing keys: {missing}")
+          print("verified platforms:", sorted(plats))
+          PY
 
-      - name: Upload latest.json to release
+      - name: Upload latest.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euxo pipefail
           gh release upload "$GITHUB_REF_NAME" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Verify public latest.json
+        env:
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          URL="https://github.com/${REPO}/releases/download/${TAG}/latest.json"
+          echo "Fetching $URL"
+          curl -fsSL "$URL" -o /tmp/latest-verify.json
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/latest-verify.json"))
+          plats = data["platforms"]
+          for k in ("darwin-aarch64", "darwin-aarch64-app", "windows-x86_64"):
+              assert k in plats, k
+              assert plats[k].get("url") and plats[k].get("signature"), k
+          print("✅ public latest.json OK", data["version"], sorted(plats))
+          PY

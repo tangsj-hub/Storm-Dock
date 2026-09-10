@@ -5,6 +5,18 @@ All notable changes to Storm Dock are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-09-10
+
+### Changed
+
+- **发版流水线重写**（对齐 cc-switch 思路，不再打补丁）：
+  - 稳定产物命名：`Storm-Dock-<ver>-macOS.*` / `Storm-Dock-<ver>-Windows-x64.*`
+  - CI 脚本：`scripts/ci/prepare-signing-key.sh`、`package-macos-assets.sh`、`package-windows-assets.sh`
+  - 发布前资产门禁：缺 `.app.tar.gz`/`.sig`/`.dmg` 或 Windows MSI+sig 则失败
+  - `latest.json` 强制包含 `darwin-aarch64`（含 `-app`）与 `windows-x86_64`，并 curl 校验公开清单
+  - macOS runner 固定 `macos-14`；Release 并发组按 tag 串行
+- 文档：`docs/updater.md` 改为完整发版清单
+
 ## [Unreleased]
 
 ## [1.4.2] - 2026-09-10

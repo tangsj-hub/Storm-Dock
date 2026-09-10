@@ -1,6 +1,6 @@
 [package]
 name = "storm-dock"
-version = "1.4.2"
+version = "1.5.0"
 description = "Local account switching for supported AI applications"
 edition = "2021"
 

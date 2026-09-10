@@ -181,22 +181,7 @@ jobs:
           base_url="https://github.com/$REPO/releases/download/$TAG"
 
           # Prefer CHANGELOG section for this version as notes
-          NOTES_JSON=$(python3 -c '
-import json, os, re, pathlib
-tag = os.environ["TAG"]
-version = tag.lstrip("v")
-notes = f"Release {tag}"
-path = pathlib.Path("CHANGELOG.md")
-if path.exists():
-    text = path.read_text(encoding="utf-8")
-    pattern = rf"^## \[?{re.escape(version)}\]?[^\n]*\n(.*?)(?=^## |\Z)"
-    m = re.search(pattern, text, flags=re.M | re.S)
-    if m:
-        body = re.sub(r"<!--.*?-->", "", m.group(1), flags=re.S).strip()
-        if body:
-            notes = body[:4000]
-print(json.dumps(notes))
-')
+          NOTES_JSON=$(python3 scripts/changelog-notes.py)
 
           mac_url=""; mac_sig=""
           win_x64_url=""; win_x64_sig=""

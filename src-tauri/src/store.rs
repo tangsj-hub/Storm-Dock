@@ -279,6 +279,11 @@ impl Controller {
             ApplicationKind::Grok => self.grok.live_match_session().ok(),
             ApplicationKind::Cursor => self.cursor.import_current().ok(),
         };
+        let grok_bot_active = if kind == ApplicationKind::Cursor {
+            crate::grok_bot::active_slot()
+        } else {
+            None
+        };
         self.all_accounts()
             .unwrap_or_default()
             .into_iter()
@@ -301,8 +306,20 @@ impl Controller {
                                 })
                             }),
                     });
+                let is_grok_bot_current = grok_bot_active
+                    .as_deref()
+                    .zip(account_session.as_ref())
+                    .is_some_and(|(active, saved)| {
+                        crate::grok_bot::session_matches_active_slot(saved, active)
+                    });
+                let (grok_bot_usage, grok_bot_reset_at) = if kind == ApplicationKind::Cursor {
+                    self.cursor_grok_bot_summary(&account)
+                } else {
+                    (None, None)
+                };
                 AccountSummary {
                     is_current,
+                    is_grok_bot_current,
                     id: account.id.clone(),
                     label: account.label.clone(),
                     email: account.email.clone(),
@@ -318,6 +335,8 @@ impl Controller {
                         .ok()
                         .flatten()
                         .and_then(|json| serde_json::from_str(&json).ok()),
+                    grok_bot_usage,
+                    grok_bot_reset_at,
                     status: self
                         .database
                         .query_row(
@@ -343,6 +362,34 @@ impl Controller {
                 }
             })
             .collect()
+    }
+
+    fn cursor_grok_bot_summary(
+        &self,
+        account: &Account,
+    ) -> (Option<crate::models::UsageMetric>, Option<String>) {
+        let json: Option<String> = self
+            .database
+            .query_row(
+                "SELECT usage_json FROM accounts WHERE id=?1",
+                params![account.id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+        if let Some(json) = json {
+            if let Ok(details) = serde_json::from_str::<CursorUsageDetails>(&json) {
+                if details.account_id == account.id {
+                    return (details.grok_bot, details.grok_bot_reset_at);
+                }
+            }
+        }
+        account
+            .raw_export
+            .get("cursor_usage_raw")
+            .and_then(|raw| cursor_usage_from_snapshot(account, raw))
+            .map(|details| (details.grok_bot, details.grok_bot_reset_at))
+            .unwrap_or((None, None))
     }
 
     pub(crate) fn reorder_accounts(

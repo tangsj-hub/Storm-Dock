@@ -383,3 +383,59 @@
 .dialogActions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 .dialogCancel { background: var(--solid); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--fg); font-size: 13px; font-weight: 650; min-height: 34px; padding: 0 12px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.updateRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.updateHint {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 10px;
+  text-align: center;
+}
+
+.updateCard {
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 12px;
+  max-width: 420px;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.updateAvailable {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 650;
+  margin: 0 0 6px;
+}
+
+.updateNotes {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.updateError {
+  color: var(--danger);
+  font-size: 12px;
+  margin-top: 10px;
+  max-width: 420px;
+  text-align: center;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

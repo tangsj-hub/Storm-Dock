@@ -1,6 +1,6 @@
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    AppHandle, Manager,
+    AppHandle, Manager, Runtime,
 };
 
 use crate::store::AppState;
@@ -28,5 +28,35 @@ pub(crate) fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>
 pub(crate) fn refresh_tray(app: &AppHandle) {
     if let (Some(tray), Ok(menu)) = (app.tray_by_id("main"), build_tray_menu(app)) {
         let _ = tray.set_menu(Some(menu));
+    }
+}
+
+pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = app.set_dock_visibility(true);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = window.set_skip_taskbar(false);
+        }
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
+pub(crate) fn hide_main_window_to_tray<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+        #[cfg(target_os = "macos")]
+        {
+            let _ = app.set_dock_visibility(false);
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = window.set_skip_taskbar(true);
+        }
     }
 }

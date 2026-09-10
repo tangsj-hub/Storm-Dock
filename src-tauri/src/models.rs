@@ -105,8 +105,14 @@ pub(crate) struct AccountSummary {
     pub(crate) import_type: ImportType,
     pub(crate) subscription: SubscriptionSummary,
     pub(crate) usage: Option<UsageMetric>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) grok_bot_usage: Option<UsageMetric>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) grok_bot_reset_at: Option<String>,
     pub(crate) days_remaining: Option<i64>,
     pub(crate) is_current: bool,
+    #[serde(default)]
+    pub(crate) is_grok_bot_current: bool,
     pub(crate) status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) base_url: Option<String>,

@@ -35,6 +35,10 @@ Storm Dock 是一款本地桌面应用，用于集中管理开发工具的多个
 - React / TypeScript / Vite
 - SQLite（单文件同步模式）
 
+## 更新日志
+
+见 [CHANGELOG.md](./CHANGELOG.md)。应用内更新说明见 [docs/updater.md](./docs/updater.md)。Windows 安装包（中英文 NSIS 推荐）见 [docs/windows-installer.md](./docs/windows-installer.md)。macOS DMG 排版见 [docs/macos-dmg.md](./docs/macos-dmg.md)。
+
 ## 许可证
 
 Storm Dock 使用 MIT License。第三方 npm 与 Cargo 依赖的许可证清单见

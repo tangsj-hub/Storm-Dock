@@ -49,6 +49,10 @@ restarting it, helping avoid loss of unsaved work.
 - React / TypeScript / Vite
 - SQLite (single-file sync mode)
 
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md). In-app updates: [docs/updater.md](./docs/updater.md). Windows installers (NSIS recommended, Chinese/English): [docs/windows-installer.md](./docs/windows-installer.md). macOS DMG layout: [docs/macos-dmg.md](./docs/macos-dmg.md).
+
 ## License
 
 Storm Dock is licensed under the MIT License. See

@@ -37,3 +37,9 @@ Thumbs.db
 CursorMeter/
 cc-switch/
 unsloth/
+
+# Tauri updater signing keys
+.tauri/
+*.key
+*.key.pub
+

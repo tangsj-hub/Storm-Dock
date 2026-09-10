@@ -1,0 +1,92 @@
+.dialogOverlay {
+  background: color-mix(in srgb, var(--fg) 28%, transparent);
+  inset: 0;
+  position: fixed;
+  z-index: 40;
+}
+
+.dialogContent {
+  background: var(--solid);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: 0 18px 42px var(--shadow-strong);
+  left: 50%;
+  max-width: 420px;
+  padding: 24px;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100vw - 48px);
+  z-index: 41;
+}
+
+.dialogContent h2 {
+  font-size: 17px;
+  margin: 0 0 9px;
+}
+
+.dialogContent p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.remember {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.remember input {
+  accent-color: var(--accent);
+  height: 15px;
+  width: 15px;
+}
+
+.remember label {
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.cancel,
+.secondary,
+.primary {
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.cancel,
+.secondary {
+  background: var(--solid);
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+}
+
+.cancel:hover,
+.secondary:hover {
+  background: var(--hover);
+}
+
+.primary {
+  background: var(--accent);
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.primary:hover {
+  filter: brightness(1.05);
+}

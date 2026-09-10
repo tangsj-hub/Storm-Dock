@@ -1,11 +1,10 @@
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Tabs from "@radix-ui/react-tabs";
-import { ArrowLeft, Check, ChevronDown, Database, FolderSync, KeyRound, Languages, Monitor, PanelTop, Power } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Database, Download, FolderSync, KeyRound, Languages, Monitor, PanelTop, Power, RefreshCw } from "lucide-react";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
-import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
@@ -13,12 +12,14 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import i18n from "../../i18n";
 import { exportDatabase, getDatabasePath, getPreserveCodexOfficialAuth, importDatabase, moveDatabase, setPreserveCodexOfficialAuth } from "../../lib/api";
+import { getCloseBehavior, setCloseBehavior, type CloseBehavior } from "../../lib/closeBehavior";
 import { getPreference, setPreference, type ThemePreference } from "../../lib/theme";
 import { applicationKindFromQuery, homePath, syncDocumentAppKind } from "../../lib/types";
 import logo from "../../assets/logo.svg";
 import cursorIcon from "../../assets/cursor.svg";
 import codexIcon from "../../assets/codex.svg";
 import grokIcon from "../../assets/tools/grok.svg";
+import { checkForAppUpdate, installUpdateAndRestart } from "../../lib/updater";
 import { LocalEnvPanel } from "./LocalEnvPanel";
 import "../../styles/global.css";
 import styles from "./page.module.css";
@@ -51,10 +52,24 @@ function SettingsPage() {
   const [databaseBusy, setDatabaseBusy] = useState(false);
   const [pendingImport, setPendingImport] = useState<string>();
   const [launchAtLogin, setLaunchAtLogin] = useState(false);
-  const [closeToTray, setCloseToTray] = useState(() => localStorage.getItem("closeToTray") !== "false");
+  const [closeBehavior, setCloseBehaviorState] = useState<CloseBehavior>(() => getCloseBehavior());
   const [preserveCodexAuth, setPreserveCodexAuth] = useState(true);
   const [appVersion, setAppVersion] = useState("1.1.0");
-  useEffect(() => { void invoke("set_close_to_tray", { enabled: closeToTray }); }, [closeToTray]);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState<"idle" | "up-to-date" | "available" | "error">("idle");
+  const [updateVersion, setUpdateVersion] = useState<string>();
+  const [updateNotes, setUpdateNotes] = useState<string>();
+  const [updateError, setUpdateError] = useState<string>();
+  useEffect(() => { setCloseBehavior(closeBehavior); }, [closeBehavior]);
+  useEffect(() => {
+    const onChanged = (event: Event) => {
+      const detail = (event as CustomEvent<CloseBehavior>).detail;
+      if (detail === "ask" || detail === "tray" || detail === "quit") setCloseBehaviorState(detail);
+    };
+    window.addEventListener("close-behavior-changed", onChanged);
+    return () => window.removeEventListener("close-behavior-changed", onChanged);
+  }, []);
   const current = languages.find((item) => item.code === language) ?? languages[0];
   const currentTheme = themes.find((item) => item.code === theme) ?? themes[2];
   const selectTheme = (pref: ThemePreference) => {
@@ -72,7 +87,16 @@ function SettingsPage() {
   useEffect(() => { void getPreserveCodexOfficialAuth().then(setPreserveCodexAuth).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void getVersion().then(setAppVersion).catch(() => setAppVersion("1.1.0")); }, []);
   const toggleLaunchAtLogin = async () => { try { if (launchAtLogin) await disable(); else await enable(); setLaunchAtLogin(!launchAtLogin); } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); } };
-  const toggleCloseToTray = () => { const next = !closeToTray; setCloseToTray(next); localStorage.setItem("closeToTray", String(next)); };
+  const closeBehaviorOptions = [
+    { code: "ask" as const, key: "closeBehaviorAsk" },
+    { code: "tray" as const, key: "closeBehaviorTray" },
+    { code: "quit" as const, key: "closeBehaviorQuit" }
+  ];
+  const currentCloseBehavior = closeBehaviorOptions.find((item) => item.code === closeBehavior) ?? closeBehaviorOptions[0];
+  const selectCloseBehavior = (code: CloseBehavior) => {
+    setCloseBehaviorState(code);
+    setCloseBehavior(code);
+  };
   const togglePreserveCodexAuth = async () => {
     const next = !preserveCodexAuth;
     try {
@@ -134,6 +158,49 @@ function SettingsPage() {
     }
   };
 
+
+  const checkUpdates = async () => {
+    setUpdateBusy(true);
+    setUpdateError(undefined);
+    setUpdateStatus("idle");
+    try {
+      const result = await checkForAppUpdate();
+      if (result.status === "up-to-date") {
+        setUpdateStatus("up-to-date");
+        setUpdateVersion(undefined);
+        setUpdateNotes(undefined);
+        setNoticeStatus("success");
+        setNotice(t("updateUpToDate"));
+      } else {
+        setUpdateStatus("available");
+        setUpdateVersion(result.version);
+        setUpdateNotes(result.notes);
+      }
+    } catch (error) {
+      setUpdateStatus("error");
+      const message = error instanceof Error ? error.message : String(error);
+      setUpdateError(message);
+      setNoticeStatus("error");
+      setNotice(t("updateCheckFailed", { error: message }));
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+  const downloadAndInstallUpdate = async () => {
+    setUpdateInstalling(true);
+    setUpdateError(undefined);
+    try {
+      await installUpdateAndRestart();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setUpdateError(message);
+      setUpdateStatus("error");
+      setNoticeStatus("error");
+      setNotice(t("updateInstallFailed", { error: message }));
+      setUpdateInstalling(false);
+    }
+  };
+
   return <Toast.Provider><main className={styles.shell}>
     <WindowDragSurface />
     <header className={styles.header}><a aria-label={t("back")} className={styles.back} href={homePath(applicationKindFromQuery())}><ArrowLeft aria-hidden="true" size={20} /></a><h1>{t("settingsTitle")}</h1></header>
@@ -160,7 +227,11 @@ function SettingsPage() {
           <div className={styles.sectionTitle}><PanelTop aria-hidden="true" size={20} /><h2>{t("windowBehavior")}</h2></div>
           <div className={styles.behaviorList}>
             <div className={styles.row}><div className={styles.settingCopy}><span className={`${styles.icon} ${styles.powerIcon}`}><Power aria-hidden="true" size={20} /></span><div><h2>{t("launchAtLogin")}</h2><p>{t("launchAtLoginDescription")}</p></div></div><button aria-checked={launchAtLogin} className={styles.switch} onClick={() => void toggleLaunchAtLogin()} role="switch" type="button"><span /></button></div>
-            <div className={styles.row}><div className={styles.settingCopy}><span className={`${styles.icon} ${styles.windowIcon}`}><PanelTop aria-hidden="true" size={20} /></span><div><h2>{t("closeToTray")}</h2><p>{t("closeToTrayDescription")}</p></div></div><button aria-checked={closeToTray} className={styles.switch} onClick={toggleCloseToTray} role="switch" type="button"><span /></button></div>
+            <div className={styles.row}><div className={styles.settingCopy}><span className={`${styles.icon} ${styles.windowIcon}`}><PanelTop aria-hidden="true" size={20} /></span><div><h2>{t("closeBehavior")}</h2><p>{t("closeBehaviorDescription")}</p></div></div>
+              <DropdownMenu.Root><DropdownMenu.Trigger className={styles.languageTrigger}><span>{t(currentCloseBehavior.key)}</span><ChevronDown aria-hidden="true" size={16} /></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content align="end" className={styles.menu} sideOffset={6}>
+                {closeBehaviorOptions.map((item) => <DropdownMenu.Item className={styles.menuItem} key={item.code} onSelect={() => selectCloseBehavior(item.code)}><span>{t(item.key)}</span>{item.code === closeBehavior && <Check aria-hidden="true" size={16} />}</DropdownMenu.Item>)}
+              </DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root>
+            </div>
           </div>
           <div className={styles.sectionTitle}><KeyRound aria-hidden="true" size={20} /><h2>{t("codexAppEnhancement")}</h2></div>
           <div className={styles.behaviorList}>
@@ -192,6 +263,26 @@ function SettingsPage() {
               <h2>{t("appName")}</h2>
               <p className={styles.aboutTagline}>{t("aboutTagline")}</p>
               <p className={styles.aboutVersion}>{t("aboutVersion", { version: appVersion })}</p>
+              <div className={styles.updateRow}>
+                <button className={styles.databaseButton} disabled={updateBusy || updateInstalling} onClick={() => void checkUpdates()} type="button">
+                  <RefreshCw aria-hidden="true" className={updateBusy ? styles.spin : undefined} size={14} />
+                  {updateBusy ? t("updateChecking") : t("updateCheck")}
+                </button>
+                {updateStatus === "available" && updateVersion && (
+                  <button className={styles.databaseButton} disabled={updateInstalling} onClick={() => void downloadAndInstallUpdate()} type="button">
+                    <Download aria-hidden="true" size={14} />
+                    {updateInstalling ? t("updateInstalling") : t("updateDownloadInstall", { version: updateVersion })}
+                  </button>
+                )}
+              </div>
+              {updateStatus === "up-to-date" && <p className={styles.updateHint}>{t("updateUpToDate")}</p>}
+              {updateStatus === "available" && updateVersion && (
+                <div className={styles.updateCard}>
+                  <p className={styles.updateAvailable}>{t("updateAvailable", { version: updateVersion })}</p>
+                  {updateNotes && <p className={styles.updateNotes}>{updateNotes}</p>}
+                </div>
+              )}
+              {updateStatus === "error" && updateError && <p className={styles.updateError}>{t("updateCheckFailed", { error: updateError })}</p>}
             </header>
             <div className={styles.aboutBody}>
               <section className={styles.aboutSection}>

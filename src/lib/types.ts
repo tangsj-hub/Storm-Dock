@@ -48,8 +48,11 @@ export type Account = {
   importType: "oauth" | "token" | "jwt" | "native" | "api_key";
   subscription: { plan?: string; expiresAt?: number; billingCycleEnd?: string; checkedAt?: number };
   usage?: { kind: "currency" | "percent" | "requests"; used: number; limit?: number; percent: number };
+  grokBotUsage?: { kind: "percent"; used: number; percent: number };
+  grokBotResetAt?: string;
   daysRemaining?: number;
   isCurrent: boolean;
+  isGrokBotCurrent?: boolean;
   status?: "invalid" | "missing";
   baseUrl?: string;
 };

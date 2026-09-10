@@ -16,6 +16,9 @@
 .iconButton:hover { background: var(--hover); border-color: var(--border-strong); color: var(--fg); }
 .iconButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }
 .grokBotIcon { display: block; height: 24px; object-fit: contain; width: 24px; }
+.grokBotButton { position: relative; }
+.grokBotCurrentBadge { align-items: center; background: #16a34a; border: 1px solid var(--solid); border-radius: 999px; color: #fff; display: inline-flex; height: 14px; justify-content: center; pointer-events: none; position: absolute; right: -3px; top: -3px; width: 14px; }
+.grokBotCurrentBadge svg { display: block; }
 .spinning { animation: spin .8s linear infinite; }
 .addButton { align-items: center; background: var(--accent); border: 1px solid var(--accent); border-radius: 5px; color: var(--on-accent); display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; }
 .addButton:hover { background: var(--accent-hover); }

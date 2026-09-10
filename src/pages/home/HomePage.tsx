@@ -751,6 +751,7 @@ export function HomePage() {
         await invoke("confirm_launch_grok_bot", { id: account.id });
       }
       setNotice(result.status === "same" ? t("grokBotAlreadyActive") : t("grokBotLaunched"));
+      await loadAccounts();
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   };
@@ -762,6 +763,7 @@ export function HomePage() {
     try {
       await invoke("confirm_launch_grok_bot", { id: account.id });
       setNotice(t("grokBotLaunched"));
+      await loadAccounts();
     } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); }
     finally { setBusy(false); }
   };

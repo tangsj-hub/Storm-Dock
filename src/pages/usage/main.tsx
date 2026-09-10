@@ -45,6 +45,20 @@ function resetCopy(resetAt: string | undefined, t: (key: string, options?: Recor
   return t("usageResetPassed");
 }
 
+function formatResetAt(resetAt: string | undefined) {
+  if (!resetAt) return;
+  const date = new Date(resetAt);
+  if (Number.isNaN(date.getTime())) return;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function botResetCopy(resetAt: string | undefined, t: (key: string, options?: Record<string, unknown>) => string) {
+  const relative = resetCopy(resetAt, t);
+  const exact = formatResetAt(resetAt);
+  if (!exact || relative === t("usageUnknown")) return relative;
+  return t("usageResetsWithTime", { relative, time: exact });
+}
+
 function UsagePage() {
   const { t } = useTranslation();
   const accountId = new URLSearchParams(window.location.search).get("accountId") ?? "";
@@ -130,7 +144,7 @@ function UsagePage() {
       <div className={styles.usageLines}>
         <p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(t("usagePrimary"), data.primary, t)}</p>
         {data.onDemand && <p className={isOverLimit(data.onDemand) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(t("usageOnDemand"), data.onDemand, t)}</p>}
-        {data.grokBot && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset}> · {resetCopy(data.grokBotResetAt, t)}</span>}</p>}
+        {data.grokBot && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset} title={formatResetAt(data.grokBotResetAt)}> · {botResetCopy(data.grokBotResetAt, t)}</span>}</p>}
       </div>
       <div className={styles.charts}>
         <section><h2>{t("usageWeekly")}</h2>{data.weeklyAvailable ? <WeeklyChart days={data.weekly} events={data.events ?? []} /> : <p className={styles.muted}>{data.weeklyError ?? t("usageWeeklyUnavailable")}</p>}</section>

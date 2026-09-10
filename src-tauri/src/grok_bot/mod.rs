@@ -26,7 +26,7 @@ use sha2::{Digest, Sha256};
 use crate::{
     cursor::session::jwt_claims,
     error::{AppError, Result},
-    models::{Session, ACCESS_TOKEN_KEY},
+    models::{Session, ACCESS_TOKEN_KEY, AUTH_ID_KEY},
 };
 
 const ACCOUNTS_KEY: &str = "cursor-accounts";
@@ -142,6 +142,57 @@ fn account_slot(sub: &str) -> String {
     digest.update(b"sand-account-slot\0");
     digest.update(sub.as_bytes());
     format!("{:x}", digest.finalize())
+}
+
+fn active_slot_from_root(root: &Value) -> Option<String> {
+    root.get(ACCOUNTS_KEY)
+        .and_then(Value::as_str)
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .and_then(|accounts| {
+            accounts
+                .get("active")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .filter(|slot| !slot.is_empty())
+}
+
+fn session_auth_id(session: &Session) -> Option<String> {
+    if let Some(auth_id) = session
+        .values
+        .get(AUTH_ID_KEY)
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(auth_id.to_owned());
+    }
+    let access = session.values.get(ACCESS_TOKEN_KEY)?;
+    jwt_claims(access)?
+        .get("sub")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+}
+
+/// Active Grok Bot account slot from the local client store, if any.
+pub(crate) fn active_slot() -> Option<String> {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let path = platform::data_path().ok()?;
+        let root = read_store_root(&path).ok()?;
+        active_slot_from_root(&root)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Whether this Cursor session matches the local Grok Bot client's active slot.
+pub(crate) fn session_matches_active_slot(session: &Session, active: &str) -> bool {
+    session_auth_id(session)
+        .map(|sub| account_slot(&sub) == active)
+        .unwrap_or(false)
 }
 
 #[cfg(target_os = "macos")]
@@ -324,16 +375,7 @@ fn session_target<'a>(session: &'a Session, root: &Value) -> Result<SessionTarge
         .unwrap_or_default()
         .to_owned();
     let slot = account_slot(&sub);
-    let active = root
-        .get(ACCOUNTS_KEY)
-        .and_then(Value::as_str)
-        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
-        .and_then(|accounts| {
-            accounts
-                .get("active")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-        });
+    let active = active_slot_from_root(root);
     if active.as_deref() == Some(&slot) {
         Ok(SessionTarget::Same)
     } else {
@@ -530,6 +572,19 @@ mod tests {
             session_target(&session, &root).expect("target"),
             SessionTarget::Same
         ));
+        assert_eq!(active_slot_from_root(&root).as_deref(), Some(slot.as_str()));
+        assert!(session_matches_active_slot(&session, &slot));
+    }
+
+    #[test]
+    fn session_matches_active_slot_uses_auth_id() {
+        let slot = account_slot("auth0|user-2");
+        let session = Session {
+            values: BTreeMap::from([(AUTH_ID_KEY.into(), "auth0|user-2".into())]),
+            raw_export: None,
+        };
+        assert!(session_matches_active_slot(&session, &slot));
+        assert!(!session_matches_active_slot(&session, "other-slot"));
     }
 
     #[test]

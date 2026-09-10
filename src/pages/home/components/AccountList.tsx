@@ -2,12 +2,12 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as Progress from "@radix-ui/react-progress";
-import { Activity, Check, ChartNoAxesCombined, Copy, FileOutput, GripVertical, KeyRound, LogIn, Pencil, RefreshCw, Trash2, UserRound } from "lucide-react";
+import { Activity, Check, ChartNoAxesCombined, Copy, FileOutput, GripVertical, KeyRound, LogIn, Pencil, RefreshCw, Trash2, UserRound, Zap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "../../../components/Tooltip";
 import grokBotIcon from "../../../assets/tools/grok-bot.png";
 import { canSwitchToDesktop, editAccountPath, type Account, type ApplicationKind } from "../../../lib/types";
-import { accountKindKey, endpointHost, subscriptionLabel, usageLabel } from "../lib/accountPresentation";
+import { accountKindKey, endpointHost, grokBotUsageLabel, subscriptionLabel, usageLabel } from "../lib/accountPresentation";
 import type { SwitchProgress } from "../types";
 import styles from "../page.module.css";
 
@@ -31,6 +31,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
   const subscription = subscriptionLabel(account, t);
   const usage = usageLabel(account, t);
+  const grokBotUsage = grokBotUsageLabel(account, t);
   const host = kind !== "cursor" ? endpointHost(account.baseUrl) : undefined;
   const isApiKey = account.importType === "api_key";
   const canLaunchBot = kind === "cursor" && account.subscription.plan?.toLowerCase() !== "free";
@@ -40,6 +41,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
       {kind !== "cursor" && <span className={`${styles.kindBadge} ${isApiKey ? styles.kindApiKey : styles.kindAccount}`}>{isApiKey ? <KeyRound aria-hidden="true" size={11} /> : <UserRound aria-hidden="true" size={11} />}{t(accountKindKey(account))}</span>}
       {subscription && <span className={`${styles.metaBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name} · {subscription.expiry}</span>}
       {usage && <span className={styles.metaBadge}>{usage}</span>}
+      {grokBotUsage && <span className={styles.metaBadge}>{grokBotUsage}</span>}
       {host && <span className={styles.metaBadge}>{host}</span>}
       {account.status === "invalid" && <span className={styles.invalidBadge}>{t("tokenInvalid", { defaultValue: "Token已失效" })}</span>}
       {account.status === "missing" && <span className={styles.missingBadge}>{t("credentialMissing", { defaultValue: "凭证缺失" })}</span>}
@@ -47,7 +49,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
     <div className={styles.accountActions}>
       {progress ? <div className={styles.progress}><span>{t(`switchStages.${progress.stage}`)}</span><Progress.Root aria-label={t("switchProgress")} className={styles.progressRoot} value={progress.percent}><Progress.Indicator className={progress.status === "error" ? styles.progressError : styles.progressIndicator} style={{ transform: `translateX(-${100 - progress.percent}%)` }} /></Progress.Root></div> : account.isCurrent ? <span className={styles.currentBadge}><Check aria-hidden="true" size={16} />{t("current")}</span> : canSwitchToDesktop(account) ? <button className={styles.activate} disabled={busy} onClick={() => onSwitch(account)} type="button"><LogIn aria-hidden="true" size={17} />{t("switch")}</button> : null}
       {progress?.status === "error" && canSwitchToDesktop(account) && <button className={styles.activate} onClick={() => onSwitch(account)} type="button"><RefreshCw aria-hidden="true" size={16} />{t("retry")}</button>}
-      {canLaunchBot && <Tooltip content={t("launchGrokBot")}><button aria-label={t("launchGrokBot")} className={styles.iconButton} disabled={busy} onClick={() => onLaunchBot(account)} type="button"><img alt="" aria-hidden="true" className={styles.grokBotIcon} src={grokBotIcon} /></button></Tooltip>}
+      {canLaunchBot && <Tooltip content={account.isGrokBotCurrent ? t("grokBotCurrent") : t("launchGrokBot")}><button aria-label={account.isGrokBotCurrent ? t("grokBotCurrent") : t("launchGrokBot")} className={`${styles.iconButton} ${styles.grokBotButton}`} disabled={busy} onClick={() => onLaunchBot(account)} type="button"><img alt="" aria-hidden="true" className={styles.grokBotIcon} src={grokBotIcon} />{account.isGrokBotCurrent && <span className={styles.grokBotCurrentBadge} aria-hidden="true"><Zap size={9} strokeWidth={2.6} /></span>}</button></Tooltip>}
       {isApiKey ? <>
         <Tooltip content={t("edit")}><a aria-disabled={busy || undefined} aria-label={t("editAccount", { account: account.label })} className={styles.iconButton} href={busy ? undefined : editAccountPath(kind, account.id)}><Pencil aria-hidden="true" size={16} /></a></Tooltip>
         <Tooltip content={t("duplicate")}><button aria-label={t("duplicate")} className={styles.iconButton} disabled={busy} onClick={() => onDuplicate(account)} type="button"><Copy aria-hidden="true" size={16} /></button></Tooltip>

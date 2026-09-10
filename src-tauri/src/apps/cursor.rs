@@ -5,6 +5,9 @@ use crate::apps::ApplicationAdapter;
 use crate::error::{AppError, Result};
 use crate::models::{ApplicationKind, ApplicationStatus, Session, ACCESS_TOKEN_KEY, CURSOR_KEYS};
 
+#[cfg(target_os = "windows")]
+mod cursor_windows;
+
 pub(crate) struct CursorAdapter {
     pub(crate) database: Option<PathBuf>,
 }
@@ -218,9 +221,7 @@ impl ApplicationAdapter for CursorAdapter {
         }
         #[cfg(target_os = "windows")]
         {
-            std::process::Command::new("tasklist")
-                .output()
-                .is_ok_and(|output| String::from_utf8_lossy(&output.stdout).contains("Cursor.exe"))
+            cursor_windows::is_running()
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows")))]
         {
@@ -231,39 +232,47 @@ impl ApplicationAdapter for CursorAdapter {
 
 pub(crate) fn launch_cursor() -> Result<()> {
     #[cfg(target_os = "macos")]
-    let status = std::process::Command::new("open")
-        .args(["-a", "Cursor"])
-        .status();
+    {
+        let status = std::process::Command::new("open")
+            .args(["-a", "Cursor"])
+            .status();
+        return match status {
+            Ok(status) if status.success() => Ok(()),
+            _ => Err(AppError::Message(
+                "无法启动 Cursor，请确认应用已安装。".into(),
+            )),
+        };
+    }
     #[cfg(target_os = "windows")]
-    let status = std::process::Command::new("cmd")
-        .args(["/C", "start", "", "Cursor"])
-        .status();
+    {
+        return cursor_windows::launch();
+    }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let status: std::io::Result<std::process::ExitStatus> =
-        Err(std::io::Error::other("unsupported OS"));
-    match status {
-        Ok(status) if status.success() => Ok(()),
-        _ => Err(AppError::Message(
+    {
+        Err(AppError::Message(
             "无法启动 Cursor，请确认应用已安装。".into(),
-        )),
+        ))
     }
 }
 
 pub(crate) fn terminate_cursor() -> Result<()> {
     #[cfg(target_os = "macos")]
-    let status = std::process::Command::new("pkill")
-        .args(["-x", "Cursor"])
-        .status();
+    {
+        let status = std::process::Command::new("pkill")
+            .args(["-x", "Cursor"])
+            .status();
+        return match status {
+            Ok(status) if status.success() => Ok(()),
+            _ => Err(AppError::Message("无法结束 Cursor 进程。".into())),
+        };
+    }
     #[cfg(target_os = "windows")]
-    let status = std::process::Command::new("taskkill")
-        .args(["/IM", "Cursor.exe", "/F"])
-        .status();
+    {
+        return cursor_windows::terminate();
+    }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let status: std::io::Result<std::process::ExitStatus> =
-        Err(std::io::Error::other("unsupported OS"));
-    match status {
-        Ok(status) if status.success() => Ok(()),
-        _ => Err(AppError::Message("无法结束 Cursor 进程。".into())),
+    {
+        Err(AppError::Message("无法结束 Cursor 进程。".into()))
     }
 }
 

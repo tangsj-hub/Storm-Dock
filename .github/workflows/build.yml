@@ -19,7 +19,7 @@ jobs:
         include:
           - name: macOS
             os: macos-latest
-            bundles: dmg
+            bundles: app,dmg
             artifact: storm-dock-macos
             path: |
               src-tauri/target/release/bundle/dmg/*.dmg
@@ -113,6 +113,54 @@ jobs:
       - name: Build installer
         run: npm run tauri build -- --bundles ${{ matrix.bundles }}
 
+      - name: Ensure macOS updater artifacts
+        if: matrix.name == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          MACOS_DIR="src-tauri/target/release/bundle/macos"
+          echo "Contents of $MACOS_DIR:"
+          ls -la "$MACOS_DIR"
+
+          APP=$(find "$MACOS_DIR" -maxdepth 1 -name '*.app' -type d | head -1 || true)
+          if [ -z "$APP" ]; then
+            echo "❌ No .app bundle found in $MACOS_DIR" >&2
+            exit 1
+          fi
+          echo "Using app: $APP"
+
+          TAR=$(find "$MACOS_DIR" -maxdepth 1 -name '*.app.tar.gz' -type f | head -1 || true)
+          if [ -z "$TAR" ]; then
+            # Product names with spaces sometimes skip automatic updater packaging.
+            TAR="$MACOS_DIR/$(basename "$APP").tar.gz"
+            echo "Creating updater archive: $TAR"
+            tar -czf "$TAR" -C "$MACOS_DIR" "$(basename "$APP")"
+          fi
+
+          if [ ! -f "$TAR.sig" ]; then
+            KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
+            if [ ! -f "$KEY_PATH" ]; then
+              RAW="${TAURI_SIGNING_PRIVATE_KEY:-}"
+              if [ -z "$RAW" ]; then
+                echo "❌ Missing TAURI_SIGNING_PRIVATE_KEY to sign macOS updater archive" >&2
+                exit 1
+              fi
+              if echo "$RAW" | head -n1 | grep -q '^untrusted comment:'; then
+                printf '%s\n' "$RAW" > "$KEY_PATH"
+              else
+                printf '%s' "$RAW" | (base64 --decode 2>/dev/null || base64 -D 2>/dev/null) > "$KEY_PATH" || {
+                  ONE=$(printf '%s' "$RAW" | tr -d '\r\n')
+                  printf '%s\n%s\n' "untrusted comment: tauri signing key" "$ONE" > "$KEY_PATH"
+                }
+              fi
+            fi
+            echo "Signing $TAR"
+            npx tauri signer sign "$TAR" -f "$KEY_PATH"
+          fi
+
+          ls -la "$TAR" "$TAR.sig"
+          echo "✅ macOS updater artifacts ready"
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
@@ -176,71 +224,8 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          VERSION="${TAG#v}"
-          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          base_url="https://github.com/$REPO/releases/download/$TAG"
-
-          # Prefer CHANGELOG section for this version as notes
-          NOTES_JSON=$(python3 scripts/changelog-notes.py)
-
-          mac_url=""; mac_sig=""
-          win_x64_url=""; win_x64_sig=""
-
-          shopt -s nullglob
-          for sig in dl/*.sig; do
-            base=${sig%.sig}
-            fname=$(basename "$base")
-            url="$base_url/$fname"
-            # Keep signature as a single line for JSON
-            sig_content=$(tr -d '\r\n' < "$sig")
-            case "$fname" in
-              *.app.tar.gz|*.tar.gz)
-                mac_url="$url"; mac_sig="$sig_content";;
-              *.msi)
-                win_x64_url="$url"; win_x64_sig="$sig_content";;
-              *.exe)
-                # Prefer MSI for Windows updater when both exist; keep exe as fallback
-                if [ -z "$win_x64_url" ]; then
-                  win_x64_url="$url"; win_x64_sig="$sig_content"
-                fi
-                ;;
-            esac
-          done
-
-          tmp_json=$(mktemp)
-          {
-            echo '{'
-            echo "  \"version\": \"$VERSION\","
-            echo "  \"notes\": $NOTES_JSON,"
-            echo "  \"pub_date\": \"$PUB_DATE\","
-            echo '  "platforms": {'
-            first=1
-            if [ -n "$mac_url" ] && [ -n "$mac_sig" ]; then
-              for key in darwin-aarch64 darwin-x86_64; do
-                [ $first -eq 0 ] && echo ','
-                echo "    \"$key\": {\"signature\": \"$mac_sig\", \"url\": \"$mac_url\"}"
-                first=0
-              done
-            fi
-            if [ -n "$win_x64_url" ] && [ -n "$win_x64_sig" ]; then
-              [ $first -eq 0 ] && echo ','
-              echo "    \"windows-x86_64\": {\"signature\": \"$win_x64_sig\", \"url\": \"$win_x64_url\"}"
-              first=0
-            fi
-            echo
-            echo '  }'
-            echo '}'
-          } > "$tmp_json"
-
-          echo "Generated latest.json:"
-          cat "$tmp_json"
-          python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$tmp_json"
-          mv "$tmp_json" latest.json
-
-          if [ -z "$mac_url" ] && [ -z "$win_x64_url" ]; then
-            echo "❌ No signed updater artifacts found for latest.json" >&2
-            exit 1
-          fi
+          python3 scripts/generate-latest-json.py
+          test -f latest.json
 
       - name: Upload latest.json to release
         env:

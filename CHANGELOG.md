@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-09-10
+
+### Fixed
+
+- macOS in-app updates: CI now always produces and publishes signed `.app.tar.gz` updater artifacts and includes `darwin-aarch64` platforms in `latest.json`.
+
 ## [1.4.1] - 2026-09-10
 
 ### Fixed
@@ -37,7 +43,8 @@ How to release:
 4. CI publishes installers + latest.json; notes field prefers this CHANGELOG excerpt.
 -->
 
-[Unreleased]: https://github.com/tangsj-hub/Storm-Dock/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/tangsj-hub/Storm-Dock/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.4.2
 [1.4.1]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.4.1
 [1.4.0]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.4.0
 [1.3.0]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.3.0

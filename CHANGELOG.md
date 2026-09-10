@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-09-10
+
+### Fixed
+
+- CI `build.yml` YAML parse error that blocked the v1.4.0 tag workflow (moved CHANGELOG notes generation into `scripts/changelog-notes.py`).
+
 ## [1.4.0] - 2026-09-10
 
 ### Added
@@ -31,6 +37,7 @@ How to release:
 4. CI publishes installers + latest.json; notes field prefers this CHANGELOG excerpt.
 -->
 
-[Unreleased]: https://github.com/tangsj-hub/Storm-Dock/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/tangsj-hub/Storm-Dock/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.4.1
 [1.4.0]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.4.0
 [1.3.0]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.3.0

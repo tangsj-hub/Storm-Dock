@@ -186,7 +186,23 @@ Object.assign(resources.zh.translation, {
   hfTokenLabel: "访问令牌",
   hfTokenPlaceholder: "hf_…", hfTokenConfiguredPlaceholder: "已保存，输入新令牌可替换",
   hfTokenSave: "保存", hfTokenSaved: "Hugging Face 令牌已保存。", hfTokenCleared: "已清除 Hugging Face 令牌。",
-  hfOpenSettings: "去设置"
+  hfOpenSettings: "去设置",
+  grokBot: "Grok Bot",
+  grokBotTitle: "Grok Bot",
+  grokBotDescription: "查看本机 Grok Bot 是否就绪，并管理本机会话。",
+  grokBotReady: "已就绪",
+  grokBotUnavailable: "本机不可用",
+  grokBotStatusLoading: "正在读取本机状态...",
+  grokBotSignedIn: "已登录",
+  grokBotSignedInAs: "已登录 {{account}}",
+  grokBotNotSignedIn: "未登录",
+  grokBotRunning: "运行中",
+  grokBotNotRunning: "未运行",
+  renameSession: "重命名会话",
+  renameSessionDescription: "修改这个本机会话的显示名称。",
+  sessionTitle: "会话名称",
+  sessionRenamed: "会话名称已更新。",
+  savingSessionTitle: "保存中..."
 });
 Object.assign(resources.en.translation, {
   settingsTabs: "Settings sections", settingsTabGeneral: "General", settingsTabHuggingFace: "Hugging Face", settingsTabData: "Data", settingsTabLocal: "Local", settingsTabAbout: "About",
@@ -318,7 +334,23 @@ Object.assign(resources.en.translation, {
   hfTokenLabel: "Access token",
   hfTokenPlaceholder: "hf_…", hfTokenConfiguredPlaceholder: "Saved. Enter a new token to replace it.",
   hfTokenSave: "Save", hfTokenSaved: "Hugging Face token saved.", hfTokenCleared: "Hugging Face token cleared.",
-  hfOpenSettings: "Open settings"
+  hfOpenSettings: "Open settings",
+  grokBot: "Grok Bot",
+  grokBotTitle: "Grok Bot",
+  grokBotDescription: "See whether Grok Bot is ready on this machine and manage local sessions.",
+  grokBotReady: "Ready",
+  grokBotUnavailable: "Unavailable on this machine",
+  grokBotStatusLoading: "Reading local status...",
+  grokBotSignedIn: "Signed in",
+  grokBotSignedInAs: "Signed in as {{account}}",
+  grokBotNotSignedIn: "Not signed in",
+  grokBotRunning: "Running",
+  grokBotNotRunning: "Not running",
+  renameSession: "Rename session",
+  renameSessionDescription: "Change the display name of this local session.",
+  sessionTitle: "Session name",
+  sessionRenamed: "Session name updated.",
+  savingSessionTitle: "Saving..."
 });
 
 void i18n.use(initReactI18next).init({

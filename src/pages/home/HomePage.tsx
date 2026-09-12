@@ -72,6 +72,7 @@ import logo from "../../assets/logo.svg";
 import codexIcon from "../../assets/codex.svg";
 import cursorIcon from "../../assets/cursor.svg";
 import grokIcon from "../../assets/tools/grok.svg";
+import grokBotIcon from "../../assets/tools/grok-bot.png";
 import "../../i18n";
 import {
   deleteCodexPlugin,
@@ -80,20 +81,26 @@ import {
   deleteCursorSession,
   deleteCursorSessions,
   deleteCursorPlugin,
+  deleteGrokBotSession,
+  deleteGrokBotSessions,
   deleteGrokPlugin,
   deleteGrokSession,
   deleteGrokSessions,
   getCodexSessionMessages,
   getCursorSessionMessages,
+  getGrokBotSessionMessages,
+  getGrokBotStatus,
   getGrokSessionMessages,
   launchCodexSession,
   launchGrokSession,
+  renameGrokBotSession,
   listAccounts,
   listApplications,
   listCodexPlugins,
   listCodexSessions,
   listCursorSessions,
   listCursorPlugins,
+  listGrokBotSessions,
   listGrokPlugins,
   listGrokSessions,
   listMcpServers,
@@ -113,6 +120,7 @@ import {
   type ApplicationKind,
   type ApplicationStatus,
   type CodexSession,
+  type GrokBotStatus,
   type CodexSessionMessage,
   type McpServer,
 } from "../../lib/types";
@@ -132,6 +140,7 @@ import {
 import { useLatestRequest } from "./hooks/useLatestRequest";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { AccountList } from "./components/AccountList";
+import { GrokBotStatusCard } from "./components/GrokBotStatusCard";
 import { SessionWorkspace, type SessionProvider } from "./components/SessionWorkspace";
 import { shouldApplySwitchProgress } from "./lib/switchProgress";
 import type { WorkspaceSection, SwitchProgress } from "./types";
@@ -145,14 +154,17 @@ const APP_ICONS: Record<ApplicationKind, string> = {
 
 const workspaceSections: Array<{
   id: WorkspaceSection;
-  icon: ComponentType<{
+  icon?: ComponentType<{
     "aria-hidden"?: boolean | "true" | "false";
     size?: number;
   }>;
+  image?: string;
   labelKey: string;
+  cursorOnly?: boolean;
 }> = [
   { id: "accounts", icon: UserRound, labelKey: "accounts" },
   { id: "sessions", icon: MessageSquareText, labelKey: "sessions" },
+  { id: "grokBot", image: grokBotIcon, labelKey: "grokBot", cursorOnly: true },
   { id: "plugins", icon: Puzzle, labelKey: "plugins" },
   { id: "mcp", icon: Waypoints, labelKey: "mcp" },
 ];
@@ -524,6 +536,8 @@ export function HomePage() {
   >();
   const [sessionsDeleting, setSessionsDeleting] = useState(false);
   const [sessionRefreshKey, setSessionRefreshKey] = useState(0);
+  const [grokBotStatus, setGrokBotStatus] = useState<GrokBotStatus>();
+  const [grokBotStatusLoading, setGrokBotStatusLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -588,6 +602,27 @@ export function HomePage() {
     if (workspaceSection === "mcp")
       void listMcpServers(selected).then(setMcpServers).catch(showError);
   }, [selected, workspaceSection]);
+  useEffect(() => {
+    if (selected !== "cursor" && workspaceSection === "grokBot")
+      setWorkspaceSection("accounts");
+  }, [selected, workspaceSection]);
+  const loadGrokBotStatus = useCallback(async () => {
+    if (selected !== "cursor") {
+      setGrokBotStatus(undefined);
+      return;
+    }
+    setGrokBotStatusLoading(true);
+    try {
+      setGrokBotStatus(await getGrokBotStatus());
+    } catch (error) {
+      showError(error);
+    } finally {
+      setGrokBotStatusLoading(false);
+    }
+  }, [selected, showError]);
+  useEffect(() => {
+    void loadGrokBotStatus();
+  }, [loadGrokBotStatus, sessionRefreshKey]);
   const loadCodexSessions = useCallback(async () => {
     setSessionsRefreshing(true);
     try {
@@ -1037,6 +1072,19 @@ export function HomePage() {
       : { id: "cursor", label: t("cursor"), icon: cursorIcon, list: listCursorSessions, loadMessages: getCursorSessionMessages, remove: deleteCursorSession, removeMany: deleteCursorSessions },
     [selected, t],
   );
+  const grokBotSessionProvider = useMemo<SessionProvider>(
+    () => ({
+      id: "grokBot",
+      label: t("grokBot"),
+      icon: grokBotIcon,
+      list: listGrokBotSessions,
+      loadMessages: getGrokBotSessionMessages,
+      remove: deleteGrokBotSession,
+      removeMany: deleteGrokBotSessions,
+      rename: renameGrokBotSession,
+    }),
+    [t],
+  );
   const visibleCodexSessions = useMemo(
     () => filterSessions(codexSessions, sessionSearch),
     [codexSessions, sessionSearch],
@@ -1109,6 +1157,8 @@ export function HomePage() {
             <p>{t("mcpDescription")}</p>
           </div>
         );
+      if (workspaceSection === "grokBot")
+        return <SessionWorkspace header={<GrokBotStatusCard loading={grokBotStatusLoading} status={grokBotStatus} />} key={grokBotSessionProvider.id} onError={showError} onNotice={setNotice} onRefreshingChange={setSessionsRefreshing} provider={grokBotSessionProvider} refreshKey={sessionRefreshKey} />;
       if (workspaceSection === "sessions")
         return <SessionWorkspace key={sessionProvider.id} onError={showError} onNotice={setNotice} onRefreshingChange={setSessionsRefreshing} provider={sessionProvider} refreshKey={sessionRefreshKey} />;
       if (workspaceSection === "sessions") {
@@ -1643,7 +1693,7 @@ export function HomePage() {
         <section className={styles.workspace}>
           <aside aria-label={t("accountSections")} className={styles.sidebar}>
             <nav className={styles.sidebarNav}>
-              {workspaceSections.map(({ id, icon: Icon, labelKey }) => {
+              {workspaceSections.filter((section) => !section.cursorOnly || isCursor).map(({ id, icon: Icon, image, labelKey }) => {
                 const count =
                   id === "accounts"
                     ? accounts.length
@@ -1675,7 +1725,7 @@ export function HomePage() {
                       }}
                       type="button"
                     >
-                      <Icon aria-hidden="true" size={18} />
+                      {image ? <img alt="" className={styles.sidebarAppIcon} src={image} /> : Icon && <Icon aria-hidden="true" size={18} />}
                       {showBadge && (
                         <span
                           aria-hidden="true"

@@ -8,6 +8,7 @@ mod error;
 mod grok;
 mod grok_sessions;
 mod grok_bot;
+mod grok_bot_sessions;
 mod models;
 mod sql_backup;
 mod store;
@@ -322,6 +323,12 @@ pub fn run() {
             commands::force_restart_cursor,
             commands::prepare_launch_grok_bot,
             commands::confirm_launch_grok_bot,
+            commands::get_grok_bot_status,
+            commands::list_grok_bot_sessions,
+            commands::get_grok_bot_session_messages,
+            commands::delete_grok_bot_session,
+            commands::delete_grok_bot_sessions,
+            commands::rename_grok_bot_session,
             commands::get_codex_api_key_account,
             commands::update_codex_api_key_account,
             commands::duplicate_codex_api_key_account,

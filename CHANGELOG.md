@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Cursor tab: Grok Bot sidebar entry with this machine's Grok Bot status, local session list, and rename/delete (including batch edit).
+
 ## [1.5.1] - 2026-09-12
 
 ### Fixed

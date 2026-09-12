@@ -1,4 +1,4 @@
-export type WorkspaceSection = "accounts" | "sessions" | "plugins" | "mcp";
+export type WorkspaceSection = "accounts" | "sessions" | "grokBot" | "plugins" | "mcp";
 
 export type SwitchProgress = {
   operationId: string;

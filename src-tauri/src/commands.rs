@@ -2065,6 +2065,86 @@ pub(crate) async fn confirm_launch_grok_bot(
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct GrokBotStatus {
+    pub(crate) installed: bool,
+    pub(crate) signed_in: bool,
+    pub(crate) running: bool,
+    pub(crate) available: bool,
+    pub(crate) reason: Option<String>,
+    pub(crate) current_account_id: Option<String>,
+    pub(crate) current_account_label: Option<String>,
+}
+
+#[tauri::command]
+pub(crate) fn get_grok_bot_status(state: State<'_, AppState>) -> GrokBotStatus {
+    let local = crate::grok_bot::local_status();
+    let current = state.0.lock().ok().and_then(|controller| {
+        controller
+            .accounts(ApplicationKind::Cursor)
+            .into_iter()
+            .find(|account| account.is_grok_bot_current)
+    });
+    GrokBotStatus {
+        installed: local.installed,
+        signed_in: local.signed_in,
+        running: local.running,
+        available: local.available,
+        reason: local.reason,
+        current_account_id: current.as_ref().map(|account| account.id.clone()),
+        current_account_label: current.as_ref().map(|account| account.label.clone()),
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn list_grok_bot_sessions() -> Vec<CodexSession> {
+    tauri::async_runtime::spawn_blocking(crate::grok_bot_sessions::list_sessions)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn get_grok_bot_session_messages(id: String) -> Vec<CodexSessionMessage> {
+    tauri::async_runtime::spawn_blocking(move || crate::grok_bot_sessions::load_messages(&id))
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub(crate) async fn delete_grok_bot_session(id: String) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::grok_bot_sessions::delete_session(&id))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub(crate) async fn delete_grok_bot_sessions(ids: Vec<String>) -> SessionDeleteBatchResult {
+    let fallback_ids = ids.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (deleted_ids, failed_ids) = crate::grok_bot_sessions::delete_sessions(&ids);
+        SessionDeleteBatchResult {
+            deleted_ids,
+            failed_ids,
+        }
+    })
+    .await
+    .unwrap_or(SessionDeleteBatchResult {
+        deleted_ids: Vec::new(),
+        failed_ids: fallback_ids,
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn rename_grok_bot_session(
+    id: String,
+    title: String,
+) -> std::result::Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::grok_bot_sessions::rename_session(&id, &title))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CodexApiKeyAccount {
     pub(crate) label: String,
     pub(crate) api_key: String,

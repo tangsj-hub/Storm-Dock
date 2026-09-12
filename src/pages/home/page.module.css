@@ -31,6 +31,16 @@
 .sidebarItemActive { background: var(--info-bg); color: var(--info); }
 .sidebarItemActive:hover { background: var(--info-bg); color: var(--info); }
 .sidebarBadge { align-items: center; background: var(--accent); border: 1px solid var(--solid); border-radius: 999px; color: var(--on-accent); display: inline-flex; font-size: 9px; font-weight: 700; height: 16px; justify-content: center; line-height: 1; min-width: 16px; padding: 0 3px; pointer-events: none; position: absolute; right: -5px; top: -5px; }
+.sidebarAppIcon { display: block; height: 18px; object-fit: contain; width: 18px; }
+.grokBotStatus { align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; display: grid; gap: 12px; grid-template-columns: 36px minmax(0, 1fr); margin-bottom: 12px; min-height: 64px; padding: 10px 14px; }
+.grokBotStatusIcon { display: block; height: 36px; object-fit: contain; width: 36px; }
+.grokBotStatusCopy { min-width: 0; }
+.grokBotStatusCopy strong { display: block; font-size: 14px; font-weight: 680; }
+.grokBotStatus .metaBadge { align-items: center; background: var(--badge); border: 0; border-radius: 3px; color: var(--badge-fg); display: inline-flex; font-size: 10px; font-weight: 650; gap: 4px; line-height: 18px; margin: 0; padding: 0 6px; }
+.grokBotReadyBadge { background: var(--ok-bg) !important; color: var(--ok) !important; }
+.grokBotUnavailableBadge { background: var(--warn-bg) !important; color: var(--warn) !important; }
+.grokBotCurrentAccountBadge { background: var(--ok-bg) !important; color: var(--ok) !important; }
+.dialogInput { background: var(--solid); border: 1px solid var(--border-strong); border-radius: 5px; color: var(--fg); font-size: 13px; margin: 14px 0 0; min-height: 34px; padding: 0 10px; width: 100%; }
 .content { min-width: 0; min-height: 0; overflow-y: auto; }
 .accountList { display: grid; gap: 8px; }
 .accountCard { align-items: center; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; display: grid; grid-template-columns: 28px 1fr auto; min-height: 72px; padding: 10px 14px; transition: background .15s, border-color .15s, box-shadow .15s; }

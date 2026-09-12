@@ -41,6 +41,16 @@ export type ApplicationStatus = {
   reason?: string;
 };
 
+export type GrokBotStatus = {
+  installed: boolean;
+  signedIn: boolean;
+  running: boolean;
+  available: boolean;
+  reason?: string;
+  currentAccountId?: string;
+  currentAccountLabel?: string;
+};
+
 export type Account = {
   id: string;
   label: string;

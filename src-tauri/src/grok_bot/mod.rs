@@ -195,6 +195,67 @@ pub(crate) fn session_matches_active_slot(session: &Session, active: &str) -> bo
         .unwrap_or(false)
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct LocalStatus {
+    pub(crate) installed: bool,
+    pub(crate) signed_in: bool,
+    pub(crate) running: bool,
+    pub(crate) available: bool,
+    pub(crate) reason: Option<String>,
+}
+
+pub(crate) fn user_data_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        dirs::home_dir().map(|home| home.join("Library/Application Support/Grok Bot"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        dirs::data_dir().map(|dir| dir.join("Grok Bot"))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Installed / signed-in / running state for the local Grok Bot client.
+pub(crate) fn local_status() -> LocalStatus {
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        return LocalStatus {
+            installed: false,
+            signed_in: false,
+            running: false,
+            available: false,
+            reason: Some("当前平台暂不支持 Grok Bot。".into()),
+        };
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let installed = platform::ensure_installed().is_ok();
+        let signed_in = active_slot().is_some();
+        let running = platform::is_running();
+        let available = installed && signed_in;
+        let reason = if !installed {
+            Some("未安装 Grok Bot。".into())
+        } else if !signed_in {
+            Some("未检测到 Grok Bot 登录。".into())
+        } else {
+            None
+        };
+        LocalStatus {
+            installed,
+            signed_in,
+            running,
+            available,
+            reason,
+        }
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn encrypt_macos(value: &str, password: &str) -> String {
     let mut key = [0u8; 16];
@@ -517,6 +578,24 @@ mod tests {
             account_slot("cursor-user-123"),
             "e52340e7310f5a441a1f8f2710dacffd1f6af8167f868bd19c9b61214f67ca22"
         );
+    }
+
+    #[test]
+    fn local_status_reports_machine_readiness() {
+        let status = local_status();
+        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+        {
+            assert!(!status.available);
+            assert!(!status.installed);
+            assert_eq!(status.reason.as_deref(), Some("当前平台暂不支持 Grok Bot。"));
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        {
+            assert_eq!(status.available, status.installed && status.signed_in);
+            if !status.installed {
+                assert_eq!(status.reason.as_deref(), Some("未安装 Grok Bot。"));
+            }
+        }
     }
 
     #[test]

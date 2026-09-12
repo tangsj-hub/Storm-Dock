@@ -30,6 +30,6 @@ export function WorkspaceToolbar(props: Props) {
       <a aria-disabled={busy || !canManageAccounts} className={styles.addButton} href={busy || !canManageAccounts ? undefined : `/add.html?kind=${kind}`}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a>
     </>}
     {section === "plugins" && <Tooltip content={pluginsExpanded ? t("collapsePluginChildren") : t("expandPluginChildren")}><button aria-expanded={pluginsExpanded} aria-label={pluginsExpanded ? t("collapsePluginChildren") : t("expandPluginChildren")} className={styles.iconButton} onClick={() => props.onPluginsExpandedChange(!pluginsExpanded)} type="button">{pluginsExpanded ? <ChevronsDownUp aria-hidden="true" size={19} /> : <ChevronsUpDown aria-hidden="true" size={19} />}</button></Tooltip>}
-    {section === "sessions" && <Tooltip content={t("refreshSessions")}><button aria-label={t("refreshSessions")} className={styles.iconButton} disabled={sessionsRefreshing} onClick={props.onSessionsRefresh} type="button"><RefreshCw aria-hidden="true" className={sessionsRefreshing ? styles.spinning : undefined} size={19} /></button></Tooltip>}
+    {(section === "sessions" || section === "grokBot") && <Tooltip content={t("refreshSessions")}><button aria-label={t("refreshSessions")} className={styles.iconButton} disabled={sessionsRefreshing} onClick={props.onSessionsRefresh} type="button"><RefreshCw aria-hidden="true" className={sessionsRefreshing ? styles.spinning : undefined} size={19} /></button></Tooltip>}
   </div>;
 }

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Cursor tab: Grok Bot sidebar entry with this machine's Grok Bot status, local session list, and rename/delete (including batch edit).
 
+### Fixed
+
+- Clicking the Storm Dock icon again focuses the existing window instead of opening a second instance (Tauri single-instance plugin; macOS dock reopen restores a hidden window).
+
 ## [1.5.1] - 2026-09-12
 
 ### Fixed

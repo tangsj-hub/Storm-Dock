@@ -1984,7 +1984,6 @@ pub(crate) fn switch_account(
         return Ok(outcome);
     }
     if outcome.restart_required {
-        emit_switch_progress(&app, &operation_id, &id, "restartRequired", 100, "waiting");
         return Ok(outcome);
     }
     emit_switch_progress(&app, &operation_id, &id, "launching", 90, "running");

@@ -5,6 +5,15 @@ All notable changes to Storm Dock are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.5.1] - 2026-09-12
+
+### Fixed
+
+- Windows: 切换 Cursor 账号时不再弹出控制台窗口（用 Win32 API 替代 `tasklist` / `taskkill` / `cmd start`）。
+- Cursor 正在运行、需要确认强制重启时，不再提前写入会话或显示切换进度。
+
 ## [1.5.0] - 2026-09-10
 
 ### Changed
@@ -16,8 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `latest.json` 强制包含 `darwin-aarch64`（含 `-app`）与 `windows-x86_64`，并 curl 校验公开清单
   - macOS runner 固定 `macos-14`；Release 并发组按 tag 串行
 - 文档：`docs/updater.md` 改为完整发版清单
-
-## [Unreleased]
 
 ## [1.4.2] - 2026-09-10
 
@@ -55,7 +62,9 @@ How to release:
 4. CI publishes installers + latest.json; notes field prefers this CHANGELOG excerpt.
 -->
 
-[Unreleased]: https://github.com/tangsj-hub/Storm-Dock/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/tangsj-hub/Storm-Dock/compare/v1.5.1...HEAD
+[1.5.1]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.5.1
+[1.5.0]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.5.0
 [1.4.2]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.4.2
 [1.4.1]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.4.1
 [1.4.0]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.4.0

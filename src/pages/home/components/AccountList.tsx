@@ -8,6 +8,7 @@ import { Tooltip } from "../../../components/Tooltip";
 import grokBotIcon from "../../../assets/tools/grok-bot.png";
 import { canSwitchToDesktop, editAccountPath, type Account, type ApplicationKind } from "../../../lib/types";
 import { accountKindKey, endpointHost, grokBotUsageLabel, subscriptionLabel, usageLabel } from "../lib/accountPresentation";
+import { progressForAccount } from "../lib/switchProgress";
 import type { SwitchProgress } from "../types";
 import styles from "../page.module.css";
 
@@ -61,7 +62,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
   </article>;
 }
 
-export function AccountList({ accounts, onReorder, ...props }: Props) {
+export function AccountList({ accounts, onReorder, progress, ...props }: Props) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
-  return <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => onReorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount account={account} key={account.id} progress={props.progress?.accountId === account.id ? props.progress : undefined} {...props} />)}</div></SortableContext></DndContext>;
+  return <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => onReorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount {...props} account={account} key={account.id} progress={progressForAccount(progress, account.id)} />)}</div></SortableContext></DndContext>;
 }

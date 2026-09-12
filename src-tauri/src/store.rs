@@ -730,7 +730,6 @@ impl Controller {
     where
         F: FnMut(&'static str, u8),
     {
-        progress("loading", 15);
         let account = self.account(id)?;
         if !account.import_type.supports_desktop_switch() {
             return Err(AppError::Message(
@@ -739,9 +738,22 @@ impl Controller {
         }
         let session = self.load_session(&account.id)?;
         let running = self.adapter(account.application).is_running();
-        progress("applying", 45);
         // A running Cursor process can flush its old in-memory state back to
-        // state.vscdb. Defer the write until after the restart in that case.
+        // state.vscdb. Defer the write and the progress UI until the user
+        // confirms a force restart.
+        if running && account.application == ApplicationKind::Cursor {
+            let transaction = self.database.transaction()?;
+            transaction.execute(
+                "UPDATE accounts SET last_used_at=?1 WHERE id=?2",
+                params![now() as i64, id],
+            )?;
+            transaction.commit()?;
+            return Ok(SwitchOutcome {
+                restart_required: true,
+            });
+        }
+        progress("loading", 15);
+        progress("applying", 45);
         if !running {
             self.prepare_codex_apply();
             self.adapter(account.application).apply(&session)?;
@@ -1599,6 +1611,42 @@ INSERT INTO providers (id, app_type, name, settings_config, meta, is_current, in
                 .switch_account(&account.id, |_, _| {})
                 .unwrap_err();
             assert!(error.to_string().contains("只能查询用量"), "{error}");
+        }
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn cursor_switch_skips_progress_when_restart_is_required() {
+        let data_dir = env::temp_dir().join(format!(
+            "storm-dock-switch-progress-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        controller.cursor = CursorAdapter { database: None };
+        let account = controller
+            .save_imported_session(
+                ApplicationKind::Cursor,
+                Some("Native".into()),
+                Session {
+                    values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "a".repeat(40))]),
+                    raw_export: None,
+                },
+                ImportType::Native,
+            )
+            .unwrap();
+
+        let mut stages = Vec::new();
+        let result = controller.switch_account(&account.id, |stage, _| {
+            stages.push(stage);
+        });
+        match result {
+            Ok(outcome) => {
+                assert!(outcome.restart_required);
+                assert!(stages.is_empty(), "{stages:?}");
+            }
+            Err(_) => {
+                assert_eq!(stages, ["loading", "applying"]);
+            }
         }
         let _ = fs::remove_dir_all(data_dir);
     }

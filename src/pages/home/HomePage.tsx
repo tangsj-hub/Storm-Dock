@@ -133,6 +133,7 @@ import { useLatestRequest } from "./hooks/useLatestRequest";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
 import { AccountList } from "./components/AccountList";
 import { SessionWorkspace, type SessionProvider } from "./components/SessionWorkspace";
+import { shouldApplySwitchProgress } from "./lib/switchProgress";
 import type { WorkspaceSection, SwitchProgress } from "./types";
 
 type SwitchOutcome = { restartRequired: boolean };
@@ -660,7 +661,10 @@ export function HomePage() {
   useEffect(() => {
     let unlisten: () => void = () => {};
     void listen<SwitchProgress>("account-switch-progress", ({ payload }) => {
-      if (payload.operationId === activeOperationId.current)
+      if (
+        payload.operationId === activeOperationId.current &&
+        shouldApplySwitchProgress(payload)
+      )
         setSwitchProgress(payload);
     }).then((stop) => {
       unlisten = stop;

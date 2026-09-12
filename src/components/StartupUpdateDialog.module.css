@@ -1,0 +1,97 @@
+.dialogOverlay {
+  background: color-mix(in srgb, var(--fg) 28%, transparent);
+  inset: 0;
+  position: fixed;
+  z-index: 40;
+}
+
+.dialogContent {
+  background: var(--solid);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  box-shadow: 0 18px 42px var(--shadow-strong);
+  left: 50%;
+  max-width: 420px;
+  padding: 24px;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: calc(100vw - 48px);
+  z-index: 41;
+}
+
+.dialogContent h2 {
+  font-size: 17px;
+  margin: 0 0 9px;
+}
+
+.dialogContent p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.notes {
+  background: var(--accent-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 14px;
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 12px;
+}
+
+.dialogActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+
+.later,
+.install {
+  border-radius: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.later {
+  background: var(--solid);
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+}
+
+.later:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.install {
+  background: var(--accent);
+  border: 1px solid transparent;
+  color: #fff;
+}
+
+.install:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.later:disabled,
+.install:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

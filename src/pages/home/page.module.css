@@ -11,6 +11,30 @@
 .appTab { align-items: center; background: transparent; border: 0; border-radius: 4px; color: var(--muted); display: inline-flex; font-size: 13px; font-weight: 600; gap: 6px; line-height: 28px; padding: 0 14px; }
 .appTab img { height: 15px; width: 15px; }
 .appTab[data-state="active"] { background: var(--solid); box-shadow: 0 1px 2px var(--shadow); color: var(--fg); }
+.appTabIcon { display: inline-grid; flex: 0 0 auto; height: 15px; place-items: center; width: 15px; }
+.appTabIconGlyph { display: block; grid-area: 1 / 1; height: 15px; width: 15px; }
+.appTabLaunchHit {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-grid;
+  grid-area: 1 / 1;
+  height: 15px;
+  justify-items: center;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  width: 15px;
+}
+.appTabLaunchable[data-state="active"] .appTabIcon:hover .appTabIdle,
+.appTabLaunchable[data-state="active"] .appTabIcon:focus-within .appTabIdle { opacity: 0; }
+.appTabLaunchable[data-state="active"] .appTabIcon:hover .appTabLaunchHit,
+.appTabLaunchable[data-state="active"] .appTabIcon:focus-within .appTabLaunchHit {
+  opacity: 1;
+  pointer-events: auto;
+}
 .contextToolbar { align-items: center; display: flex; gap: 8px; justify-self: end; min-height: 34px; }
 .iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--muted); display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
 .iconButton:hover { background: var(--hover); border-color: var(--border-strong); color: var(--fg); }

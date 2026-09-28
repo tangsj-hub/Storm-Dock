@@ -71,6 +71,7 @@ import {
   launchChatgpt,
   launchCodexSession,
   launchCursor,
+  launchGrokBot,
   launchGrokSession,
   listAccounts,
   getGrokBotExportRecord,
@@ -613,11 +614,13 @@ export function HomePage() {
       setBusy(false);
     }
   };
-  const launchCurrentApp = async () => {
-    if (busy || (selected !== "cursor" && selected !== "codex")) return;
+  const canHoverLaunchTab = (kind: HomeTabId) => kind === "cursor" || kind === "codex" || kind === "grokBot";
+  const launchTabApp = async (kind: HomeTabId) => {
+    if (busy || !canHoverLaunchTab(kind)) return;
     setBusy(true);
     try {
-      if (selected === "codex") await launchChatgpt();
+      if (kind === "codex") await launchChatgpt();
+      else if (kind === "grokBot") await launchGrokBot();
       else await launchCursor();
       setNotice(t("appLaunched"));
     } catch (error) {
@@ -625,6 +628,9 @@ export function HomePage() {
     } finally {
       setBusy(false);
     }
+  };
+  const launchCurrentApp = async () => {
+    if (selected === "cursor" || selected === "codex") await launchTabApp(selected);
   };
   const launchBot = async (account: Account) => {
     if (busy) return;
@@ -1140,17 +1146,59 @@ export function HomePage() {
             value={grokBotMode ? "grokBot" : selected}
           >
             <Tabs.List aria-label={t("applications")}>
-              {homeTabs.map((kind) => (
-                <Tabs.Trigger className={styles.appTab} key={kind} value={kind}>
-                  <img alt="" className="ink" src={APP_ICONS[kind]} />
-                  {kind === "grokBot"
+              {homeTabs.map((kind) => {
+                const label =
+                  kind === "grokBot"
                     ? t("grokBot")
                     : kind === "codex"
                       ? t("codex")
                       : (applications.find((app) => app.kind === kind)?.label ??
-                        t(kind))}
-                </Tabs.Trigger>
-              ))}
+                        t(kind));
+                const hoverLaunch = canHoverLaunchTab(kind);
+                const isActiveTab = (grokBotMode ? "grokBot" : selected) === kind;
+                return (
+                  <Tabs.Trigger
+                    className={`${styles.appTab}${hoverLaunch ? ` ${styles.appTabLaunchable}` : ""}`}
+                    key={kind}
+                    value={kind}
+                  >
+                    {hoverLaunch ? (
+                      <span className={styles.appTabIcon}>
+                        <img alt="" className={`${styles.appTabIconGlyph} ${styles.appTabIdle} ink`} src={APP_ICONS[kind]} />
+                        <span
+                          aria-label={t("launchApp")}
+                          className={styles.appTabLaunchHit}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (!isActiveTab || busy) return;
+                            void launchTabApp(kind);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            if (!isActiveTab || busy) return;
+                            void launchTabApp(kind);
+                          }}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          role="button"
+                          tabIndex={isActiveTab ? 0 : -1}
+                          title={t("launchApp")}
+                        >
+                          <Play aria-hidden="true" className={styles.appTabIconGlyph} size={15} strokeWidth={2.4} />
+                        </span>
+                      </span>
+                    ) : (
+                      <img alt="" className="ink" src={APP_ICONS[kind]} />
+                    )}
+                    {label}
+                  </Tabs.Trigger>
+                );
+              })}
             </Tabs.List>
           </Tabs.Root>
           </div>

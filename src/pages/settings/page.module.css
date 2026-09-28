@@ -84,7 +84,8 @@
 .stack {
   display: grid;
   gap: 12px;
-  max-width: 720px;
+  max-width: none;
+  width: 100%;
 }
 
 .about {

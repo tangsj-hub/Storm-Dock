@@ -23,6 +23,19 @@ export function homePath(kind: ApplicationKind | "grokBot", notice?: string) {
   return `/?${params}`;
 }
 
+/** Usage detail needs API kind (cursor|grok); optional `from` restores the home tab on back. */
+export function usagePath(accountId: string, kind: "cursor" | "grok", from?: "grokBot") {
+  const params = new URLSearchParams({ accountId, kind });
+  if (from) params.set("from", from);
+  return `/usage.html?${params}`;
+}
+
+export function homeKindFromUsageQuery(search = window.location.search): ApplicationKind | "grokBot" {
+  const params = new URLSearchParams(search);
+  if (params.get("from") === "grokBot") return "grokBot";
+  return params.get("kind") === "grok" ? "grok" : "cursor";
+}
+
 export function editAccountPath(kind: ApplicationKind, id: string) {
   return `/edit.html?kind=${kind}&id=${encodeURIComponent(id)}`;
 }

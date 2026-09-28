@@ -24,7 +24,7 @@ Artifacts land under `src-tauri/target/release/bundle/nsis/`.
 
 - File: `Storm Dock_*_x64_en-US.msi`
 - Uses a **per-user** WiX template (`src-tauri/wix/per-user-main.wxs`) adapted from common Tauri patterns, so installation targets `%LocalAppData%\Programs\Storm Dock` with limited privileges (no forced machine-wide admin install)
-- Useful for managed / enterprise distribution; the in-app updater may prefer MSI when both signatures exist
+- Useful for managed / enterprise distribution; the in-app updater advertises MSI under `windows-x86_64-msi` so MSI installs keep updating via MSI. Generic / NSIS installs update via the NSIS setup so the previously chosen InstallDir is reused
 
 Build:
 
@@ -35,6 +35,9 @@ npm run tauri build -- --bundles nsis,msi
 ```
 
 ## Notes
+
+- In-app update must reuse the directory chosen at first install. That relies on NSIS `/UPDATE` reading `HKCU`/`HKLM\Software\<publisher>\Storm Dock` (and MSI `RegistrySearch` for MSI installs). See `docs/updater.md`.
+
 
 - macOS bundling is unchanged (`bundle.macOS.bundleName`).
 - Publisher / homepage / license metadata are set in `src-tauri/tauri.conf.json` for ARP (Add/Remove Programs) and installer metadata.

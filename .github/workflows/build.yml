@@ -128,6 +128,8 @@ jobs:
           need_mac_dmg=0
           need_win_msi=0
           need_win_msi_sig=0
+          need_win_nsis=0
+          need_win_nsis_sig=0
           for f in release-assets/*; do
             case "$(basename "$f")" in
               Storm-Dock-*-macOS.app.tar.gz) need_mac_tar=1 ;;
@@ -135,6 +137,8 @@ jobs:
               Storm-Dock-*-macOS.dmg) need_mac_dmg=1 ;;
               Storm-Dock-*-Windows-x64.msi) need_win_msi=1 ;;
               Storm-Dock-*-Windows-x64.msi.sig) need_win_msi_sig=1 ;;
+              Storm-Dock-*-Windows-x64-setup.exe) need_win_nsis=1 ;;
+              Storm-Dock-*-Windows-x64-setup.exe.sig) need_win_nsis_sig=1 ;;
             esac
           done
           if [ "$need_mac_tar" -ne 1 ] || [ "$need_mac_sig" -ne 1 ] || [ "$need_mac_dmg" -ne 1 ]; then
@@ -142,8 +146,15 @@ jobs:
             ls -la release-assets/ >&2
             exit 1
           fi
+          # NSIS is the preferred in-app updater target (preserves InstallDir).
+          # MSI remains for enterprise / windows-x86_64-msi clients.
+          if [ "$need_win_nsis" -ne 1 ] || [ "$need_win_nsis_sig" -ne 1 ]; then
+            echo "❌ Incomplete Windows NSIS updater assets in release-assets/" >&2
+            ls -la release-assets/ >&2
+            exit 1
+          fi
           if [ "$need_win_msi" -ne 1 ] || [ "$need_win_msi_sig" -ne 1 ]; then
-            echo "❌ Incomplete Windows updater assets in release-assets/" >&2
+            echo "❌ Incomplete Windows MSI assets in release-assets/" >&2
             ls -la release-assets/ >&2
             exit 1
           fi

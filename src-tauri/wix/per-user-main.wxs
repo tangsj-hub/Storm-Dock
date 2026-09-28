@@ -135,7 +135,11 @@
         <DirectoryRef Id="INSTALLDIR">
             <Component Id="RegistryEntries" Guid="*">
                 <RegistryKey Root="HKCU" Key="Software\\{{manufacturer}}\\{{product_name}}">
+                    <!-- Named value used by this MSI template's RegistrySearch -->
                     <RegistryValue Name="InstallDir" Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
+                    <!-- Default (unnamed) value matches Tauri NSIS WriteRegStr so NSIS /UPDATE
+                         and the NoName RegistrySearch both see the same InstallDir. -->
+                    <RegistryValue Type="string" Value="[INSTALLDIR]" />
                 </RegistryKey>
                 <!-- Change the Root to HKCU for perUser installations -->
                 {{#each deep_link_protocols as |protocol| ~}}

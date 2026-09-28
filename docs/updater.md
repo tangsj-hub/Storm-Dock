@@ -27,14 +27,14 @@ tag vX.Y.Z
 | --- | --- |
 | `Storm-Dock-<ver>-macOS.dmg` | 手动安装 |
 | `Storm-Dock-<ver>-macOS.app.tar.gz` + `.sig` | macOS 应用内更新 |
-| `Storm-Dock-<ver>-Windows-x64-setup.exe` + `.sig` | NSIS 安装包 |
-| `Storm-Dock-<ver>-Windows-x64.msi` + `.sig` | MSI + 应用内更新（优先） |
+| `Storm-Dock-<ver>-Windows-x64-setup.exe` + `.sig` | NSIS 安装包 + **应用内更新（优先）** |
+| `Storm-Dock-<ver>-Windows-x64.msi` + `.sig` | MSI（企业分发；清单键 `windows-x86_64-msi`） |
 | `latest.json` | Updater 清单 |
 
 `latest.json` 至少包含：
 
 - `darwin-aarch64` / `darwin-aarch64-app`（及 x86_64 别名，指向同一 macOS 包）
-- `windows-x86_64`
+- `windows-x86_64`（指向 NSIS）以及 `windows-x86_64-nsis`；有 MSI 时再加 `windows-x86_64-msi`
 
 客户端 endpoint：
 
@@ -94,6 +94,15 @@ git push github vX.Y.Z
 ## 用户侧
 
 首页启动约 2.5 秒后会自动检查更新（有新版本时弹窗，可「稍后」或「下载并安装」；非 Tauri / 检查失败时静默跳过）。也可在设置 → 关于 → **检查更新** → **下载并安装**。安装走 Rust 命令 `install_update_and_restart`。
+
+## Windows 更新与安装路径
+
+手动安装请用 NSIS `.exe`。应用内更新的 `latest.json` 会：
+
+- 把通用键 `windows-x86_64` 与 `windows-x86_64-nsis` 指向 **NSIS**（`/UPDATE` 会从注册表恢复用户首次选择的 `InstallDir`）
+- 若存在 MSI，额外提供 `windows-x86_64-msi`，供原先用 MSI 安装的客户端继续走 MSI
+
+不要再把 MSI 当作唯一的 `windows-x86_64` 目标：否则 NSIS 安装会在更新时落到 WiX 默认的 `%LocalAppData%\Programs\Storm Dock`（常在 C:），形成第二套安装目录。
 
 ## 尚未纳入（刻意延后）
 

@@ -8,7 +8,7 @@ import { useLocalCalendarDay } from "../../../lib/useLocalCalendarDay";
 import { CurrentLaunchBadge } from "../../../components/CurrentLaunchBadge";
 import { Tooltip } from "../../../components/Tooltip";
 import grokBotIcon from "../../../assets/tools/grok-bot.png";
-import { canSwitchToDesktop, editAccountPath, type Account, type ApplicationKind } from "../../../lib/types";
+import { usagePath, canSwitchToDesktop, editAccountPath, type Account, type ApplicationKind } from "../../../lib/types";
 import { accountKindKey, canLaunchGrokBot, endpointHost, grokBotUsageLabel, subscriptionLabel, subscriptionPlanBadge, usageLabel } from "../lib/accountPresentation";
 import { progressForAccount } from "../lib/switchProgress";
 import type { SwitchProgress } from "../types";
@@ -63,7 +63,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
         <Tooltip content={t("edit")}><a aria-disabled={busy || undefined} aria-label={t("editAccount", { account: account.label })} className={styles.iconButton} href={busy ? undefined : editAccountPath(kind, account.id)}><Pencil aria-hidden="true" size={16} /></a></Tooltip>
         <Tooltip content={t("duplicate")}><button aria-label={t("duplicate")} className={styles.iconButton} disabled={busy} onClick={() => onDuplicate(account)} type="button"><Copy aria-hidden="true" size={16} /></button></Tooltip>
         <Tooltip content={t("testConnection")}><button aria-label={t("testConnection")} className={styles.iconButton} disabled={busy || testingId === account.id} onClick={() => onTest(account)} type="button"><Activity aria-hidden="true" className={testingId === account.id ? styles.spinning : undefined} size={16} /></button></Tooltip>
-      </> : (kind === "cursor" || kind === "grok") ? <Tooltip content={t("usage")}><a aria-label={t("viewUsage", { account: account.label })} className={styles.iconButton} href={`/usage.html?accountId=${encodeURIComponent(account.id)}&kind=${kind}`}><ChartNoAxesCombined aria-hidden="true" size={18} /></a></Tooltip> : null}
+      </> : (kind === "cursor" || kind === "grok") ? <Tooltip content={t("usage")}><a aria-label={t("viewUsage", { account: account.label })} className={styles.iconButton} href={usagePath(account.id, kind === "grok" ? "grok" : "cursor")}><ChartNoAxesCombined aria-hidden="true" size={18} /></a></Tooltip> : null}
       {!isApiKey && <Tooltip content={t("export")}><button aria-label={t("exportAccount", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onExport(account)} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>}
       <Tooltip content={t("delete")}><button aria-label={t("remove", { account: account.label })} className={styles.iconButton} disabled={busy} onClick={() => onRemove(account)} type="button"><Trash2 aria-hidden="true" size={19} /></button></Tooltip>
     </div>

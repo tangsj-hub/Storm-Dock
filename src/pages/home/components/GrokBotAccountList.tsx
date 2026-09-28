@@ -7,7 +7,7 @@ import { useLocalCalendarDay } from "../../../lib/useLocalCalendarDay";
 import { CurrentLaunchBadge } from "../../../components/CurrentLaunchBadge";
 import { Tooltip } from "../../../components/Tooltip";
 import grokBotIcon from "../../../assets/tools/grok-bot.png";
-import type { Account } from "../../../lib/types";
+import { usagePath, type Account } from "../../../lib/types";
 import {
   canLaunchGrokBot,
   grokBotSourceKey,
@@ -126,7 +126,7 @@ function SortableAccount({
           <a
             aria-label={t("viewUsage", { account: account.label })}
             className={styles.iconButton}
-            href={`/usage.html?accountId=${encodeURIComponent(account.id)}&kind=${usageKind}`}
+            href={usagePath(account.id, usageKind, "grokBot")}
           >
             <ChartNoAxesCombined aria-hidden="true" size={18} />
           </a>

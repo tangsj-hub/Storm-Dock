@@ -1,4 +1,5 @@
 mod apps;
+mod autostart;
 mod browser;
 mod codex;
 mod codex_sessions;
@@ -156,7 +157,6 @@ pub fn run() {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| match event {
@@ -271,6 +271,7 @@ pub fn run() {
             if let Some(window) = app.get_webview_window("main") {
                 crate::window_chrome::apply_webview(&window);
             }
+            crate::autostart::migrate_windows_autostart();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -333,6 +334,7 @@ pub fn run() {
             commands::switch_account,
             commands::launch_cursor,
             commands::launch_chatgpt,
+            commands::launch_grok_bot,
             commands::force_restart,
             commands::get_grok_bot_export_record,
             commands::prepare_launch_grok_bot,
@@ -350,6 +352,9 @@ pub fn run() {
             commands::update_codex_api_key_account,
             commands::duplicate_codex_api_key_account,
             commands::test_codex_api_key_account,
+            autostart::enable_launch_at_login,
+            autostart::disable_launch_at_login,
+            autostart::is_launch_at_login_enabled,
             set_close_behavior,
             set_close_to_tray,
             confirm_close_action,

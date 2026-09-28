@@ -11,7 +11,7 @@ import { Tooltip } from "../../components/Tooltip";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
 import { listAccounts } from "../../lib/api";
-import { applicationKindFromQuery, homePath, syncDocumentAppKind, type Account, type CursorUsageDetails } from "../../lib/types";
+import { homeKindFromUsageQuery, homePath, syncDocumentAppKind, type Account, type CursorUsageDetails } from "../../lib/types";
 import { subscriptionDatedLabel, subscriptionPlanName } from "../home/lib/accountPresentation";
 import "../../styles/global.css";
 import { hasLimit, isOverLimit, metric, productParts, resetDatedLabel, spendCents } from "./format";
@@ -52,6 +52,7 @@ function UsagePage() {
   const search = new URLSearchParams(window.location.search);
   const accountId = search.get("accountId") ?? "";
   const usageKind = search.get("kind") === "grok" ? "grok" : "cursor";
+  const returnHome = homeKindFromUsageQuery();
   const isGrok = usageKind === "grok";
   const usageTitle = t(isGrok ? "usageTitleGrok" : "usageTitle");
   const usageLoadingKey = isGrok ? "usageLoadingGrok" : "usageLoading";
@@ -71,7 +72,7 @@ function UsagePage() {
   const [account, setAccount] = useState<Account>();
   const accountStatus = account?.status;
   const flashTimer = useRef<number | undefined>(undefined);
-  useEffect(() => { syncDocumentAppKind(usageKind); }, [usageKind]);
+  useEffect(() => { syncDocumentAppKind(returnHome); }, [returnHome]);
   useEffect(() => () => window.clearTimeout(flashTimer.current), []);
   useEffect(() => {
     let cancelled = false;
@@ -144,7 +145,7 @@ function UsagePage() {
     <main className={styles.shell}>
     <WindowDragSurface />
     <header className={styles.header}>
-      <a aria-label={t("back")} className={styles.back} href={homePath(usageKind)}><ArrowLeft aria-hidden="true" size={20} /></a>
+      <a aria-label={t("back")} className={styles.back} href={homePath(returnHome)}><ArrowLeft aria-hidden="true" size={20} /></a>
       <h1>{usageTitle}</h1>
       <div className={styles.actions}>
         <Tooltip content={t("export")}><button aria-label={t("export")} className={styles.export} disabled={busy} onClick={() => void openExport()} type="button"><FileOutput aria-hidden="true" size={18} /></button></Tooltip>
@@ -200,6 +201,5 @@ function UsagePage() {
   </Toast.Provider>;
 }
 
-const bootKind = applicationKindFromQuery();
-syncDocumentAppKind(bootKind);
+syncDocumentAppKind(homeKindFromUsageQuery());
 createRoot(document.getElementById("root")!).render(<UsagePage />);

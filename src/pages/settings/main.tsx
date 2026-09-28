@@ -5,7 +5,6 @@ import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, us
 import { SortableContext, arrayMove, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ArrowLeft, Check, ChevronDown, Database, Download, FolderSync, Globe, GripVertical, KeyRound, Languages, LayoutList, Monitor, PanelTop, Power, RefreshCw } from "lucide-react";
-import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
@@ -183,10 +182,10 @@ function SettingsPage() {
     setNotice(t("languageSaved", { language: t(languages.find((item) => item.code === code)?.key ?? "chinese") }));
   };
   useEffect(() => { void getDatabasePath().then(setDatabasePath).catch((error) => setNotice(String(error))); }, []);
-  useEffect(() => { void isEnabled().then(setLaunchAtLogin).catch((error) => setNotice(String(error))); }, []);
+  useEffect(() => { void invoke<boolean>("is_launch_at_login_enabled").then(setLaunchAtLogin).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void getPreserveCodexOfficialAuth().then(setPreserveCodexAuth).catch((error) => setNotice(String(error))); }, []);
   useEffect(() => { void getVersion().then(setAppVersion).catch(() => setAppVersion("1.1.0")); }, []);
-  const toggleLaunchAtLogin = async () => { try { if (launchAtLogin) await disable(); else await enable(); setLaunchAtLogin(!launchAtLogin); } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); } };
+  const toggleLaunchAtLogin = async () => { try { if (launchAtLogin) await invoke("disable_launch_at_login"); else await invoke("enable_launch_at_login"); setLaunchAtLogin(!launchAtLogin); } catch (error) { setNotice(error instanceof Error ? error.message : String(error)); } };
   const closeBehaviorOptions = [
     { code: "ask" as const, key: "closeBehaviorAsk" },
     { code: "tray" as const, key: "closeBehaviorTray" },

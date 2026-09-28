@@ -4,9 +4,18 @@
 Expects stable Storm Dock asset names produced by scripts/ci/package-*-assets.sh:
 
   Storm-Dock-<ver>-macOS.app.tar.gz[+.sig]
-  Storm-Dock-<ver>-Windows-x64.msi[+.sig]
+  Storm-Dock-<ver>-Windows-x64-setup.exe[+.sig]  # NSIS (preferred updater)
+  Storm-Dock-<ver>-Windows-x64.msi[+.sig]         # MSI (installer-specific key)
 
 Fail closed unless both darwin and windows-x86_64 platforms are present.
+
+Windows note:
+  Users install via NSIS and may choose a custom directory / current-user vs
+  all-users. Tauri's NSIS /UPDATE path restores $INSTDIR from the registry.
+  Publishing MSI as windows-x86_64 made NSIS installs fall back to the per-user
+  MSI default under %LocalAppData%\\Programs (often on C:), creating a second
+  install. Prefer NSIS for the generic key, and advertise installer-specific
+  keys so each existing install keeps matching its original installer type.
 """
 from __future__ import annotations
 
@@ -38,6 +47,17 @@ def read_sig(sig: pathlib.Path) -> str:
     return sig.read_text(encoding="utf-8").replace("\r", "").replace("\n", "")
 
 
+def pick_signed(dl: pathlib.Path, patterns: tuple[str, ...]) -> tuple[pathlib.Path, pathlib.Path] | None:
+    for pattern in patterns:
+        for art in sorted(dl.glob(pattern)):
+            if art.name.endswith(".sig"):
+                continue
+            sig = pathlib.Path(str(art) + ".sig")
+            if art.is_file() and sig.is_file():
+                return art, sig
+    return None
+
+
 def pick_mac(dl: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
     preferred = sorted(dl.glob("Storm-Dock-*-macOS.app.tar.gz"))
     preferred += sorted(dl.glob("Storm-Dock-*-macOS.tar.gz"))
@@ -53,29 +73,32 @@ def pick_mac(dl: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
     return None
 
 
-def pick_windows(dl: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
-    preferred = sorted(dl.glob("Storm-Dock-*-Windows-x64.msi"))
-    candidates = preferred + sorted(dl.glob("*.msi"))
-    # Prefer MSI for updater (matches Tauri Windows updater defaults)
-    for art in candidates:
-        if art.name.endswith(".sig"):
-            continue
-        sig = pathlib.Path(str(art) + ".sig")
-        if art.is_file() and sig.is_file():
-            return art, sig
-    # Fallback: NSIS exe / nsis.zip
-    for pattern in (
-        "Storm-Dock-*-Windows-x64-setup.exe",
-        "*.nsis.zip",
-        "*-setup.exe",
-    ):
-        for art in sorted(dl.glob(pattern)):
-            if art.name.endswith(".sig"):
-                continue
-            sig = pathlib.Path(str(art) + ".sig")
-            if art.is_file() and sig.is_file():
-                return art, sig
-    return None
+def pick_windows_nsis(dl: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
+    return pick_signed(
+        dl,
+        (
+            "Storm-Dock-*-Windows-x64-setup.exe",
+            "*-setup.exe",
+            "*.nsis.zip",
+        ),
+    )
+
+
+def pick_windows_msi(dl: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path] | None:
+    return pick_signed(
+        dl,
+        (
+            "Storm-Dock-*-Windows-x64.msi",
+            "*.msi",
+        ),
+    )
+
+
+def platform_entry(base_url: str, art: pathlib.Path, sig: pathlib.Path) -> dict[str, str]:
+    return {
+        "signature": read_sig(sig),
+        "url": f"{base_url}/{art.name}",
+    }
 
 
 def darwin_keys_for(name: str) -> list[str]:
@@ -88,7 +111,7 @@ def darwin_keys_for(name: str) -> list[str]:
         "darwin-x86_64-app",
     ]
     # Universal / stable Storm-Dock-*-macOS.* → all keys point at same artifact
-    if "macOS".lower() in lower or "macos" in lower or "universal" in lower:
+    if "macos" in lower or "universal" in lower:
         return keys
     if "aarch64" in lower or "arm64" in lower:
         return ["darwin-aarch64", "darwin-aarch64-app"]
@@ -119,26 +142,44 @@ def main() -> None:
             "Refusing to publish latest.json."
         )
     mac_art, mac_sig = mac
-    mac_entry = {
-        "signature": read_sig(mac_sig),
-        "url": f"{base_url}/{mac_art.name}",
-    }
+    mac_entry = platform_entry(base_url, mac_art, mac_sig)
     for key in darwin_keys_for(mac_art.name):
         platforms[key] = mac_entry
     print(f"✅ macOS updater: {mac_art.name}")
 
-    win = pick_windows(dl)
-    if not win:
+    # Prefer NSIS for the generic windows-x86_64 key so first-time / unmatched
+    # clients update with the same installer users download manually. Also emit
+    # installer-specific keys so an existing NSIS or MSI install keeps matching
+    # its original installer (and therefore its InstallDir).
+    nsis = pick_windows_nsis(dl)
+    msi = pick_windows_msi(dl)
+    if not nsis and not msi:
         raise SystemExit(
-            "Missing Windows updater artifact (Storm-Dock-*-Windows-x64.msi + .sig). "
+            "Missing Windows updater artifact "
+            "(Storm-Dock-*-Windows-x64-setup.exe + .sig, or .msi + .sig). "
             "Refusing to publish latest.json."
         )
-    win_art, win_sig = win
-    platforms["windows-x86_64"] = {
-        "signature": read_sig(win_sig),
-        "url": f"{base_url}/{win_art.name}",
-    }
-    print(f"✅ Windows updater: {win_art.name}")
+
+    if nsis:
+        nsis_art, nsis_sig = nsis
+        nsis_entry = platform_entry(base_url, nsis_art, nsis_sig)
+        platforms["windows-x86_64-nsis"] = nsis_entry
+        platforms["windows-x86_64"] = nsis_entry
+        print(f"✅ Windows NSIS updater: {nsis_art.name}")
+
+    if msi:
+        msi_art, msi_sig = msi
+        msi_entry = platform_entry(base_url, msi_art, msi_sig)
+        platforms["windows-x86_64-msi"] = msi_entry
+        if "windows-x86_64" not in platforms:
+            platforms["windows-x86_64"] = msi_entry
+        print(f"✅ Windows MSI updater: {msi_art.name}")
+
+    if "windows-x86_64-nsis" not in platforms:
+        print(
+            "⚠️  NSIS setup.exe missing; windows-x86_64 falls back to MSI. "
+            "NSIS-installed apps may get a second install under LocalAppData\\Programs."
+        )
 
     for key in REQUIRED_DARWIN:
         if key not in platforms:

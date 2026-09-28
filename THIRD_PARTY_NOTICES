@@ -16,7 +16,7 @@ following licenses (the exact versions are recorded in package-lock.json):
 - @radix-ui/*: MIT
 - @tanstack/react-virtual: MIT
 - @tauri-apps/api: Apache-2.0 OR MIT
-- @tauri-apps/plugin-autostart, @tauri-apps/plugin-dialog: MIT OR Apache-2.0
+- @tauri-apps/plugin-dialog: MIT OR Apache-2.0
 - i18next, react, react-dom, react-i18next, react-markdown, rehype-raw,
   rehype-sanitize, remark-gfm: MIT
 - lucide-react: ISC
@@ -40,7 +40,7 @@ The direct crates in src-tauri/Cargo.toml use permissive licenses, primarily
 MIT OR Apache-2.0. In particular, ring is ISC; rusqlite, reqwest, serde,
 serde_json, regex, uuid, time, toml, thiserror, aes, base64, cbc, pbkdf2,
 sha1, sha2, once_cell, dirs, libc, winreg, tauri, tauri-build,
-tauri-plugin-autostart, and tauri-plugin-dialog are MIT, Apache-2.0, or
+auto-launch and tauri-plugin-dialog are MIT, Apache-2.0, or
 MIT OR Apache-2.0 licensed according to their upstream package metadata.
 
 The complete resolved Rust dependency set and versions are recorded in

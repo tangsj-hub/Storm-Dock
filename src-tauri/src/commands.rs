@@ -2518,6 +2518,11 @@ pub(crate) fn launch_chatgpt() -> std::result::Result<(), String> {
     desktop::launch(DesktopApp::ChatGPT).map_err(error_text)
 }
 
+#[tauri::command]
+pub(crate) fn launch_grok_bot() -> std::result::Result<(), String> {
+    desktop::launch(DesktopApp::GrokBot).map_err(error_text)
+}
+
 fn grok_bot_plan_allowed(plan: Option<&str>) -> bool {
     !plan.is_some_and(|plan| plan.eq_ignore_ascii_case("free"))
 }

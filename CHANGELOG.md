@@ -6,6 +6,19 @@ Storm Dock 的重要变更记录在此。
 
 ## [Unreleased]
 
+## [1.5.8] - 2026-09-28
+
+### Added
+
+- README 补充开源社区交流群 QQ。
+- 顶栏悬停图标一键启动 Cursor / ChatGPT / Grok Bot。
+- 自实现 Windows 开机启动，并为 Run 路径加引号。
+
+### Changed
+
+- Windows 更新 `latest.json` 以 NSIS 为通用更新目标，保留用户安装路径，避免落到 WiX 默认目录。
+- Grok Bot 用量返回原标签；详情页取消 max-width 居中。
+
 ## [1.5.7] - 2026-09-24
 
 ### Added

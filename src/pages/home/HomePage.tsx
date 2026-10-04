@@ -376,13 +376,17 @@ export function HomePage() {
   );
   const loadAccounts = useCallback(async () => {
     const isCurrent = beginAccountsRequest();
-    const [nextApplications, nextAccounts] = await Promise.all([
+    const [nextApplications, nextAccounts, nextGrokBotStatus] = await Promise.all([
       listApplications(),
       grokBotMode ? listGrokBotAccounts() : listAccounts(selected),
+      // The Grok Bot client card prefers status.currentAccountId, so reload it
+      // with the account list; otherwise the card keeps showing the old account.
+      grokBotMode ? getGrokBotStatus().catch(() => undefined) : undefined,
     ]);
     if (!isCurrent()) return;
     setApplications(nextApplications);
     setAccounts(nextAccounts);
+    if (nextGrokBotStatus) setGrokBotStatus(nextGrokBotStatus);
   }, [beginAccountsRequest, grokBotMode, selected]);
   const selectApplication = (next: ApplicationKind) => {
     // Grok Bot keeps selected="cursor". Leaving it must not clear accounts or

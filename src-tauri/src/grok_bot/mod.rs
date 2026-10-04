@@ -163,6 +163,61 @@ pub(crate) fn active_slot() -> Option<String> {
     }
 }
 
+/// How often the local Grok Bot client store is checked for account changes.
+/// Only a file `stat` runs per tick; the file is parsed only after it changes.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const ACTIVE_SLOT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn store_stamp(path: &Path) -> Option<(std::time::SystemTime, u64)> {
+    let metadata = fs::metadata(path).ok()?;
+    Some((metadata.modified().ok()?, metadata.len()))
+}
+
+/// Watch the local Grok Bot client store and emit `accounts-changed` when its
+/// active account slot changes (sign-in / sign-out / account switch done in the
+/// Grok Bot client itself or by Storm Dock), so the Grok Bot tab updates
+/// without a manual refresh.
+pub(crate) fn spawn_active_slot_watcher(app: tauri::AppHandle) {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        use tauri::Emitter;
+        let Ok(path) = platform::data_path() else {
+            return;
+        };
+        let _ = std::thread::Builder::new()
+            .name("grok-bot-slot-watcher".into())
+            .spawn(move || {
+                let mut last_stamp = store_stamp(&path);
+                let mut last_active = read_store_root(&path)
+                    .ok()
+                    .and_then(|root| active_slot_from_root(&root));
+                loop {
+                    std::thread::sleep(ACTIVE_SLOT_POLL_INTERVAL);
+                    let stamp = store_stamp(&path);
+                    if stamp == last_stamp {
+                        continue;
+                    }
+                    // A partially written file fails to parse: keep the old
+                    // stamp so the next tick reads it again.
+                    let Ok(root) = read_store_root(&path) else {
+                        continue;
+                    };
+                    last_stamp = stamp;
+                    let active = active_slot_from_root(&root);
+                    if active != last_active {
+                        last_active = active;
+                        let _ = app.emit("accounts-changed", ());
+                    }
+                }
+            });
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app;
+    }
+}
+
 /// Whether this Cursor session matches the local Grok Bot client's active slot.
 pub(crate) fn session_matches_active_slot(session: &Session, active: &str) -> bool {
     session_auth_id(session)

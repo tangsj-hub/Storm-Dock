@@ -272,6 +272,7 @@ pub fn run() {
                 crate::window_chrome::apply_webview(&window);
             }
             crate::autostart::migrate_windows_autostart();
+            crate::grok_bot::spawn_active_slot_watcher(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

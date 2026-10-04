@@ -36,8 +36,9 @@ export function GrokBotStatusCard({
   void dayKey;
   const [websiteOpen, setWebsiteOpen] = useState(false);
   const [openingWebsite, setOpeningWebsite] = useState(false);
+  // Same predicate as GrokBotAccountList so the switcher and the cards stay the same set.
   const botAccounts = useMemo(
-    () => accounts.filter((account) => canLaunchGrokBot(account) && isGrokBotListEligible(account)),
+    () => accounts.filter(isGrokBotListEligible),
     [accounts],
   );
   const currentAccount = useMemo(() => {

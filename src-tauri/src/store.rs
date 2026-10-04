@@ -36,6 +36,17 @@ pub(crate) struct Controller {
     grok: GrokAdapter,
 }
 
+fn grok_bot_list_eligible(account: &AccountSummary) -> bool {
+    // Keep in sync with isGrokBotListEligible in accountPresentation.ts.
+    let Some(plan) = account.subscription.plan.as_deref() else {
+        return false;
+    };
+    if plan.is_empty() || plan.eq_ignore_ascii_case("free") {
+        return false;
+    }
+    !matches!(account.status.as_deref(), Some("blocked" | "invalid" | "missing"))
+}
+
 impl Controller {
     pub(crate) fn new(data_dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&data_dir)?;
@@ -388,21 +399,14 @@ impl Controller {
     }
 
     pub(crate) fn grok_bot_accounts(&self) -> Vec<AccountSummary> {
-        // Cursor: only non-free (Grok Bot needs a paid Cursor plan).
-        // Grok Build: show every imported account and badge its real tier (incl. Free).
-        let mut accounts = self
-            .accounts(ApplicationKind::Cursor)
+        // Same set as the Grok Bot switcher, the account cards, and quota refresh:
+        // paid Cursor + paid Grok Build. Unknown plan, Free, expired token,
+        // banned, and missing-credential accounts are omitted so counts stay in sync.
+        self.accounts(ApplicationKind::Cursor)
             .into_iter()
-            .filter(|account| {
-                !account
-                    .subscription
-                    .plan
-                    .as_deref()
-                    .is_some_and(|plan| plan.eq_ignore_ascii_case("free"))
-            })
-            .collect::<Vec<_>>();
-        accounts.extend(self.accounts(ApplicationKind::Grok));
-        accounts
+            .chain(self.accounts(ApplicationKind::Grok))
+            .filter(grok_bot_list_eligible)
+            .collect()
     }
 
     pub(crate) fn grok_bot_launchable_accounts(&self) -> Vec<AccountSummary> {
@@ -1458,7 +1462,7 @@ impl Controller {
 mod tests {
     use super::*;
     use crate::apps::CursorAdapter;
-    use crate::models::{now, ACCESS_TOKEN_KEY, EMAIL_KEY};
+    use crate::models::{now, ImportType, SubscriptionSummary, ACCESS_TOKEN_KEY, EMAIL_KEY};
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use rusqlite::params;
     use std::{
@@ -1468,6 +1472,40 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
+
+    #[test]
+    fn grok_bot_list_matches_visible_account_rules() {
+        fn account(plan: Option<&str>, status: Option<&str>) -> AccountSummary {
+            AccountSummary {
+                id: "id".into(),
+                label: "label".into(),
+                email: None,
+                application: ApplicationKind::Grok,
+                import_type: ImportType::Native,
+                subscription: SubscriptionSummary {
+                    plan: plan.map(str::to_owned),
+                    ..SubscriptionSummary::default()
+                },
+                usage: None,
+                grok_bot_usage: None,
+                grok_bot_reset_at: None,
+                reset_at: None,
+                days_remaining: None,
+                is_current: false,
+                is_grok_bot_current: false,
+                status: status.map(str::to_owned),
+                base_url: None,
+            }
+        }
+        assert!(super::grok_bot_list_eligible(&account(Some("Pro"), None)));
+        assert!(!super::grok_bot_list_eligible(&account(Some("Super"), Some("missing"))));
+        assert!(!super::grok_bot_list_eligible(&account(None, None)));
+        assert!(!super::grok_bot_list_eligible(&account(Some(""), None)));
+        assert!(!super::grok_bot_list_eligible(&account(Some("free"), None)));
+        assert!(!super::grok_bot_list_eligible(&account(Some("Free"), None)));
+        assert!(!super::grok_bot_list_eligible(&account(Some("Pro"), Some("invalid"))));
+        assert!(!super::grok_bot_list_eligible(&account(Some("Pro"), Some("blocked"))));
+    }
     #[test]
     fn token_import_labels_account_from_email_or_user_id() {
         let data_dir =

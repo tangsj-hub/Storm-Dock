@@ -1739,7 +1739,7 @@ pub(crate) fn list_grok_bot_accounts(
         .map(|controller| controller.grok_bot_accounts())
 }
 
-/// Refresh quotas only for Grok Bot–eligible accounts (non-free Cursor + Grok Build).
+/// Refresh quotas for the same Grok Bot accounts the list shows (paid Cursor + paid Grok Build).
 /// Bounded concurrency (max 3) — same fast path as Cursor account list refresh.
 #[tauri::command]
 pub(crate) async fn refresh_grok_bot_accounts(

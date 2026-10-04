@@ -162,7 +162,7 @@ export function GrokBotAccountList({ accounts, onReorder, ...props }: Props) {
   const dayKey = useLocalCalendarDay();
   const { t } = useTranslation();
   // Backend already returns Cursor (non-free) + all Grok Build (incl. free).
-  // Hide unknown subscription, free plan, expired token, and banned accounts.
+  // Hide unknown subscription, free plan, expired token, banned, and missing credentials.
   const botAccounts = accounts.filter(isGrokBotListEligible);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),

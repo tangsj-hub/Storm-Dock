@@ -167,11 +167,11 @@ export function isGrokBotFreePlan(account: Account) {
   return account.subscription.plan?.toLowerCase() === "free";
 }
 
-/** Exclude unknown subscription, free plan, expired token, and banned accounts from Grok Bot lists. */
+/** Exclude unknown subscription, free plan, expired token, banned, and missing-credential accounts from Grok Bot lists. */
 export function isGrokBotListEligible(account: Account) {
   if (!account.subscription.plan) return false;
   if (isGrokBotFreePlan(account)) return false;
-  if (account.status === "blocked" || account.status === "invalid") return false;
+  if (account.status === "blocked" || account.status === "invalid" || account.status === "missing") return false;
   return true;
 }
 

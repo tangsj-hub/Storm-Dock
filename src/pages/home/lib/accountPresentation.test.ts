@@ -145,14 +145,14 @@ describe("account presentation", () => {
     );
   });
 
-  it("excludes unknown subscription, free plan, expired token, and banned accounts from grok bot lists", () => {
+  it("excludes unknown subscription, free plan, expired token, banned, and missing-credential accounts from grok bot lists", () => {
     expect(isGrokBotListEligible(account)).toBe(true);
     expect(isGrokBotListEligible({ ...account, subscription: {} })).toBe(false);
     expect(isGrokBotListEligible({ ...account, subscription: { plan: "free" } })).toBe(false);
     expect(isGrokBotListEligible({ ...account, subscription: { plan: "Free" } })).toBe(false);
     expect(isGrokBotListEligible({ ...account, status: "invalid" })).toBe(false);
     expect(isGrokBotListEligible({ ...account, status: "blocked" })).toBe(false);
-    expect(isGrokBotListEligible({ ...account, status: "missing" })).toBe(true);
+    expect(isGrokBotListEligible({ ...account, status: "missing" })).toBe(false);
   });
 
   it("formats reset-passed grok usage as 0% · reset", () => {

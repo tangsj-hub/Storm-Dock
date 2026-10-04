@@ -120,6 +120,7 @@ import { GrokBotAccountList } from "./components/GrokBotAccountList";
 import { GrokBotStatusCard } from "./components/GrokBotStatusCard";
 import { SessionWorkspace, type SessionProvider } from "./components/SessionWorkspace";
 import { GrokBotSessionWorkspace } from "./components/GrokBotSessionWorkspace";
+import { isGrokBotListEligible } from "./lib/accountPresentation";
 import { shouldApplySwitchProgress } from "./lib/switchProgress";
 import type { WorkspaceSection, SwitchProgress } from "./types";
 
@@ -1242,7 +1243,9 @@ export function HomePage() {
               }).map(({ id, icon: Icon, image, labelKey }) => {
                 const count =
                   id === "accounts"
-                    ? accounts.length
+                    ? grokBotMode
+                      ? accounts.filter(isGrokBotListEligible).length
+                      : accounts.length
                     : id === "plugins"
                       ? pluginCount
                       : undefined;

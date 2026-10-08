@@ -6,6 +6,13 @@ Storm Dock 的重要变更记录在此。
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-08
+
+### Fixed
+
+- 首页顶栏激活页签悬停 ▶ 启动按钮可点击（修正 z-index / stacking context，避免被 idle 图标挡住）。
+- 顶栏一键启动失败时显示错误 Toast，并补充中英 i18n `appLaunchFailed`。
+
 ## [1.5.9] - 2026-10-04
 
 ### Fixed

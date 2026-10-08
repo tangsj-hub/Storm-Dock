@@ -346,6 +346,8 @@ export function HomePage() {
     () =>
       new URLSearchParams(window.location.search).get("notice") ?? undefined,
   );
+  // Text of the latest notice that should render as an error toast; any other notice stays success-styled.
+  const [errorNotice, setErrorNotice] = useState<string>();
   const [switchProgress, setSwitchProgress] = useState<SwitchProgress>();
   const [restartDialog, setRestartDialog] = useState<{
     account: Account;
@@ -629,7 +631,12 @@ export function HomePage() {
       else await launchCursor();
       setNotice(t("appLaunched"));
     } catch (error) {
-      showError(error);
+      const message = t("appLaunchFailed", {
+        application: t(kind),
+        error: error instanceof Error ? error.message : String(error),
+      });
+      setErrorNotice(message);
+      setNotice(message);
     } finally {
       setBusy(false);
     }
@@ -1378,7 +1385,13 @@ export function HomePage() {
         onOpenChange={(open) => {
           if (!open) setNotice(undefined);
         }}
-        status={refreshing ? "loading" : refreshFailed ? "error" : "success"}
+        status={
+          refreshing
+            ? "loading"
+            : refreshFailed || (notice !== undefined && notice === errorNotice)
+              ? "error"
+              : "success"
+        }
       />
       <Toast.Viewport className={styles.toastViewport} />
     </Toast.Provider>

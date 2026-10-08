@@ -14,6 +14,7 @@
 .appTabIcon { display: inline-grid; flex: 0 0 auto; height: 15px; place-items: center; width: 15px; }
 .appTabIconGlyph { display: block; grid-area: 1 / 1; height: 15px; width: 15px; }
 .appTabLaunchHit {
+  /* The hidden idle icon gets its own stacking context (opacity: 0 on hover, filter in dark mode), which would otherwise paint above this in-flow span and swallow the click. */
   align-items: center;
   background: transparent;
   border: 0;
@@ -26,7 +27,9 @@
   opacity: 0;
   padding: 0;
   pointer-events: none;
+  position: relative;
   width: 15px;
+  z-index: 1;
 }
 .appTabLaunchable[data-state="active"] .appTabIcon:hover .appTabIdle,
 .appTabLaunchable[data-state="active"] .appTabIcon:focus-within .appTabIdle { opacity: 0; }

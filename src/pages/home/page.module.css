@@ -1,14 +1,16 @@
 .shell { --app-header-height: 52px; display: flex; flex-direction: column; height: 100vh; min-height: 0; overflow: hidden; padding: var(--window-titlebar-height) 28px 28px; position: relative; }
-.header { align-items: center; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: 1fr auto 1fr; min-height: var(--app-header-height); padding-bottom: 18px; pointer-events: none; position: relative; z-index: 1; }
+.header { align-items: center; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto; gap: 10px; min-height: var(--app-header-height); padding-bottom: 18px; pointer-events: none; position: relative; z-index: 1; }
 .header button, .header a, .header input, .header [role="tab"] { pointer-events: auto; }
-.brand { align-items: center; display: flex; font-size: 17px; font-weight: 720; gap: 8px; }
+.brand { align-items: center; display: flex; font-size: 17px; font-weight: 720; gap: 8px; min-width: 0; }
+.brand > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand > img { height: 19px; width: 19px; }
 .brand svg { color: var(--focus); }
-.headerModes { align-items: center; display: flex; gap: 10px; }
+.headerModes { align-items: center; display: flex; gap: 10px; justify-self: center; max-width: 100%; min-width: 0; overflow: hidden; }
 .settingsButton { align-items: center; border-radius: 4px; color: var(--muted); display: inline-flex; height: 26px; justify-content: center; margin-left: 2px; width: 26px; }
 .settingsButton:hover { background: var(--track); color: var(--fg); }
-.switcher [role="tablist"] { background: var(--track); border: 1px solid var(--border-strong); border-radius: 7px; display: flex; gap: 2px; padding: 3px; }
-.appTab { align-items: center; background: transparent; border: 0; border-radius: 4px; color: var(--muted); display: inline-flex; font-size: 13px; font-weight: 600; gap: 6px; line-height: 28px; padding: 0 14px; }
+.switcher { max-width: 100%; min-width: 0; }
+.switcher [role="tablist"] { background: var(--track); border: 1px solid var(--border-strong); border-radius: 7px; display: flex; gap: 2px; max-width: 100%; min-width: 0; overflow: hidden; padding: 3px; }
+.appTab { align-items: center; background: transparent; border: 0; border-radius: 4px; color: var(--muted); display: inline-flex; flex-shrink: 1; font-size: 13px; font-weight: 600; gap: 6px; line-height: 28px; max-width: 100%; min-width: 0; padding: 0 14px; white-space: nowrap; }
 .appTab img { height: 15px; width: 15px; }
 .appTab[data-state="active"] { background: var(--solid); box-shadow: 0 1px 2px var(--shadow); color: var(--fg); }
 .appTabIcon { display: inline-grid; flex: 0 0 auto; height: 15px; place-items: center; width: 15px; }
@@ -38,7 +40,7 @@
   opacity: 1;
   pointer-events: auto;
 }
-.contextToolbar { align-items: center; display: flex; gap: 8px; justify-self: end; min-height: 34px; }
+.contextToolbar { align-items: center; display: flex; flex-shrink: 0; gap: 8px; justify-self: end; min-height: 34px; }
 .iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--muted); display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
 .iconButton:hover { background: var(--hover); border-color: var(--border-strong); color: var(--fg); }
 .iconButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }
@@ -47,7 +49,7 @@
 .grokBotCurrentBadge { align-items: center; background: #16a34a; border: 1px solid var(--solid); border-radius: 999px; color: #fff; display: inline-flex; height: 14px; justify-content: center; pointer-events: none; position: absolute; right: -3px; top: -3px; width: 14px; }
 .grokBotCurrentBadge svg { display: block; }
 .spinning { animation: spin .8s linear infinite; }
-.addButton { align-items: center; background: var(--accent); border: 1px solid var(--accent); border-radius: 5px; color: var(--on-accent); display: inline-flex; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; }
+.addButton { align-items: center; background: var(--accent); border: 1px solid var(--accent); border-radius: 5px; color: var(--on-accent); display: inline-flex; flex-shrink: 0; font-size: 13px; font-weight: 650; gap: 7px; min-height: 34px; padding: 0 12px; text-decoration: none; white-space: nowrap; }
 .addButton:hover { background: var(--accent-hover); }
 .addButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }
 .workspace { display: grid; flex: 1; gap: 16px; grid-template-columns: 48px minmax(0, 1fr); margin: 30px 0 0; min-height: 0; overflow: hidden; width: 100%; }

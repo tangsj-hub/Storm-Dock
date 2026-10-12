@@ -103,6 +103,7 @@ pub(crate) fn usage_from_billing(
         grok_bot: None,
         grok_bot_reset_at: None,
         products,
+        breakdown: None,
         models: Vec::new(),
         weekly,
         weekly_available: true,

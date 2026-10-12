@@ -437,6 +437,63 @@ Object.assign(resources.en.translation, {
   savingSessionTitle: "Saving..."
 });
 
+Object.assign(resources.zh.translation, {
+  usageInputTokens: "输入 Token",
+  usageOutputTokens: "输出 Token",
+  usageMembership: "会员类型",
+  usageDaysLeft: "剩余天数",
+  usageDaysCount: "{{count}} 天",
+  usageOverage: "超额 {{amount}}",
+  usagePoolAuto: "Auto + Composer",
+  usagePoolApi: "API",
+  usagePoolBonus: "套餐溢出 / Bonus",
+  usagePlanTotal: "套餐内合计",
+  usagePlanTotalEstimate: "{{used}} / ~{{limit}}（{{percent}}%）",
+  usagePoolOnDemand: "On-Demand",
+  usageCycleEnd: "计费周期结束",
+  usageTokensPartial: "不完整 · 已统计 {{fetched}} 条事件",
+  usageTokensPartialOf: "不完整 · 已统计 {{fetched}} / {{total}} 条事件",
+  usageTokensCached: "完整周期 · {{count}} 条事件（缓存）",
+  usagePullFullCycle: "拉取完整周期",
+  usagePullingFullCycle: "拉取中…",
+  usagePullFullCycleLoading: "正在拉取完整计费周期…",
+  usagePullFullCycleDone: "已拉取完整周期。",
+  usagePullFullCycleCapped: "已达拉取上限，统计仍不完整。",
+  "usage.cycleMissing": "缺少计费周期，请先刷新用量。",
+  "usage.cycleUnsupported": "当前账号类型不支持周期 Token 统计。",
+  "usage.cycleBusy": "Token 统计正在进行中，请稍候。",
+  usageTokensLoading: "正在统计 Token…"
+});
+Object.assign(resources.en.translation, {
+  usageInputTokens: "Input tokens",
+  usageOutputTokens: "Output tokens",
+  usageMembership: "Plan",
+  usageDaysLeft: "Days left",
+  usageDaysCount_one: "{{count}} day",
+  usageDaysCount_other: "{{count}} days",
+  usageOverage: "Overage {{amount}}",
+  usagePoolAuto: "Auto + Composer",
+  usagePoolApi: "API",
+  usagePoolBonus: "Plan overflow / Bonus",
+  usagePlanTotal: "Plan total",
+  usagePlanTotalEstimate: "{{used}} / ~{{limit}} ({{percent}}%)",
+  usagePoolOnDemand: "On-Demand",
+  usageCycleEnd: "Billing cycle ends",
+  usageTokensPartial: "Incomplete · {{fetched}} events counted",
+  usageTokensPartialOf: "Incomplete · {{fetched}} / {{total}} events counted",
+  usageTokensCached_one: "Full cycle · {{count}} event (cached)",
+  usageTokensCached_other: "Full cycle · {{count}} events (cached)",
+  usagePullFullCycle: "Fetch full cycle",
+  usagePullingFullCycle: "Fetching…",
+  usagePullFullCycleLoading: "Fetching the full billing cycle…",
+  usagePullFullCycleDone: "Full billing cycle fetched.",
+  usagePullFullCycleCapped: "Fetch limit reached; totals are still incomplete.",
+  "usage.cycleMissing": "Billing cycle is missing. Refresh usage first.",
+  "usage.cycleUnsupported": "Cycle token stats are not supported for this account type.",
+  "usage.cycleBusy": "Token stats are already being collected. Please wait.",
+  usageTokensLoading: "Counting tokens…"
+});
+
 void i18n.use(initReactI18next).init({
   resources,
   lng: localStorage.getItem("language") ?? "zh",

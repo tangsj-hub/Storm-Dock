@@ -106,12 +106,39 @@ export type CursorUsageDetails = {
   grokBot?: { kind: "percent"; used: number; percent: number };
   grokBotResetAt?: string;
   products?: { name: string; percent: number }[];
+  /** Individual two-pool (Pro-style) breakdown; absent for team/enterprise/Grok. Cents / 0-100. */
+  breakdown?: CursorUsageBreakdown;
   models: { name: string; requests: number }[];
   weekly: { date: string; requests: number; onDemandCents: number; isOnDemand: boolean }[];
   weeklyAvailable: boolean;
   weeklyError?: string;
   events?: UsageEvent[];
   checkedAt: number;
+};
+
+export type CursorUsageBreakdown = {
+  planUsed?: number | null;
+  planLimit?: number | null;
+  autoPercent?: number | null;
+  apiPercent?: number | null;
+  bonus?: number | null;
+  /** plan.breakdown.total (fallback included + bonus), cents */
+  planTotal?: number | null;
+  /** Guessed seat/included cap (inferred_cursor_limit_cents), cents; estimate only */
+  planTotalLimit?: number | null;
+  onDemandUsed?: number | null;
+  onDemandLimit?: number | null;
+  /** bonus + onDemandUsed */
+  overage: number;
+  cycleStart?: string | null;
+  cycleEnd?: string | null;
+  /** Σ tokenUsage.inputTokens / outputTokens (cache excluded) */
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  tokensComplete: boolean;
+  tokensFetched: number;
+  tokensTotal?: number | null;
+  tokensCachedAt?: number | null;
 };
 
 export type UsageEvent = {

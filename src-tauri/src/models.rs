@@ -148,6 +148,10 @@ pub(crate) struct CursorUsageDetails {
     pub(crate) grok_bot_reset_at: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) products: Vec<ProductUsageShare>,
+    /// Individual two-pool (Pro-style) plan breakdown for the details page.
+    /// `None` for team/enterprise/legacy plans, which keep the old layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) breakdown: Option<CursorUsageBreakdown>,
     pub(crate) models: Vec<ModelUsageSummary>,
     pub(crate) weekly: Vec<WeeklyUsageSummary>,
     pub(crate) weekly_available: bool,
@@ -156,6 +160,38 @@ pub(crate) struct CursorUsageDetails {
     #[serde(default)]
     pub(crate) events: Vec<UsageEvent>,
     pub(crate) checked_at: u64,
+}
+
+/// Amounts are cents; percents are 0..100. Tokens exclude cache read/write.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CursorUsageBreakdown {
+    pub(crate) plan_used: Option<f64>,
+    pub(crate) plan_limit: Option<f64>,
+    pub(crate) auto_percent: Option<f64>,
+    pub(crate) api_percent: Option<f64>,
+    pub(crate) bonus: Option<f64>,
+    /// plan.breakdown.total (fallback included + bonus).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) plan_total: Option<f64>,
+    /// Guessed seat/included cap from inferred_cursor_limit_cents; only set when
+    /// it meaningfully exceeds plan.limit (same rule as usage_pools).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) plan_total_limit: Option<f64>,
+    pub(crate) on_demand_used: Option<f64>,
+    pub(crate) on_demand_limit: Option<f64>,
+    /// bonus + onDemandUsed
+    pub(crate) overage: f64,
+    pub(crate) cycle_start: Option<String>,
+    pub(crate) cycle_end: Option<String>,
+    pub(crate) input_tokens: Option<f64>,
+    pub(crate) output_tokens: Option<f64>,
+    pub(crate) tokens_complete: bool,
+    pub(crate) tokens_fetched: u64,
+    pub(crate) tokens_total: Option<u64>,
+    /// Set when the token figures come from a cached full-cycle pull.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) tokens_cached_at: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

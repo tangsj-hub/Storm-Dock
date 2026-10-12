@@ -11,10 +11,10 @@ import { Tooltip } from "../../components/Tooltip";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
 import { listAccounts } from "../../lib/api";
-import { homeKindFromUsageQuery, homePath, syncDocumentAppKind, type Account, type CursorUsageDetails } from "../../lib/types";
+import { homeKindFromUsageQuery, homePath, syncDocumentAppKind, type Account, type CursorUsageBreakdown, type CursorUsageDetails } from "../../lib/types";
 import { subscriptionDatedLabel, subscriptionPlanName } from "../home/lib/accountPresentation";
 import "../../styles/global.css";
-import { hasLimit, isOverLimit, metric, productParts, resetDatedLabel, spendCents } from "./format";
+import { hasLimit, isOverLimit, metric, money, number, productParts, resetDatedLabel, spendCents } from "./format";
 import { EventLedger } from "./EventLedger";
 import { ModelBars } from "./ModelBars";
 import { WeeklyChart } from "./WeeklyChart";
@@ -40,6 +40,72 @@ function usageUsedCopy(
     return t("usageUsed", { label, amount });
   }
   return `${label} ${amount}`;
+}
+
+/** Stable backend error codes → i18n; unknown errors fall back to the raw message. */
+const USAGE_ERROR_CODES = new Set(["usage.cycleMissing", "usage.cycleUnsupported", "usage.cycleBusy"]);
+function usageErrorText(message: string, t: (key: string) => string) {
+  return USAGE_ERROR_CODES.has(message) ? t(message) : message;
+}
+
+function cycleEndText(iso?: string | null) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+const pctText = (value?: number | null) => (value == null ? "—" : `${Math.round(value)}%`);
+const centsText = (value?: number | null) => (value == null ? "—" : money(value));
+const tokenText = (value?: number | null) => (value == null ? "—" : number.format(Math.round(value)));
+
+function CursorBreakdownView({ b, membership, daysLeft, grokBot, grokBotResetAt }: {
+  b: CursorUsageBreakdown;
+  grokBot?: CursorUsageDetails["grokBot"];
+  grokBotResetAt?: string;
+  membership?: string;
+  daysLeft?: number;
+}) {
+  const { t } = useTranslation();
+  const planUsed = b.planUsed ?? undefined;
+  const planLimit = b.planLimit ?? undefined;
+  const planPercent = planUsed !== undefined && planLimit ? (planUsed / planLimit) * 100 : undefined;
+  const exceeded = b.overage > 0 || (planPercent ?? 0) >= 100;
+  return <div className={styles.breakdown}>
+    <div className={styles.statCard}>
+      <div className={styles.stat}><span>{t("usageInputTokens")}</span><strong>{tokenText(b.inputTokens)}</strong></div>
+      <div className={styles.stat}><span>{t("usageOutputTokens")}</span><strong>{tokenText(b.outputTokens)}</strong></div>
+      <div className={styles.stat}><span>{t("usageMembership")}</span><strong className={styles.statPlan}>{membership ?? "—"}</strong></div>
+      <div className={styles.stat}><span>{t("usageDaysLeft")}</span><strong className={styles.statDays}>{daysLeft === undefined ? "—" : t("usageDaysCount", { count: Math.max(daysLeft, 0) })}</strong></div>
+      {grokBot && <div className={styles.stat} title={grokBotResetAt ? resetDatedLabel(grokBotResetAt, t).absolute : undefined}>
+        <span>{t("usageGrokBot")}</span>
+        <strong>{metric(grokBot)}</strong>
+        {grokBotResetAt && <small className={styles.statSub}>{resetFull(grokBotResetAt, t)}</small>}
+      </div>}
+    </div>
+    {planPercent !== undefined && <>
+      <div className={styles.planBar} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(planPercent)}>
+        <span className={exceeded ? styles.planBarOver : undefined} style={{ width: `${Math.min(Math.max(planPercent, 0), 100)}%` }} />
+      </div>
+      <p className={styles.planCaption}>
+        {money(planUsed!)} / {money(planLimit!)} ({Math.round(planPercent)}%)
+        {b.overage > 0 && <span className={styles.planOverage}> · {t("usageOverage", { amount: money(b.overage) })}</span>}
+      </p>
+    </>}
+    <div className={styles.poolCard}>
+      <div className={styles.poolCol}>
+        <div className={styles.poolRow}><span>{t("usagePoolAuto")}</span><strong>{pctText(b.autoPercent)}</strong></div>
+        <div className={styles.poolRow}><span>{t("usagePoolBonus")}</span><strong>{centsText(b.bonus)}</strong></div>
+        <div className={styles.poolRow}><span>{t("usageCycleEnd")}</span><strong>{cycleEndText(b.cycleEnd)}</strong></div>
+      </div>
+      <div className={styles.poolCol}>
+        <div className={styles.poolRow}><span>{t("usagePoolApi")}</span><strong>{pctText(b.apiPercent)}</strong></div>
+        <div className={styles.poolRow}><span>{t("usagePoolOnDemand")}</span><strong>{centsText(b.onDemandUsed)} / {centsText(b.onDemandLimit)}</strong></div>
+      </div>
+      {b.planTotal != null && <div className={styles.poolTotal}><span>{t("usagePlanTotal")}</span><strong>{b.planTotalLimit != null ? t("usagePlanTotalEstimate", { used: money(b.planTotal), limit: money(b.planTotalLimit), percent: Math.round((b.planTotal / b.planTotalLimit) * 100) }) : money(b.planTotal)}</strong></div>}
+    </div>
+  </div>;
 }
 
 function resetFull(resetAt: string | undefined, t: (key: string, options?: Record<string, unknown>) => string, nowMs?: number) {
@@ -70,6 +136,9 @@ function UsagePage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exportData, setExportData] = useState<unknown>();
   const [account, setAccount] = useState<Account>();
+  const [pullingFull, setPullingFull] = useState(false);
+  const [tokensLoading, setTokensLoading] = useState(false);
+  const tokensInFlight = useRef<string | undefined>(undefined);
   const accountStatus = account?.status;
   const flashTimer = useRef<number | undefined>(undefined);
   useEffect(() => { syncDocumentAppKind(returnHome); }, [returnHome]);
@@ -107,6 +176,7 @@ function UsagePage() {
       const usage = await invoke<CursorUsageDetails>(usageKind === "grok" ? "get_grok_usage" : "get_cursor_usage", { id: accountId });
       if (usage.accountId !== accountId) throw new Error(t("usageAccountMismatch"));
       setData(usage);
+      if (usage.breakdown && !(usage.breakdown.tokensComplete && usage.breakdown.tokensCachedAt)) void loadCycleTokens(accountId);
       setAccount(undefined);
       void listAccounts(usageKind).then((accounts) => {
         setAccount(accounts.find((item) => item.id === accountId));
@@ -129,6 +199,39 @@ function UsagePage() {
       setNotice(message);
     } finally {
       setBusy(false);
+    }
+  };
+  // Background default pass (≤5 pages) after a refresh; one per account at a time.
+  const loadCycleTokens = async (id: string) => {
+    if (tokensInFlight.current === id) return;
+    tokensInFlight.current = id;
+    setTokensLoading(true);
+    try {
+      const usage = await invoke<CursorUsageDetails>("get_cursor_cycle_tokens", { id, full: false });
+      if (usage.accountId === id) setData((current) => (current?.accountId === id ? usage : current));
+    } catch {
+      /* token stats are optional; keep the current figures */
+    } finally {
+      if (tokensInFlight.current === id) tokensInFlight.current = undefined;
+      setTokensLoading(false);
+    }
+  };
+  const pullFullCycle = async () => {
+    if (!accountId || pullingFull || tokensLoading) return;
+    setPullingFull(true);
+    setNoticeStatus("loading");
+    setNotice(t("usagePullFullCycleLoading"));
+    try {
+      const usage = await invoke<CursorUsageDetails>("get_cursor_cycle_tokens", { id: accountId, full: true });
+      if (usage.accountId !== accountId) throw new Error(t("usageAccountMismatch"));
+      setData(usage);
+      setNoticeStatus(usage.breakdown?.tokensComplete ? "success" : "error");
+      setNotice(t(usage.breakdown?.tokensComplete ? "usagePullFullCycleDone" : "usagePullFullCycleCapped"));
+    } catch (error) {
+      setNoticeStatus("error");
+      setNotice(usageErrorText(error instanceof Error ? error.message : String(error), t));
+    } finally {
+      setPullingFull(false);
     }
   };
   const openExport = async () => {
@@ -178,16 +281,29 @@ function UsagePage() {
         {accountStatus === "missing" && <span className={styles.invalidBadge}>{t("credentialMissing", { defaultValue: "凭证缺失" })}</span>}
       </div>
       {accountStatus === "blocked" && <p className={styles.blockedBanner}>{t("usageAccountBlocked", { defaultValue: "此账号已被封禁，无法刷新用量。请更换账号或联系服务方。" })}</p>}
+      {!isGrok && data.breakdown && <CursorBreakdownView b={data.breakdown} daysLeft={resetLabel?.days} membership={membership} grokBot={data.grokBot} grokBotResetAt={data.grokBotResetAt} />}
       <div className={styles.usageLines}>
-        <p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(primaryLabel, data.primary, t, isGrok ? productParts(data.products) : undefined)}{isGrok && data.resetAt ? <span className={styles.poolReset} title={resetLabel?.absolute}>{t("usageResetParen", { reset: resetFull(data.resetAt, t) })}</span> : null}</p>
-        {data.onDemand && <p className={isOverLimit(data.onDemand) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(onDemandLabel, data.onDemand, t)}</p>}
-        {data.grokBot && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset} title={resetDatedLabel(data.grokBotResetAt, t).absolute}> · {resetFull(data.grokBotResetAt, t)}</span>}</p>}
+        {(isGrok || !data.breakdown) && <><p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(primaryLabel, data.primary, t, isGrok ? productParts(data.products) : undefined)}{isGrok && data.resetAt ? <span className={styles.poolReset} title={resetLabel?.absolute}>{t("usageResetParen", { reset: resetFull(data.resetAt, t) })}</span> : null}</p>
+        {data.onDemand && <p className={isOverLimit(data.onDemand) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(onDemandLabel, data.onDemand, t)}</p>}</>}
+        {data.grokBot && (isGrok || !data.breakdown) && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset} title={resetDatedLabel(data.grokBotResetAt, t).absolute}> · {resetFull(data.grokBotResetAt, t)}</span>}</p>}
       </div>
       <div className={styles.charts}>
         <section><h2>{weeklyTitle}</h2>{data.weeklyAvailable ? <WeeklyChart days={data.weekly} events={data.events ?? []} /> : <p className={styles.muted}>{data.weeklyError ?? t("usageWeeklyUnavailable")}</p>}</section>
         <section><h2>{modelsTitle}</h2>{(data.events ?? []).some((event) => spendCents(event) !== undefined) ? <ModelBars events={data.events ?? []} models={data.models} /> : <p className={styles.muted}>{noModelsCopy}</p>}</section>
       </div>
-      <EventLedger events={data.events ?? []} unavailable={data.weeklyError} />
+      <EventLedger
+        cycleTokens={!isGrok && data.breakdown ? {
+          loading: tokensLoading,
+          pulling: pullingFull,
+          complete: data.breakdown.tokensComplete,
+          fetched: data.breakdown.tokensFetched,
+          total: data.breakdown.tokensTotal,
+          cachedAt: data.breakdown.tokensCachedAt,
+          onPullFull: () => void pullFullCycle(),
+        } : undefined}
+        events={data.events ?? []}
+        unavailable={data.weeklyError}
+      />
       <div className={styles.meta}>
         {resetLabel && resetLabel.days !== undefined ? <span className={styles.reset} title={resetLabel.absolute}>{resetLabel.full}</span> : <span>{t("usageUnknown")}</span>}
         <span className={justUpdated ? styles.justUpdated : undefined}>{t("usageCheckedAt", { time: checkedAt })}</span>

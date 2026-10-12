@@ -14,7 +14,10 @@ use crate::cursor::api::{
     uninstall_cursor_marketplace_plugin,
 };
 use crate::cursor::oauth::{complete_cursor_oauth, open_browser, OauthLoginState};
-use crate::cursor::usage::{fetch_cursor_usage, fetch_grok_bot_quota_fast, usage_pools};
+use crate::cursor::usage::{
+    apply_cycle_tokens, fetch_cursor_usage, fetch_cycle_tokens, fetch_grok_bot_quota_fast,
+    usage_pools, CycleTokens,
+};
 use crate::desktop::{self, DesktopApp};
 use crate::error::AppError;
 use crate::grok::snapshot::fetch_grok_snapshot;
@@ -2163,7 +2166,7 @@ pub(crate) async fn get_cursor_usage(
         tauri::async_runtime::spawn_blocking(move || fetch_cursor_usage(&account, &session))
             .await
             .map_err(|error| error.to_string())?;
-    let (usage, raw) = match usage_result {
+    let (mut usage, raw) = match usage_result {
         Ok(value) => value,
         Err(error) => {
             let message = error.to_string();
@@ -2176,13 +2179,103 @@ pub(crate) async fn get_cursor_usage(
             return Err(error_text(error));
         }
     };
-    state
-        .0
-        .lock()
-        .map_err(|_| "账户存储不可用".to_string())?
+    let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+    // Refresh no longer collects cycle tokens; carry the saved figures over for
+    // the same billing cycle until the background pass replaces them.
+    if let Ok(Some(saved)) = controller.saved_cursor_usage(&id) {
+        if let (Some(fresh), Some(cached)) = (usage.breakdown.as_mut(), saved.breakdown) {
+            if cached.cycle_start == fresh.cycle_start && cached.cycle_end == fresh.cycle_end {
+                fresh.input_tokens = cached.input_tokens;
+                fresh.output_tokens = cached.output_tokens;
+                fresh.tokens_complete = cached.tokens_complete;
+                fresh.tokens_fetched = cached.tokens_fetched;
+                fresh.tokens_total = cached.tokens_total;
+                fresh.tokens_cached_at = cached.tokens_cached_at;
+            }
+        }
+    }
+    controller
         .save_cursor_usage(&id, usage.clone(), raw)
         .map_err(error_text)?;
     Ok(usage)
+}
+
+/// Accounts with a cycle-token pass in flight (one at a time per account).
+static CYCLE_TOKENS_IN_FLIGHT: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+    std::sync::LazyLock::new(Default::default);
+
+struct CycleTokensGuard(String);
+
+impl CycleTokensGuard {
+    fn acquire(id: &str) -> Option<Self> {
+        let mut set = CYCLE_TOKENS_IN_FLIGHT.lock().ok()?;
+        set.insert(id.to_owned()).then(|| Self(id.to_owned()))
+    }
+}
+
+impl Drop for CycleTokensGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = CYCLE_TOKENS_IN_FLIGHT.lock() {
+            set.remove(&self.0);
+        }
+    }
+}
+
+/// Billing-cycle token totals. Default (`full` false): background pass of up to
+/// 5 pages, triggered by the page after a refresh. `full`: the explicit
+/// "拉取完整周期" action (≤100 pages / 60 s). Results are cached on the saved
+/// details; a cached full-cycle result is not replaced by a partial default pass.
+#[tauri::command]
+pub(crate) async fn get_cursor_cycle_tokens(
+    id: String,
+    full: Option<bool>,
+    state: State<'_, AppState>,
+) -> std::result::Result<CursorUsageDetails, String> {
+    let full = full.unwrap_or(false);
+    let _guard = CycleTokensGuard::acquire(&id)
+        .ok_or_else(|| crate::cursor::usage::USAGE_ERROR_CYCLE_BUSY.to_string())?;
+    let (saved, session) = {
+        let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+        let saved = controller
+            .saved_cursor_usage(&id)
+            .map_err(error_text)?
+            .ok_or_else(|| crate::cursor::usage::USAGE_ERROR_CYCLE_MISSING.to_string())?;
+        let (_, session) = controller.cursor_usage_session(&id).map_err(error_text)?;
+        (saved, session)
+    };
+    let breakdown = saved
+        .breakdown
+        .clone()
+        .ok_or_else(|| crate::cursor::usage::USAGE_ERROR_CYCLE_UNSUPPORTED.to_string())?;
+    let fetched_cycle = (breakdown.cycle_start.clone(), breakdown.cycle_end.clone());
+    let tokens: CycleTokens = tauri::async_runtime::spawn_blocking(move || {
+        fetch_cycle_tokens(&session, &breakdown, full)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(error_text)?;
+    let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+    // Re-read in case a refresh landed meanwhile; only apply to the same cycle.
+    let mut details = controller
+        .saved_cursor_usage(&id)
+        .map_err(error_text)?
+        .unwrap_or(saved);
+    let Some(current) = details.breakdown.as_mut() else {
+        return Ok(details);
+    };
+    if (current.cycle_start.clone(), current.cycle_end.clone()) != fetched_cycle {
+        return Ok(details);
+    }
+    let keeps_cached_full =
+        !full && !tokens.complete && current.tokens_complete && current.tokens_cached_at.is_some();
+    if !keeps_cached_full {
+        let cached_at = (full && tokens.complete).then(crate::models::now);
+        apply_cycle_tokens(current, &tokens, cached_at);
+        controller
+            .save_cursor_usage_details(&id, &details)
+            .map_err(error_text)?;
+    }
+    Ok(details)
 }
 
 #[tauri::command]

@@ -319,6 +319,7 @@ pub fn run() {
             commands::refresh_all_grok_accounts,
             commands::refresh_all_codex_accounts,
             commands::get_cursor_usage,
+            commands::get_cursor_cycle_tokens,
             commands::get_grok_usage,
             commands::get_saved_grok_usage,
             commands::get_saved_cursor_usage,

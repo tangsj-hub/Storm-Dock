@@ -1,3 +1,4 @@
+import { LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UsageEvent } from "../../lib/types";
@@ -26,7 +27,44 @@ function eventCost(event: UsageEvent) {
   return cents === undefined ? undefined : money(cents);
 }
 
-export function EventLedger({ events, unavailable }: { events: UsageEvent[]; unavailable?: string }) {
+export type CycleTokensStatus = {
+  loading: boolean;
+  pulling: boolean;
+  complete: boolean;
+  fetched: number;
+  total?: number | null;
+  cachedAt?: number | null;
+  onPullFull: () => void;
+};
+
+function CycleTokensBar({ status }: { status: CycleTokensStatus }) {
+  const { t } = useTranslation();
+  if (status.loading) {
+    return <div className={styles.cycleTokens}>
+      <LoaderCircle aria-hidden="true" className={styles.spinning} size={12} />
+      <span>{t("usageTokensLoading")}</span>
+    </div>;
+  }
+  const note = status.complete
+    ? status.cachedAt ? t("usageTokensCached", { count: status.fetched }) : undefined
+    : status.total != null
+      ? t("usageTokensPartialOf", { fetched: status.fetched, total: status.total })
+      : t("usageTokensPartial", { fetched: status.fetched });
+  if (!note && status.complete) return null;
+  return <div className={styles.cycleTokens}>
+    {note && <span className={status.complete ? undefined : styles.cycleTokensPartial}>{note}</span>}
+    {!status.complete && <button className={styles.cycleTokensPull} disabled={status.pulling} onClick={status.onPullFull} type="button">
+      {status.pulling ? <LoaderCircle aria-hidden="true" className={styles.spinning} size={12} /> : null}
+      {status.pulling ? t("usagePullingFullCycle") : t("usagePullFullCycle")}
+    </button>}
+  </div>;
+}
+
+export function EventLedger({ events, unavailable, cycleTokens }: {
+  events: UsageEvent[];
+  unavailable?: string;
+  cycleTokens?: CycleTokensStatus;
+}) {
   const { t } = useTranslation();
   const bounds = useMemo(() => rangeBounds(events), [events]);
   const [from, setFrom] = useState(bounds.min);
@@ -80,12 +118,16 @@ export function EventLedger({ events, unavailable }: { events: UsageEvent[]; una
   if (!events.length) {
     return <section className={styles.ledger}>
       <h2>{t("usageEvents")}</h2>
+      {cycleTokens && <CycleTokensBar status={cycleTokens} />}
       <p className={styles.empty}>{unavailable ?? t("usageEventsUnavailable")}</p>
     </section>;
   }
   return <section className={styles.ledger}>
     <div className={styles.toolbar}>
-      <h2>{t("usageEvents")}</h2>
+      <div>
+        <h2>{t("usageEvents")}</h2>
+        {cycleTokens && <CycleTokensBar status={cycleTokens} />}
+      </div>
       <div className={styles.filters}>
         <div className={styles.presets}>
           <button className={preset === "week" ? styles.presetActive : styles.preset} onClick={() => applyRange(week.from, week.to)} type="button">{t("usageRangeWeek")}</button>

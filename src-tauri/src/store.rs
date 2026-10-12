@@ -892,6 +892,7 @@ impl Controller {
                 grok_bot: None,
                 grok_bot_reset_at: None,
                 products: vec![],
+                breakdown: None,
                 models: vec![],
                 weekly_available: false,
                 weekly: vec![],
@@ -923,6 +924,22 @@ impl Controller {
                 now() as i64,
                 id
             ],
+        )?;
+        Ok(())
+    }
+
+    /// Rewrite only the saved details JSON (used to cache full-cycle token totals).
+    pub(crate) fn save_cursor_usage_details(
+        &mut self,
+        id: &str,
+        usage: &CursorUsageDetails,
+    ) -> Result<()> {
+        if usage.account_id != id {
+            return Err(AppError::Message("用量数据与账号不匹配。".into()));
+        }
+        self.database.execute(
+            "UPDATE accounts SET usage_json=?1 WHERE id=?2",
+            params![serde_json::to_string(usage)?, id],
         )?;
         Ok(())
     }
@@ -2024,6 +2041,7 @@ INSERT INTO providers (id, app_type, name, settings_config, meta, is_current, in
             grok_bot: None,
             grok_bot_reset_at: None,
             products: vec![],
+            breakdown: None,
             models: vec![],
             weekly: vec![],
             weekly_available: false,

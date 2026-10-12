@@ -44,5 +44,29 @@
 .reset { background: transparent; border: 0; color: inherit; font: inherit; padding: 0; }
 .reset:hover { color: var(--fg); }
 @keyframes flash { 0% { color: var(--info); } 100% { color: var(--muted); } }
+/* Cursor individual two-pool breakdown */
+.breakdown { padding-top: 16px; }
+.statCard { background: var(--hover); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 12px 52px; justify-content: center; padding: 18px 20px 16px; }
+.stat { align-items: center; display: flex; flex-direction: column; gap: 8px; }
+.stat span, .poolRow span { color: var(--muted); font-size: 14px; }
+.stat strong, .poolRow strong, .planCaption { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.stat strong { color: var(--fg); font-size: 16px; font-weight: 700; }
+.stat .statPlan { color: var(--info); }
+.stat .statDays { color: var(--danger); }
+.statSub { color: var(--muted); font-size: 11px; margin-top: -4px; }
+.planBar { background: var(--border); border-radius: 999px; height: 11px; margin-top: 24px; overflow: hidden; }
+.planBar span { background: var(--accent); border-radius: inherit; display: block; height: 100%; }
+.planBar .planBarOver { background: var(--danger); }
+.planCaption { color: var(--muted); font-size: 13px; font-weight: 650; margin: 10px 0 0; text-align: right; }
+.planOverage { color: var(--danger); }
+.poolCard { background: var(--hover); border-radius: 10px; display: grid; grid-template-columns: 1fr 1fr; margin-top: 22px; padding: 10px 0; }
+.poolTotal { align-items: center; border-top: 1px solid var(--border); display: flex; gap: 16px; grid-column: 1 / -1; justify-content: space-between; margin: 0 24px; min-height: 58px; padding-top: 2px; }
+.poolTotal span { color: var(--muted); font-size: 14px; white-space: nowrap; }
+.poolTotal strong { color: var(--fg); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 16px; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.poolCol { align-content: start; display: grid; padding: 0 24px; }
+.poolCol + .poolCol { border-left: 1px solid var(--border); }
+.poolRow { align-items: center; display: flex; gap: 16px; justify-content: space-between; min-height: 58px; }
+.poolRow strong { color: var(--fg); font-size: 16px; font-weight: 700; white-space: nowrap; }
+@media (max-width: 620px) { .poolCard { grid-template-columns: 1fr; } .poolCol + .poolCol { border-left: 0; border-top: 1px solid var(--border); } }
 @media (max-width: 860px) { .charts { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .shell { padding: var(--window-titlebar-height) 18px 18px; } .header { align-items: flex-start; } .refresh { white-space: nowrap; } }

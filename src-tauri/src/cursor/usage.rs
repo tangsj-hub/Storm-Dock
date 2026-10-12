@@ -5,7 +5,7 @@ use crate::cursor::api::{dashboard_cookie, dashboard_request_with, fetch_stripe_
 use crate::error::Result;
 use crate::http::{Budget, Retry, USAGE_BUDGET};
 use crate::models::{
-    now, Account, CursorUsageDetails, ModelUsageSummary, Session, UsageEvent, UsageMetric,
+    now, Account, CursorUsageBreakdown, CursorUsageDetails, ModelUsageSummary, Session, UsageEvent, UsageMetric,
     WeeklyUsageSummary,
 };
 
@@ -272,16 +272,26 @@ pub(crate) fn event_number(event: &serde_json::Value, keys: &[&str]) -> Option<f
         .filter(|value| value.is_finite())
 }
 
+/// Token counters live under `tokenUsage` (CursorMeter WeeklyUsageModels.swift:55,
+/// 115-145); older/alternate shapes put them at the top level.
+pub(crate) fn event_token(event: &serde_json::Value, keys: &[&str]) -> Option<f64> {
+    let nested = event.get("tokenUsage").filter(|value| value.is_object());
+    keys.iter()
+        .find_map(|key| nested.and_then(|usage| usage.get(*key)).and_then(json_number))
+        .or_else(|| event_number(event, keys))
+        .filter(|value| value.is_finite() && *value >= 0.0)
+}
+
+const INPUT_TOKEN_KEYS: &[&str] = &["inputTokens", "input_tokens", "inputTokenCount"];
+const OUTPUT_TOKEN_KEYS: &[&str] = &["outputTokens", "output_tokens", "outputTokenCount"];
+
 pub(crate) fn usage_event_from_value(event: &serde_json::Value) -> Option<UsageEvent> {
     Some(UsageEvent {
         timestamp: event_timestamp_ms(event)?,
         model: event_model_name(event),
         requests: event_request_weight(event),
-        input_tokens: event_number(event, &["inputTokens", "input_tokens", "inputTokenCount"]),
-        output_tokens: event_number(
-            event,
-            &["outputTokens", "output_tokens", "outputTokenCount"],
-        ),
+        input_tokens: event_token(event, INPUT_TOKEN_KEYS),
+        output_tokens: event_token(event, OUTPUT_TOKEN_KEYS),
         cost_usd: event_number(event, &["costUsd", "cost_usd", "costUSD"]),
         charged_cents: event_number(event, &["chargedCents", "charged_cents"]),
         on_demand: event.get("kind").and_then(serde_json::Value::as_str)
@@ -465,6 +475,258 @@ pub(crate) fn on_demand_metric(summary: &serde_json::Value) -> Option<UsageMetri
     Some(usage_metric("currency", used, limit))
 }
 
+/// Default page cap for cycle token stats on a normal refresh (5 × 100 events).
+pub(crate) const CYCLE_TOKENS_DEFAULT_PAGES: u32 = USAGE_EVENTS_MAX_PAGES;
+/// Caps for the explicit "pull full cycle" action (CursorMeter CycleUsageCollector.Budget).
+pub(crate) const CYCLE_TOKENS_FULL_PAGES: u32 = 100;
+pub(crate) const CYCLE_TOKENS_FULL_SECS: u64 = 60;
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct CycleTokens {
+    pub(crate) input: Option<f64>,
+    pub(crate) output: Option<f64>,
+    pub(crate) fetched: u64,
+    pub(crate) total: Option<u64>,
+    pub(crate) complete: bool,
+}
+
+pub(crate) fn cycle_bounds_ms(summary: &serde_json::Value) -> Option<(i64, i64)> {
+    let start = crate::models::parse_iso_timestamp(&text_at(summary, &["billingCycleStart"])?)?;
+    let end = crate::models::parse_iso_timestamp(&text_at(summary, &["billingCycleEnd"])?)?;
+    (start < end).then_some((start as i64 * 1000, end as i64 * 1000))
+}
+
+fn cycle_events_body(start_ms: i64, end_ms: i64, page: u32, dated: bool) -> serde_json::Value {
+    let mut body =
+        serde_json::json!({ "teamId": 0, "page": page, "pageSize": USAGE_EVENTS_PAGE_SIZE });
+    if dated {
+        body["startDate"] = serde_json::Value::String(start_ms.to_string());
+        body["endDate"] = serde_json::Value::String(end_ms.to_string());
+    }
+    body
+}
+
+/// Page through personal usage events for the billing cycle and sum
+/// input/output tokens (cache excluded). Stops when `totalUsageEventsCount`
+/// is reached, on an empty/short page, or once events predate the cycle.
+/// Rows are de-duplicated by content; a changing total marks the result
+/// incomplete. Failures after the first page return a partial result.
+pub(crate) fn collect_cycle_tokens(
+    cookie: &str,
+    start_ms: i64,
+    end_ms: i64,
+    max_pages: u32,
+    budget: &Budget,
+) -> Result<CycleTokens> {
+    let mut first_error = None;
+    for dated in [true, false] {
+        let mut result = CycleTokens::default();
+        let mut seen = std::collections::HashSet::new();
+        let mut raw_seen: u64 = 0;
+        let mut usable = false;
+        for page in 1..=max_pages {
+            let response = match dashboard_request_with(
+                cookie,
+                "/dashboard/get-filtered-usage-events",
+                Some(cycle_events_body(start_ms, end_ms, page, dated)),
+                budget,
+                Retry::None,
+            ) {
+                Ok(response) => response,
+                Err(error) => {
+                    if page == 1 {
+                        first_error.get_or_insert(error);
+                        break;
+                    }
+                    return Ok(result);
+                }
+            };
+            let total = response
+                .get("totalUsageEventsCount")
+                .and_then(json_number)
+                .filter(|value| *value >= 0.0)
+                .map(|value| value as u64);
+            let has_rows = response.get("usageEventsDisplay").is_some();
+            if page == 1 {
+                // Dated bodies sometimes come back without rows on personal plans;
+                // fall back to the undated shape (CursorMeter's) in that case.
+                if !has_rows && total != Some(0) {
+                    break;
+                }
+                usable = true;
+                result.total = total;
+            } else if total != result.total {
+                result.complete = false;
+                return Ok(result);
+            }
+            let Some(events) = usage_events_from_response(&response) else {
+                return Ok(result);
+            };
+            if events.is_empty() {
+                result.complete = result.total.map_or(true, |total| raw_seen >= total);
+                return Ok(result);
+            }
+            let page_len = events.len();
+            let mut reached_start = false;
+            for event in &events {
+                let Some(ts) = event_timestamp_ms(event).map(|value| value as i64) else {
+                    continue;
+                };
+                if !seen.insert(event.to_string()) {
+                    continue;
+                }
+                raw_seen += 1;
+                if ts < start_ms {
+                    reached_start = true;
+                    continue;
+                }
+                if ts > end_ms {
+                    continue;
+                }
+                result.fetched += 1;
+                if let Some(value) = event_token(event, INPUT_TOKEN_KEYS) {
+                    result.input = Some(result.input.unwrap_or(0.0) + value);
+                }
+                if let Some(value) = event_token(event, OUTPUT_TOKEN_KEYS) {
+                    result.output = Some(result.output.unwrap_or(0.0) + value);
+                }
+            }
+            if reached_start
+                || page_len < USAGE_EVENTS_PAGE_SIZE as usize
+                || (dated && result.total.is_some_and(|total| raw_seen >= total))
+            {
+                result.complete = true;
+                return Ok(result);
+            }
+        }
+        if usable {
+            return Ok(result);
+        }
+    }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(CycleTokens::default()),
+    }
+}
+
+/// Individual two-pool plans only (CursorMeter SplitUsageEligibility,
+/// SplitUsageModels.swift:110-119): team/enterprise/free/legacy return None.
+pub(crate) fn cursor_breakdown(
+    summary: &serde_json::Value,
+    tokens: Option<&CycleTokens>,
+) -> Option<CursorUsageBreakdown> {
+    let membership = text_at(summary, &["membershipType"])
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if is_team_scoped(summary)
+        || membership == "free"
+        || summary
+            .pointer("/teamUsage/hasUsageData")
+            .and_then(serde_json::Value::as_bool)
+            == Some(true)
+    {
+        return None;
+    }
+    let plan = |key: &str| number_at(summary, &["individualUsage", "plan", key]);
+    let plan_limit = plan("limit").filter(|value| *value > 0.0)?;
+    let auto_percent = plan("autoPercentUsed").or_else(|| {
+        percent_from_message(text_at(summary, &["autoModelSelectedDisplayMessage"]).as_deref())
+    });
+    let api_percent = plan("apiPercentUsed").or_else(|| {
+        percent_from_message(text_at(summary, &["namedModelSelectedDisplayMessage"]).as_deref())
+    });
+    if auto_percent.is_none() && api_percent.is_none() {
+        return None;
+    }
+    let bonus = number_at(summary, &["individualUsage", "plan", "breakdown", "bonus"]);
+    let on_demand_used = number_at(summary, &["individualUsage", "onDemand", "used"]);
+    let plan_total = number_at(summary, &["individualUsage", "plan", "breakdown", "total"])
+        .or_else(|| {
+            let included =
+                number_at(summary, &["individualUsage", "plan", "breakdown", "included"]);
+            match (included, bonus) {
+                (Some(included), Some(bonus)) => Some(included + bonus),
+                _ => None,
+            }
+        });
+    // Same filter as usage_pools seat_limit: only keep the guess when it is
+    // meaningfully larger than the plan's own included limit.
+    let plan_total_limit =
+        inferred_cursor_limit_cents(summary).filter(|inferred| *inferred > plan_limit + 1.0);
+    let tokens = tokens.cloned().unwrap_or_default();
+    Some(CursorUsageBreakdown {
+        plan_used: plan("used"),
+        plan_limit: Some(plan_limit),
+        auto_percent,
+        api_percent,
+        bonus,
+        plan_total,
+        plan_total_limit,
+        on_demand_used,
+        on_demand_limit: number_at(summary, &["individualUsage", "onDemand", "limit"])
+            .filter(|value| *value > 0.0),
+        overage: bonus.unwrap_or(0.0).max(0.0) + on_demand_used.unwrap_or(0.0).max(0.0),
+        cycle_start: text_at(summary, &["billingCycleStart"]),
+        cycle_end: text_at(summary, &["billingCycleEnd"]),
+        input_tokens: tokens.input,
+        output_tokens: tokens.output,
+        tokens_complete: tokens.complete,
+        tokens_fetched: tokens.fetched,
+        tokens_total: tokens.total,
+        tokens_cached_at: None,
+    })
+}
+
+/// Stable error codes for the full-cycle pull; the frontend maps them via i18n.
+pub(crate) const USAGE_ERROR_CYCLE_MISSING: &str = "usage.cycleMissing";
+pub(crate) const USAGE_ERROR_CYCLE_UNSUPPORTED: &str = "usage.cycleUnsupported";
+pub(crate) const USAGE_ERROR_CYCLE_BUSY: &str = "usage.cycleBusy";
+
+/// `full`: explicit "拉取完整周期" (≤100 pages / 60 s); otherwise the default
+/// background pass (≤5 pages / usage budget).
+pub(crate) fn fetch_cycle_tokens(
+    session: &Session,
+    breakdown: &CursorUsageBreakdown,
+    full: bool,
+) -> Result<CycleTokens> {
+    let start = breakdown
+        .cycle_start
+        .as_deref()
+        .and_then(crate::models::parse_iso_timestamp);
+    let end = breakdown
+        .cycle_end
+        .as_deref()
+        .and_then(crate::models::parse_iso_timestamp);
+    let (Some(start), Some(end)) = (start, end) else {
+        return Err(crate::error::AppError::Message(
+            USAGE_ERROR_CYCLE_MISSING.into(),
+        ));
+    };
+    let cookie = dashboard_cookie(session)?;
+    let (budget, pages) = if full {
+        (
+            Budget::new(std::time::Duration::from_secs(CYCLE_TOKENS_FULL_SECS)),
+            CYCLE_TOKENS_FULL_PAGES,
+        )
+    } else {
+        (Budget::new(USAGE_BUDGET), CYCLE_TOKENS_DEFAULT_PAGES)
+    };
+    collect_cycle_tokens(&cookie, start as i64 * 1000, end as i64 * 1000, pages, &budget)
+}
+
+pub(crate) fn apply_cycle_tokens(
+    breakdown: &mut CursorUsageBreakdown,
+    tokens: &CycleTokens,
+    cached_at: Option<u64>,
+) {
+    breakdown.input_tokens = tokens.input;
+    breakdown.output_tokens = tokens.output;
+    breakdown.tokens_complete = tokens.complete;
+    breakdown.tokens_fetched = tokens.fetched;
+    breakdown.tokens_total = tokens.total;
+    breakdown.tokens_cached_at = cached_at;
+}
+
 pub(crate) fn is_team_scoped(summary: &serde_json::Value) -> bool {
     let membership = text_at(summary, &["membershipType"]).unwrap_or_default();
     let limit_type = text_at(summary, &["limitType"]).unwrap_or_default();
@@ -618,10 +880,10 @@ pub(crate) fn update_export_usage(
             keys.iter()
                 .find_map(|key| event.get(*key).and_then(serde_json::Value::as_f64))
         };
-        if let Some(value) = number(&["inputTokens", "input_tokens", "inputTokenCount"]) {
+        if let Some(value) = event_token(event, INPUT_TOKEN_KEYS) {
             input_total = Some(input_total.unwrap_or(0.0) + value);
         }
-        if let Some(value) = number(&["outputTokens", "output_tokens", "outputTokenCount"]) {
+        if let Some(value) = event_token(event, OUTPUT_TOKEN_KEYS) {
             output_total = Some(output_total.unwrap_or(0.0) + value);
         }
         let Some(name) = event_model_name(event) else {
@@ -642,17 +904,12 @@ pub(crate) fn update_export_usage(
             serde_json::Value::from(requests.round() as u64),
         );
         for (target, keys) in [
-            (
-                "input_tokens",
-                &["inputTokens", "input_tokens", "inputTokenCount"][..],
-            ),
-            (
-                "output_tokens",
-                &["outputTokens", "output_tokens", "outputTokenCount"][..],
-            ),
+            ("input_tokens", INPUT_TOKEN_KEYS),
+            ("output_tokens", OUTPUT_TOKEN_KEYS),
             ("cost_usd", &["costUsd", "cost_usd", "costUSD"][..]),
         ] {
-            if let Some(value) = number(keys) {
+            let value = if target == "cost_usd" { number(keys) } else { event_token(event, keys) };
+            if let Some(value) = value {
                 let total = model
                     .get(target)
                     .and_then(serde_json::Value::as_f64)
@@ -724,6 +981,7 @@ pub(crate) fn cursor_usage_from_snapshot(
         grok_bot: grok_bot.as_ref().map(|(metric, _)| metric.clone()),
         grok_bot_reset_at: grok_bot.and_then(|(_, reset_at)| reset_at),
         products: vec![],
+        breakdown: cursor_breakdown(summary, None),
         models,
         weekly_available: false,
         weekly: vec![],
@@ -854,6 +1112,9 @@ pub(crate) fn fetch_cursor_usage(
         .as_ref()
         .map(usage_event_rows)
         .unwrap_or_default();
+    // Cycle token totals are collected in the background (get_cursor_cycle_tokens)
+    // so a normal refresh issues no extra requests.
+    let breakdown = cursor_breakdown(&summary, None);
     let details = CursorUsageDetails {
         account_id: account.id.clone(),
         label: account.label.clone(),
@@ -866,6 +1127,7 @@ pub(crate) fn fetch_cursor_usage(
         grok_bot: grok_bot.as_ref().map(|(metric, _)| metric.clone()),
         grok_bot_reset_at: grok_bot.and_then(|(_, reset_at)| reset_at),
         products: vec![],
+        breakdown,
         models,
         weekly_available: weekly.is_some(),
         weekly: weekly.unwrap_or_default(),
@@ -1295,6 +1557,7 @@ mod tests {
             grok_bot: None,
             grok_bot_reset_at: None,
             products: vec![],
+            breakdown: None,
             models: vec![],
             weekly: vec![],
             weekly_available: false,
@@ -1341,5 +1604,40 @@ mod tests {
         );
         assert!(record.get("cursor_usage_sources").is_none());
         assert!(record.get("total_input_tokens").is_none());
+    }
+
+    #[test]
+    fn event_tokens_read_nested_token_usage_and_skip_cache() {
+        let event = serde_json::json!({
+            "timestamp": "1760000000000",
+            "tokenUsage": { "inputTokens": 120, "outputTokens": "30", "cacheReadTokens": 9999 }
+        });
+        assert_eq!(event_token(&event, INPUT_TOKEN_KEYS), Some(120.0));
+        assert_eq!(event_token(&event, OUTPUT_TOKEN_KEYS), Some(30.0));
+        let flat = serde_json::json!({ "inputTokens": 5 });
+        assert_eq!(event_token(&flat, INPUT_TOKEN_KEYS), Some(5.0));
+    }
+
+    #[test]
+    fn breakdown_only_for_individual_two_pool_and_sums_overage() {
+        let summary = serde_json::json!({
+            "membershipType": "pro",
+            "billingCycleStart": "2026-09-11T13:36:00.000Z",
+            "billingCycleEnd": "2026-10-11T13:36:00.000Z",
+            "individualUsage": {
+                "plan": { "used": 2000, "limit": 2000, "autoPercentUsed": 36.0, "apiPercentUsed": 100.0,
+                          "totalPercentUsed": 100.0,
+                          "breakdown": { "included": 2000, "bonus": 16297, "total": 18297 } },
+                "onDemand": { "used": 2433, "limit": null }
+            }
+        });
+        let b = cursor_breakdown(&summary, None).expect("two-pool");
+        assert_eq!(b.overage, 18730.0);
+        assert_eq!(b.plan_total, Some(18297.0));
+        assert_eq!(b.plan_total_limit, Some(18000.0));
+        assert_eq!(b.on_demand_limit, None);
+        assert!(cycle_bounds_ms(&summary).is_some());
+        let team = serde_json::json!({ "membershipType": "enterprise", "individualUsage": summary["individualUsage"].clone() });
+        assert!(cursor_breakdown(&team, None).is_none());
     }
 }

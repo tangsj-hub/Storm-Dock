@@ -6,6 +6,18 @@ Storm Dock 的重要变更记录在此。
 
 ## [Unreleased]
 
+## [1.6.1] - 2026-10-12
+
+### Added
+
+- Cursor 用量详情页个人两池布局：顶部统计卡（输入/输出 Token、会员类型、剩余天数、Grok Bot）、套餐进度条与超额、Auto + Composer / API / Bonus / On-Demand、套餐内合计（含推算限额）。
+- 计费周期 Token 后台统计（默认最多 500 条）与「拉取完整周期」；统计状态移至调用明细区。
+- 修复事件 Token 读取路径（`tokenUsage.input/outputTokens`），相关文案走中英 i18n。
+
+### Fixed
+
+- 首页顶栏「新增账号」在窄窗口下不再换行。
+
 ## [1.6.0] - 2026-10-08
 
 ### Fixed

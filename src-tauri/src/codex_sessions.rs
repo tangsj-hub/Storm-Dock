@@ -64,6 +64,7 @@ pub(crate) fn list_sessions() -> Vec<CodexSession> {
     for directory in [root.join("sessions"), root.join("archived_sessions")] {
         collect_session_files(&directory, &mut files);
     }
+    let mut files = dedupe_siblings(files);
     files.sort_by_key(|path| std::cmp::Reverse(modified_at(path)));
     files.truncate(MAX_SESSIONS);
 
@@ -99,10 +100,10 @@ pub(crate) fn load_messages(id: &str) -> Vec<CodexSessionMessage> {
     else {
         return Vec::new();
     };
-    let Ok(file) = File::open(path) else {
+    let Ok(reader) = open_reader(&path) else {
         return Vec::new();
     };
-    BufReader::new(file)
+    reader
         .lines()
         .map_while(Result::ok)
         .filter_map(|line| parse_message(&line))
@@ -112,7 +113,12 @@ pub(crate) fn load_messages(id: &str) -> Vec<CodexSessionMessage> {
 
 pub(crate) fn delete_session(id: &str) -> Result<(), String> {
     let path = find_session_path(id).ok_or_else(|| "会话不存在。".to_string())?;
-    fs::remove_file(path).map_err(|error| error.to_string())
+    fs::remove_file(&path).map_err(|error| error.to_string())?;
+    // 同一会话可能短暂同时存在 .jsonl 与 .jsonl.zst 两种形态，一并删除。
+    if let Some(other) = sibling(&path) {
+        let _ = fs::remove_file(other);
+    }
+    Ok(())
 }
 
 pub(crate) fn delete_sessions(ids: &[String]) -> (Vec<String>, Vec<String>) {
@@ -174,10 +180,7 @@ fn collect_session_files(root: &Path, files: &mut Vec<PathBuf>) {
         let path = entry.path();
         if path.is_dir() {
             collect_session_files(&path, files);
-        } else if path
-            .extension()
-            .is_some_and(|extension| extension == "jsonl")
-        {
+        } else if is_rollout_file(&path) {
             files.push(path);
         }
     }
@@ -196,10 +199,10 @@ fn load_thread_titles(path: &Path) -> HashMap<String, String> {
 }
 
 fn parse_session(path: &Path, titles: &HashMap<String, String>) -> Option<CodexSession> {
-    let file = File::open(path).ok()?;
+    let reader = open_reader(path).ok()?;
     let mut id = None;
     let mut project_dir = None;
-    for line in BufReader::new(file).lines().take(24).map_while(Result::ok) {
+    for line in reader.lines().take(24).map_while(Result::ok) {
         let Ok(value) = serde_json::from_str::<Value>(&line) else {
             continue;
         };
@@ -287,6 +290,65 @@ fn extract_text(value: &Value) -> String {
     }
 }
 
+// Codex 新版会把 7 天未活动的 rollout 压缩为同名 `rollout-*.jsonl.zst`（单帧 zstd，
+// 保留 mtime）并删除原 `.jsonl`；恢复会话时再解压回 `.jsonl`。参照 cc-switch 的
+// `codex_rollout_file.rs`，两种形态都要识别。
+const COMPRESSED_SUFFIX: &str = ".zst";
+const PLAIN_SUFFIX: &str = ".jsonl";
+
+fn is_compressed(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_suffix(COMPRESSED_SUFFIX))
+        .is_some_and(|plain| plain.ends_with(PLAIN_SUFFIX))
+}
+
+fn is_rollout_file(path: &Path) -> bool {
+    path.extension().is_some_and(|extension| extension == "jsonl") || is_compressed(path)
+}
+
+fn logical_path(path: &Path) -> PathBuf {
+    match path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|_| is_compressed(path))
+        .and_then(|name| name.strip_suffix(COMPRESSED_SUFFIX))
+    {
+        Some(plain) => path.with_file_name(plain),
+        None => path.to_path_buf(),
+    }
+}
+
+fn sibling(path: &Path) -> Option<PathBuf> {
+    if is_compressed(path) {
+        return Some(logical_path(path));
+    }
+    let name = path.file_name()?.to_str()?;
+    is_rollout_file(path).then(|| path.with_file_name(format!("{name}{COMPRESSED_SUFFIX}")))
+}
+
+fn open_reader(path: &Path) -> std::io::Result<Box<dyn BufRead>> {
+    let file = File::open(path)?;
+    if is_compressed(path) {
+        Ok(Box::new(BufReader::new(zstd::stream::read::Decoder::new(file)?)))
+    } else {
+        Ok(Box::new(BufReader::new(file)))
+    }
+}
+
+/// 两种形态同时存在时只保留普通 `.jsonl`（Codex 正在写的那份）。
+fn dedupe_siblings(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    let plain: std::collections::HashSet<PathBuf> = paths
+        .iter()
+        .filter(|path| !is_compressed(path))
+        .cloned()
+        .collect();
+    paths
+        .into_iter()
+        .filter(|path| !is_compressed(path) || !plain.contains(&logical_path(path)))
+        .collect()
+}
+
 fn modified_at(path: &Path) -> u64 {
     fs::metadata(path)
         .ok()
@@ -304,7 +366,8 @@ fn path_basename(path: &str) -> Option<&str> {
 }
 
 fn session_id_from_filename(path: &Path) -> Option<String> {
-    let name = path.file_stem()?.to_string_lossy();
+    let logical = logical_path(path);
+    let name = logical.file_stem()?.to_string_lossy();
     name.rsplit('-')
         .next()
         .filter(|id| id.len() >= 8)
@@ -374,6 +437,21 @@ mod tests {
         fs::remove_file(path).unwrap();
         assert_eq!(session.title, "example");
         assert_eq!(session.project_dir.as_deref(), Some("/work/example"));
+    }
+
+    #[test]
+    fn reads_compressed_rollouts() {
+        let path = std::env::temp_dir().join(format!(
+            "rollout-2026-01-01T00-00-00-12345678-1234-1234-1234-123456789abd-{}.jsonl.zst",
+            std::process::id()
+        ));
+        let body = r#"{"type":"session_meta","payload":{"id":"12345678-1234-1234-1234-123456789abd","cwd":"/work/zst"}}"#;
+        fs::write(&path, zstd::stream::encode_all(body.as_bytes(), 3).unwrap()).unwrap();
+        let session = parse_session(&path, &HashMap::new()).unwrap();
+        fs::remove_file(&path).unwrap();
+        assert_eq!(session.id, "12345678-1234-1234-1234-123456789abd");
+        assert_eq!(session.title, "zst");
+        assert!(is_rollout_file(&path));
     }
 
     #[test]

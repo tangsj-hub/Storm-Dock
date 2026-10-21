@@ -2683,6 +2683,7 @@ pub(crate) struct GrokBotStatus {
     pub(crate) reason: Option<String>,
     pub(crate) current_account_id: Option<String>,
     pub(crate) current_account_label: Option<String>,
+    pub(crate) client_version: Option<String>,
 }
 
 #[tauri::command]
@@ -2703,6 +2704,7 @@ pub(crate) fn get_grok_bot_status(state: State<'_, AppState>) -> GrokBotStatus {
         reason: local.reason,
         current_account_id: current.as_ref().map(|account| account.id.clone()),
         current_account_label: current.as_ref().map(|account| account.label.clone()),
+        client_version: local.installed.then(crate::grok_bot::version::client_version).flatten(),
     }
 }
 
@@ -3116,4 +3118,182 @@ mod tests {
         assert!(disabled.contains("\"args\""));
         assert!(!enabled.contains("disabled"));
     }
+}
+
+#[tauri::command]
+pub(crate) fn list_bot_templates(
+    state: State<'_, AppState>,
+) -> std::result::Result<Vec<crate::bot_templates::BotTemplate>, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "应用状态不可用".to_string())
+        .map(|controller| controller.bot_templates())
+}
+
+#[tauri::command]
+pub(crate) async fn fetch_bot_template_meta(
+    url: String,
+) -> std::result::Result<crate::bot_templates::BotTemplateMeta, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::bot_templates::fetch_template_meta(&url))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn add_bot_template(
+    url: String,
+    name: String,
+    description: Option<String>,
+    note: Option<String>,
+    auto_import: Option<bool>,
+    state: State<'_, AppState>,
+) -> std::result::Result<Vec<crate::bot_templates::BotTemplate>, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "应用状态不可用".to_string())?
+        .add_bot_template(&url, &name, description, note, auto_import.unwrap_or(false))
+        .map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn delete_bot_template(
+    url: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<Vec<crate::bot_templates::BotTemplate>, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "应用状态不可用".to_string())?
+        .delete_bot_template(&url)
+        .map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn reorder_bot_templates(
+    urls: Vec<String>,
+    state: State<'_, AppState>,
+) -> std::result::Result<Vec<crate::bot_templates::BotTemplate>, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "应用状态不可用".to_string())?
+        .reorder_bot_templates(&urls)
+        .map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn update_bot_template(
+    url: String,
+    patch: crate::bot_templates::BotTemplatePatch,
+    state: State<'_, AppState>,
+) -> std::result::Result<Vec<crate::bot_templates::BotTemplate>, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "应用状态不可用".to_string())?
+        .update_bot_template(&url, patch)
+        .map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) async fn import_bot_template_in_client(
+    url: String,
+) -> std::result::Result<crate::bot_templates::OpenedIn, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::grok_bot::version::import_gate()
+            .map_err(|current| crate::error::AppError::Message(crate::grok_bot::version::gate_message(current.as_deref())))?;
+        crate::bot_templates::open_in_client(&url)
+    })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(error_text)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BotImportGate {
+    supported: bool,
+    current: Option<String>,
+    required: &'static str,
+}
+
+#[tauri::command]
+pub(crate) async fn get_bot_import_gate() -> BotImportGate {
+    let gate = tauri::async_runtime::spawn_blocking(crate::grok_bot::version::import_gate)
+        .await
+        .unwrap_or(Err(None));
+    let required = crate::grok_bot::version::IMPORT_MIN_VERSION;
+    match gate {
+        Ok(version) => BotImportGate { supported: true, current: Some(version), required },
+        Err(current) => BotImportGate { supported: false, current, required },
+    }
+}
+
+fn bot_templates_snapshot(state: &State<'_, AppState>) -> std::result::Result<Vec<crate::bot_templates::BotTemplate>, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "应用状态不可用".to_string())
+        .map(|controller| controller.bot_templates())
+}
+
+/// App-format JSON for the given links (empty = all).
+#[tauri::command]
+pub(crate) fn export_bot_templates(urls: Vec<String>, state: State<'_, AppState>) -> std::result::Result<String, String> {
+    let list = bot_templates_snapshot(&state)?;
+    crate::bot_templates::export_json(&list, (!urls.is_empty()).then_some(urls.as_slice())).map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn save_bot_templates_file(file: String, urls: Vec<String>, state: State<'_, AppState>) -> std::result::Result<(), String> {
+    let json = export_bot_templates(urls, state)?;
+    std::fs::write(file, json).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub(crate) fn read_bot_templates_file(file: String) -> std::result::Result<String, String> {
+    let meta = std::fs::metadata(&file).map_err(|error| error.to_string())?;
+    if meta.len() > 1024 * 1024 {
+        return Err("文件过大".into());
+    }
+    std::fs::read_to_string(file).map_err(|error| error.to_string())
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BotTemplateImportPreview {
+    total: usize,
+    new_count: usize,
+    existing: usize,
+}
+
+#[tauri::command]
+pub(crate) fn preview_bot_templates_import(json: String, state: State<'_, AppState>) -> std::result::Result<BotTemplateImportPreview, String> {
+    let incoming = crate::bot_templates::parse_import(&json).map_err(error_text)?;
+    let total = incoming.len();
+    let (_, new_count, existing) = crate::bot_templates::merge_import(bot_templates_snapshot(&state)?, incoming);
+    Ok(BotTemplateImportPreview { total, new_count, existing })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BotTemplateImportResult {
+    templates: Vec<crate::bot_templates::BotTemplate>,
+    added: usize,
+    skipped: usize,
+}
+
+#[tauri::command]
+pub(crate) fn import_bot_templates_json(json: String, state: State<'_, AppState>) -> std::result::Result<BotTemplateImportResult, String> {
+    let incoming = crate::bot_templates::parse_import(&json).map_err(error_text)?;
+    let (templates, added, skipped) = state
+        .0
+        .lock()
+        .map_err(|_| "应用状态不可用".to_string())?
+        .import_bot_templates(incoming)
+        .map_err(error_text)?;
+    Ok(BotTemplateImportResult { templates, added, skipped })
 }

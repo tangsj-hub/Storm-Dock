@@ -274,6 +274,107 @@ impl Controller {
         Ok(())
     }
 
+    pub(crate) fn bot_templates(&self) -> Vec<crate::bot_templates::BotTemplate> {
+        let json: Option<String> = self
+            .database
+            .query_row(
+                "SELECT value FROM app_kv WHERE key=?1",
+                params![crate::bot_templates::APP_KV_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        let mut list = crate::bot_templates::parse_templates(json.as_deref());
+        let seeded_json: Option<String> = self
+            .database
+            .query_row(
+                "SELECT value FROM app_kv WHERE key=?1",
+                params![crate::bot_templates::BUILTIN_SEEDED_KV_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        let mut seeded: Vec<String> = seeded_json.and_then(|value| serde_json::from_str(&value).ok()).unwrap_or_default();
+        if crate::bot_templates::sync_builtins(&mut list, &mut seeded, crate::bot_templates::BUILTIN_TEMPLATES, now()) {
+            // 先写模版再写已播种集合；失败时下次重试，不会丢数据。
+            if self.save_bot_templates(&list).is_ok() {
+                let _ = self.database.execute(
+                    "INSERT INTO app_kv (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                    params![crate::bot_templates::BUILTIN_SEEDED_KV_KEY, serde_json::to_string(&seeded).unwrap_or_else(|_| "[]".into())],
+                );
+            }
+        }
+        list
+    }
+
+    fn save_bot_templates(&self, list: &[crate::bot_templates::BotTemplate]) -> Result<()> {
+        self.database.execute(
+            "INSERT INTO app_kv (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![crate::bot_templates::APP_KV_KEY, serde_json::to_string(list)?],
+        )?;
+        Ok(())
+    }
+
+    pub(crate) fn add_bot_template(
+        &self,
+        url: &str,
+        name: &str,
+        description: Option<String>,
+        note: Option<String>,
+        auto_import: bool,
+    ) -> Result<Vec<crate::bot_templates::BotTemplate>> {
+        let url = crate::bot_templates::normalize_template_url(url)?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(AppError::Message("请填写模板名称".into()));
+        }
+        let template = crate::bot_templates::BotTemplate {
+            url,
+            name: name.to_string(),
+            description: description.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()),
+            note: note.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()),
+            auto_import,
+            created_at: now(),
+            builtin_id: None,
+            builtin_hash: None,
+        };
+        let (list, added) = crate::bot_templates::upsert_template(self.bot_templates(), template);
+        if !added {
+            return Err(AppError::Message("这个模板链接已经添加过了".into()));
+        }
+        self.save_bot_templates(&list)?;
+        Ok(list)
+    }
+
+    pub(crate) fn reorder_bot_templates(&self, urls: &[String]) -> Result<Vec<crate::bot_templates::BotTemplate>> {
+        let list = crate::bot_templates::reorder_templates(self.bot_templates(), urls);
+        self.save_bot_templates(&list)?;
+        Ok(list)
+    }
+
+    pub(crate) fn update_bot_template(
+        &self,
+        url: &str,
+        patch: crate::bot_templates::BotTemplatePatch,
+    ) -> Result<Vec<crate::bot_templates::BotTemplate>> {
+        let list = crate::bot_templates::update_template(self.bot_templates(), url, patch)?;
+        self.save_bot_templates(&list)?;
+        Ok(list)
+    }
+
+    pub(crate) fn import_bot_templates(&self, incoming: Vec<crate::bot_templates::BotTemplate>) -> Result<(Vec<crate::bot_templates::BotTemplate>, usize, usize)> {
+        let (list, added, skipped) = crate::bot_templates::merge_import(self.bot_templates(), incoming);
+        if added > 0 {
+            self.save_bot_templates(&list)?;
+        }
+        Ok((list, added, skipped))
+    }
+
+    pub(crate) fn delete_bot_template(&self, url: &str) -> Result<Vec<crate::bot_templates::BotTemplate>> {
+        let mut list = self.bot_templates();
+        list.retain(|item| item.url != url);
+        self.save_bot_templates(&list)?;
+        Ok(list)
+    }
+
     pub(crate) fn statuses(&self) -> Vec<ApplicationStatus> {
         vec![
             self.cursor.detect(),

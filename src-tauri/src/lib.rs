@@ -1,5 +1,7 @@
 mod apps;
 mod autostart;
+mod bot_import_queue;
+mod bot_templates;
 mod browser;
 mod codex;
 mod codex_sessions;
@@ -16,8 +18,10 @@ mod http;
 #[cfg(target_os = "macos")]
 mod macos_native;
 mod models;
+mod native_popup;
 mod sql_backup;
 mod store;
+mod switcher;
 mod tools;
 mod tray;
 mod updater;
@@ -273,10 +277,28 @@ pub fn run() {
             }
             crate::autostart::migrate_windows_autostart();
             crate::grok_bot::spawn_active_slot_watcher(app.handle().clone());
+            crate::switcher::runtime::spawn(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_applications,
+            commands::list_bot_templates,
+            commands::fetch_bot_template_meta,
+            commands::add_bot_template,
+            commands::delete_bot_template,
+            commands::reorder_bot_templates,
+            commands::update_bot_template,
+            commands::import_bot_template_in_client,
+            commands::get_bot_import_gate,
+            commands::export_bot_templates,
+            commands::save_bot_templates_file,
+            commands::read_bot_templates_file,
+            commands::preview_bot_templates_import,
+            commands::import_bot_templates_json,
+            bot_import_queue::get_bot_import_progress,
+            bot_import_queue::cancel_bot_import,
+            bot_import_queue::dismiss_bot_import,
+            bot_import_queue::start_bot_import_all,
             commands::list_cursor_plugins,
             commands::list_codex_plugins,
             commands::list_grok_plugins,
@@ -361,6 +383,13 @@ pub fn run() {
             set_close_to_tray,
             confirm_close_action,
             sync_window_chrome,
+            switcher::runtime::get_account_switcher_settings,
+            switcher::runtime::list_account_switcher_providers,
+            switcher::runtime::set_account_switcher_settings,
+            switcher::runtime::get_switch_offer,
+            switcher::runtime::preview_switch_offer,
+            switcher::runtime::respond_switch_offer,
+            switcher::runtime::run_account_switcher_check,
             updater::install_update_and_restart,
             tools::get_tool_versions,
             tools::run_tool_lifecycle_action,

@@ -93,6 +93,11 @@ pub(crate) fn quit_and_wait(app: DesktopApp) -> Result<()> {
     platform::quit_and_wait(app)
 }
 
+/// Installed app path (macOS: the .app bundle; Windows: the exe).
+pub(crate) fn app_path(app: DesktopApp) -> Option<PathBuf> {
+    resolve(app).ok()
+}
+
 fn resolve(app: DesktopApp) -> Result<PathBuf> {
     platform::resolve(app)
 }

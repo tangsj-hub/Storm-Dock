@@ -4,7 +4,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowLeft, Check, ChevronDown, Database, Download, FolderSync, Globe, GripVertical, KeyRound, Languages, LayoutList, Monitor, PanelTop, Power, RefreshCw } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Clock, Gauge, Database, Download, FolderSync, Globe, GripVertical, KeyRound, Languages, LayoutList, Monitor, PanelTop, Power, RefreshCw } from "lucide-react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
@@ -16,6 +16,7 @@ import { Toast, ToastMessage } from "../../components/ToastMessage";
 import { WindowDragSurface } from "../../components/WindowDragSurface";
 import i18n from "../../i18n";
 import { exportDatabase, getDatabasePath, getPreserveCodexOfficialAuth, importDatabase, moveDatabase, setPreserveCodexOfficialAuth } from "../../lib/api";
+import { SWITCHER_LIMITS, getSwitcherSettings, listSwitcherProviders, previewSwitchOffer, type SwitcherProvider, providerSettings, setSwitcherSettings, withProviderSettings, type ProviderSwitcherSettings, type SwitcherSettings } from "../../lib/accountSwitcher";
 import { getCloseBehavior, setCloseBehavior, type CloseBehavior } from "../../lib/closeBehavior";
 import { getHomeTabs, resolvedHomePath, setHomeTabs, type HomeTabId, type HomeTabPref } from "../../lib/homeTabs";
 import {
@@ -134,7 +135,43 @@ function LoginBrowserSettings() {
   </div>;
 }
 
-const SETTINGS_TABS = ["general", "data", "local", "about"] as const;
+const SWITCHER_ICONS: Record<string, string> = { grokBot: grokBotIcon };
+
+function SwitcherGroup({ onChange, onNotice, provider, settings }: { onChange: (next: SwitcherSettings) => void; onNotice: (message: string) => void; provider: SwitcherProvider; settings: SwitcherSettings }) {
+  const { t } = useTranslation();
+  const value = providerSettings(settings, provider.id);
+  const update = (patch: Partial<ProviderSwitcherSettings>) => onChange(withProviderSettings(settings, provider.id, patch));
+  const icon = SWITCHER_ICONS[provider.id];
+  return <>
+    <div className={styles.sectionTitle}>{icon ? <img alt="" className={`${styles.switcherAppIcon} ink`} src={icon} /> : <RefreshCw aria-hidden="true" size={20} />}<h2>{provider.name}</h2><button className={`${styles.databaseButton} ${styles.switcherPreview}`} onClick={() => void previewSwitchOffer(provider.id).catch((error) => onNotice(String(error)))} type="button">{t("switcherPreview")}</button></div>
+    <div className={styles.behaviorList}>
+      <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><RefreshCw aria-hidden="true" size={20} /></span><div><h2>{t("accountSwitcher")}</h2><p>{t("accountSwitcherDescription")}</p></div></div><button aria-checked={value.enabled} aria-label={`${provider.name} ${t("accountSwitcher")}`} className={styles.switch} onClick={() => update({ enabled: !value.enabled })} role="switch" type="button"><span /></button></div>
+      <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><Gauge aria-hidden="true" size={20} /></span><div><h2>{t("accountSwitcherThreshold")}</h2><p>{t("accountSwitcherThresholdDescription")}</p></div></div>
+        <label className={styles.switcherField}><input aria-label={`${provider.name} ${t("accountSwitcherThreshold")}`} className={styles.switcherInput} disabled={!value.enabled} max={SWITCHER_LIMITS.percent.max} min={SWITCHER_LIMITS.percent.min} onChange={(event) => update({ minRemainingPercent: Number(event.target.value) })} type="number" value={value.minRemainingPercent} /><span>%</span></label></div>
+      <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><Clock aria-hidden="true" size={20} /></span><div><h2>{t("accountSwitcherExpiry")}</h2><p>{t("accountSwitcherExpiryDescription")}</p></div></div>
+        <label className={styles.switcherField}><input aria-label={`${provider.name} ${t("accountSwitcherExpiry")}`} className={styles.switcherInput} disabled={!value.enabled} max={SWITCHER_LIMITS.hours.max} min={SWITCHER_LIMITS.hours.min} onChange={(event) => update({ expiryWindowHours: Number(event.target.value) })} type="number" value={value.expiryWindowHours} /><span>{t("accountSwitcherHoursUnit")}</span></label></div>
+    </div>
+  </>;
+}
+
+function AccountSwitcherSettings({ onNotice }: { onNotice: (message: string) => void }) {
+  const [settings, setSettings] = useState<SwitcherSettings>();
+  const [providers, setProviders] = useState<SwitcherProvider[]>([]);
+  useEffect(() => {
+    void getSwitcherSettings().then(setSettings).catch(() => setSettings({ providers: {} }));
+    void listSwitcherProviders().then(setProviders).catch(() => setProviders([]));
+  }, []);
+  if (!settings) return null;
+  const save = (next: SwitcherSettings) => {
+    setSettings(next);
+    void setSwitcherSettings(next).then(setSettings).catch(() => {});
+  };
+  return <div className={styles.stack}>
+    {providers.map((provider) => <SwitcherGroup key={provider.id} onChange={save} onNotice={onNotice} provider={provider} settings={settings} />)}
+  </div>;
+}
+
+const SETTINGS_TABS = ["general", "switcher", "data", "local", "about"] as const;
 
 function settingsTabFromQuery(search = window.location.search) {
   const tab = new URLSearchParams(search).get("tab");
@@ -306,6 +343,7 @@ function SettingsPage() {
     <Tabs.Root className={styles.layout} defaultValue={settingsTabFromQuery()} orientation="vertical">
       <Tabs.List aria-label={t("settingsTabs")} className={styles.nav}>
         <Tabs.Trigger className={styles.tab} value="general">{t("settingsTabGeneral")}</Tabs.Trigger>
+        <Tabs.Trigger className={styles.tab} value="switcher">{t("settingsTabSwitcher")}</Tabs.Trigger>
         <Tabs.Trigger className={styles.tab} value="data">{t("settingsTabData")}</Tabs.Trigger>
         <Tabs.Trigger className={styles.tab} value="local">{t("settingsTabLocal")}</Tabs.Trigger>
         <Tabs.Trigger className={styles.tab} value="about">{t("settingsTabAbout")}</Tabs.Trigger>
@@ -339,6 +377,9 @@ function SettingsPage() {
             <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><KeyRound aria-hidden="true" size={20} /></span><div><h2>{t("preserveCodexOfficialAuth")}</h2><p>{t("preserveCodexOfficialAuthDescription")}</p></div></div><button aria-checked={preserveCodexAuth} className={styles.switch} onClick={() => void togglePreserveCodexAuth()} role="switch" type="button"><span /></button></div>
           </div>
         </div>
+      </Tabs.Content>
+      <Tabs.Content className={styles.pane} value="switcher">
+        <AccountSwitcherSettings onNotice={(message) => { setNoticeStatus("error"); setNotice(message); }} />
       </Tabs.Content>
       <Tabs.Content className={styles.pane} forceMount value="data">
         <div className={styles.stack}>

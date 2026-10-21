@@ -70,6 +70,7 @@ export type GrokBotStatus = {
   reason?: string;
   currentAccountId?: string;
   currentAccountLabel?: string;
+  clientVersion?: string | null;
 };
 
 export type Account = {

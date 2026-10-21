@@ -88,6 +88,9 @@ async function syncNativeTheme(theme: ResolvedTheme | null) {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const { invoke } = await import("@tauri-apps/api/core");
     const window = getCurrentWindow();
+    // The switcher popup is a transparent window; an opaque chrome color would
+    // paint square corners behind its rounded card.
+    if (window.label.startsWith("popup-")) return;
     await window.setTheme(theme);
     const resolved = theme ?? ((await window.theme()) === "dark" ? "dark" : "light");
     applyResolved(resolved);

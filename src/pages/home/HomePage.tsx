@@ -12,6 +12,7 @@ import {
   Download,
   FolderOpen,
   KeyRound,
+  LayoutTemplate,
   MessageSquareText,
   Play,
   Plus,
@@ -90,6 +91,8 @@ import {
   setCursorPluginEnabled,
   setGrokPluginEnabled,
   setMcpServerEnabled,
+  getBotImportGate,
+  startBotImportAll,
 } from "../../lib/api";
 import { requestedHomeTab, resolveHomeView, visibleHomeTabs, type HomeTabId } from "../../lib/homeTabs";
 import {
@@ -120,6 +123,7 @@ import { GrokBotAccountList } from "./components/GrokBotAccountList";
 import { GrokBotStatusCard } from "./components/GrokBotStatusCard";
 import { SessionWorkspace, type SessionProvider } from "./components/SessionWorkspace";
 import { GrokBotSessionWorkspace } from "./components/GrokBotSessionWorkspace";
+import { BotTemplateWorkspace } from "./components/BotTemplateWorkspace";
 import { isGrokBotListEligible } from "./lib/accountPresentation";
 import { shouldApplySwitchProgress } from "./lib/switchProgress";
 import type { WorkspaceSection, SwitchProgress } from "./types";
@@ -141,11 +145,13 @@ const workspaceSections: Array<{
   image?: string;
   labelKey: string;
   cursorOnly?: boolean;
+  grokBotOnly?: boolean;
 }> = [
   { id: "accounts", icon: UserRound, labelKey: "accounts" },
   { id: "sessions", icon: MessageSquareText, labelKey: "sessions" },
   { id: "plugins", icon: Puzzle, labelKey: "plugins" },
   { id: "mcp", icon: Waypoints, labelKey: "mcp" },
+  { id: "botTemplates", icon: LayoutTemplate, labelKey: "botTemplates", grokBotOnly: true },
 ];
 
 
@@ -306,6 +312,8 @@ export function HomePage() {
   const [selected, setSelected] = useState<ApplicationKind>(() => resolveHomeView().selected);
   const [grokBotMode, setGrokBotMode] = useState(() => resolveHomeView().grokBotMode);
   const homeTabs = visibleHomeTabs();
+  const [botTemplateAddOpen, setBotTemplateAddOpen] = useState(false);
+  const [botTemplateExportOpen, setBotTemplateExportOpen] = useState(false);
   const [workspaceSection, setWorkspaceSection] =
     useState<WorkspaceSection>("accounts");
   const [pluginsExpanded, setPluginsExpanded] = useState(false);
@@ -423,10 +431,11 @@ export function HomePage() {
   }, [selected, workspaceSection]);
   useEffect(() => {
     if (grokBotMode) {
-      if (workspaceSection !== "accounts" && workspaceSection !== "sessions")
+      if (workspaceSection !== "accounts" && workspaceSection !== "sessions" && workspaceSection !== "botTemplates")
         setWorkspaceSection("accounts");
       return;
     }
+    if (workspaceSection === "botTemplates") setWorkspaceSection("accounts");
     if (selected !== "cursor" && workspaceSection === "grokBot")
       setWorkspaceSection("accounts");
   }, [grokBotMode, selected, workspaceSection]);
@@ -1057,6 +1066,8 @@ export function HomePage() {
             <p>{t("mcpDescription")}</p>
           </div>
         );
+      if (workspaceSection === "botTemplates")
+        return <BotTemplateWorkspace addOpen={botTemplateAddOpen} exportOpen={botTemplateExportOpen} onExportOpenChange={setBotTemplateExportOpen} key="grokBot-templates" onAddOpenChange={setBotTemplateAddOpen} onError={showError} onNotice={setNotice} />;
       if (workspaceSection === "sessions") {
         if (grokBotMode) {
           return (
@@ -1215,6 +1226,15 @@ export function HomePage() {
           </Tabs.Root>
           </div>
           <WorkspaceToolbar
+            onAddBotTemplate={() => setBotTemplateAddOpen(true)}
+            onExportBotTemplates={() => setBotTemplateExportOpen(true)}
+            onImportAllBotTemplates={() => void getBotImportGate().then((gate) => {
+              if (!gate.supported) {
+                showError(t("botImportNeedsVersion", { required: gate.required, current: gate.current || t("botImportVersionUnknown") }));
+                return;
+              }
+              return startBotImportAll().then((count) => setNotice(t("botImportAllStarted", { count })));
+            }).catch(showError)}
             busy={busy}
             canManageAccounts
             hasAccounts={accounts.some((account) => account.importType !== "api_key")}
@@ -1245,8 +1265,8 @@ export function HomePage() {
           <aside aria-label={t("accountSections")} className={styles.sidebar}>
             <nav className={styles.sidebarNav}>
               {workspaceSections.filter((section) => {
-                if (grokBotMode) return section.id === "accounts" || section.id === "sessions";
-                return !section.cursorOnly || isCursor;
+                if (grokBotMode) return section.id === "accounts" || section.id === "sessions" || section.id === "botTemplates";
+                return !section.grokBotOnly && (!section.cursorOnly || isCursor);
               }).map(({ id, icon: Icon, image, labelKey }) => {
                 const count =
                   id === "accounts"

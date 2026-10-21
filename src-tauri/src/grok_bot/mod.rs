@@ -1,3 +1,5 @@
+pub(crate) mod version;
+
 use std::{
     collections::BTreeMap,
     fs,

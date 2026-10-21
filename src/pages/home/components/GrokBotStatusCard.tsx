@@ -101,6 +101,11 @@ export function GrokBotStatusCard({
                   {installed ? <Check aria-hidden="true" size={11} /> : <CircleAlert aria-hidden="true" size={11} />}
                   {installed ? t("grokBotClientInstalled") : t("grokBotClientNotInstalled")}
                 </span>
+                {installed && (
+                  <span className={styles.metaBadge} title={t("grokBotClientVersion")}>
+                    {status.clientVersion ? `v${status.clientVersion}` : t("grokBotClientVersionUnknown")}
+                  </span>
+                )}
                 {(currentAccount?.label || status.currentAccountLabel) && (
                   <span className={`${styles.metaBadge} ${styles.grokBotCurrentAccountBadge}`}>
                     <Zap aria-hidden="true" size={11} strokeWidth={2.4} />

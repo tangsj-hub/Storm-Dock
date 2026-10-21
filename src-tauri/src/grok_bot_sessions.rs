@@ -599,6 +599,42 @@ fn write_json(path: &Path, value: &Value) -> Result<(), String> {
     Ok(())
 }
 
+/// Read-only snapshot of the ACTIVE account's agent roster as `(id, name)`.
+/// `None` = cannot tell which roster is active (or it is unreadable right now).
+pub(crate) fn active_roster_agents() -> Option<Vec<(String, Option<String>)>> {
+    let root = grok_bot::user_data_dir()?;
+    active_roster_agents_from(&root)
+}
+
+fn active_roster_agents_from(root: &Path) -> Option<Vec<(String, Option<String>)>> {
+    let persistence = root.join(PERSISTENCE_DIR);
+    let mut rosters = list_persistence_blobs(&persistence);
+    rosters.retain(|(key, _)| key.ends_with(ROSTER_SUFFIX));
+    let path = match read_active_account_slot(&persistence) {
+        Some(slot) => {
+            let key = format!("{ACCOUNT_PREFIX}{slot}{ROSTER_SUFFIX}");
+            match rosters.into_iter().find(|(candidate, _)| candidate == &key) {
+                Some((_, path)) => path,
+                // Active account has no roster yet: it has no agents.
+                None => return Some(Vec::new()),
+            }
+        }
+        None if rosters.len() == 1 => rosters.remove(0).1,
+        None => return None,
+    };
+    let text = fs::read_to_string(&path).ok()?;
+    let envelope = serde_json::from_str::<PersistenceEnvelope<RosterValue>>(&text).ok()?;
+    Some(
+        envelope
+            .value
+            .rows
+            .into_iter()
+            .filter(|row| is_valid_id(&row.id))
+            .map(|row| (row.id, row.name.or(row.title)))
+            .collect(),
+    )
+}
+
 fn read_active_account_slot(persistence: &Path) -> Option<String> {
     for (key, path) in list_persistence_blobs(persistence) {
         if key != ACCOUNT_SLOT_KEY {
@@ -763,6 +799,28 @@ mod tests {
             "value": value,
         });
         fs::write(path, serde_json::to_vec(&envelope).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn active_roster_agents_reads_only_the_active_slot() {
+        let root = temp_root("active-roster");
+        write_blob(&root, ACCOUNT_SLOT_KEY, Value::String("auth0|user_ACTIVE".into()));
+        // Active slot without a roster yet -> empty, not unknown.
+        assert_eq!(active_roster_agents_from(&root), Some(Vec::new()));
+        write_blob(
+            &root,
+            "sand.client.slice.account.auth0%7Cuser_ACTIVE.roster.last-roster",
+            serde_json::json!({ "rows": [{ "id": "11111111-1111-1111-1111-111111111111", "name": "Alpha" }] }),
+        );
+        write_blob(
+            &root,
+            "sand.client.slice.account.auth0%7Cuser_OTHER.roster.last-roster",
+            serde_json::json!({ "rows": [{ "id": "22222222-2222-2222-2222-222222222222", "name": "Other" }] }),
+        );
+        assert_eq!(
+            active_roster_agents_from(&root),
+            Some(vec![("11111111-1111-1111-1111-111111111111".to_string(), Some("Alpha".to_string()))])
+        );
     }
 
     #[test]

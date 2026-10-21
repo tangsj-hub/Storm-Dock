@@ -3,7 +3,8 @@
   "identifier": "default",
   "description": "Default desktop capability",
   "windows": [
-    "main"
+    "main",
+    "popup-*"
   ],
   "permissions": [
     "core:default",

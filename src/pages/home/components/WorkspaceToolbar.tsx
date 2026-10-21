@@ -1,4 +1,4 @@
-import { ChevronsDownUp, ChevronsUpDown, Download, Plus, RefreshCw } from "lucide-react";
+import { ChevronsDownUp, ChevronsUpDown, Download, Import, Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Tooltip } from "../../../components/Tooltip";
 import type { ApplicationKind } from "../../../lib/types";
@@ -20,6 +20,9 @@ type Props = {
   onPluginsExpandedChange: (expanded: boolean) => void;
   onRefresh: () => void;
   onSessionsRefresh: () => void;
+  onAddBotTemplate?: () => void;
+  onImportAllBotTemplates?: () => void;
+  onExportBotTemplates?: () => void;
 };
 
 export function WorkspaceToolbar(props: Props) {
@@ -48,6 +51,9 @@ export function WorkspaceToolbar(props: Props) {
       </>}
     </>}
     {section === "plugins" && <Tooltip content={pluginsExpanded ? t("collapsePluginChildren") : t("expandPluginChildren")}><button aria-expanded={pluginsExpanded} aria-label={pluginsExpanded ? t("collapsePluginChildren") : t("expandPluginChildren")} className={styles.iconButton} onClick={() => props.onPluginsExpandedChange(!pluginsExpanded)} type="button">{pluginsExpanded ? <ChevronsDownUp aria-hidden="true" size={19} /> : <ChevronsUpDown aria-hidden="true" size={19} />}</button></Tooltip>}
+    {section === "botTemplates" && <Tooltip content={t("botImportAll")}><button aria-label={t("botImportAll")} className={styles.iconButton} onClick={props.onImportAllBotTemplates} type="button"><Import aria-hidden="true" size={19} /></button></Tooltip>}
+    {section === "botTemplates" && <Tooltip content={t("botTemplateExport")}><button aria-label={t("botTemplateExport")} className={styles.iconButton} onClick={props.onExportBotTemplates} type="button"><Download aria-hidden="true" size={19} /></button></Tooltip>}
+    {section === "botTemplates" && <button className={styles.addButton} onClick={props.onAddBotTemplate} type="button"><Plus aria-hidden="true" size={18} />{t("botTemplateAddTitle")}</button>}
     {section === "sessions" && <Tooltip content={sessionsLabel}><button aria-label={sessionsLabel} className={styles.iconButton} disabled={sessionsRefreshing} onClick={props.onSessionsRefresh} type="button"><RefreshCw aria-hidden="true" className={sessionsRefreshing ? styles.spinning : undefined} size={19} /></button></Tooltip>}
   </div>;
 }

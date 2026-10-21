@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { BotImportGate, BotImportProgress, BotTemplate, BotTemplateMeta, BotTemplatePatch } from "./botTemplates";
 import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, CursorUsageDetails, GrokBotStatus, LocalSession, LocalSessionMessage, McpServer, Plugin, SessionDeleteBatchResult, AttachmentAvailability} from "./types";
 
 export const listApplications = () => invoke<ApplicationStatus[]>("list_applications");
@@ -58,3 +59,20 @@ export const readSessionAttachmentPreview = (source: string) =>
   invoke<string | null>("read_session_attachment_preview", { source });
 export const checkSessionAttachmentAvailability = (source: string) =>
   invoke<AttachmentAvailability>("check_session_attachment_availability", { source });
+export const listBotTemplates = () => invoke<BotTemplate[]>("list_bot_templates");
+export const fetchBotTemplateMeta = (url: string) => invoke<BotTemplateMeta>("fetch_bot_template_meta", { url });
+export const addBotTemplate = (url: string, name: string, description?: string, note?: string, autoImport = false) => invoke<BotTemplate[]>("add_bot_template", { url, name, description, note, autoImport });
+export const deleteBotTemplate = (url: string) => invoke<BotTemplate[]>("delete_bot_template", { url });
+export const reorderBotTemplates = (urls: string[]) => invoke<BotTemplate[]>("reorder_bot_templates", { urls });
+export const updateBotTemplate = (url: string, patch: BotTemplatePatch) => invoke<BotTemplate[]>("update_bot_template", { url, patch });
+export const importBotTemplateInClient = (url: string) => invoke<"client" | "web">("import_bot_template_in_client", { url });
+export const getBotImportProgress = () => invoke<BotImportProgress | null>("get_bot_import_progress");
+export const cancelBotImport = () => invoke<void>("cancel_bot_import");
+export const dismissBotImport = () => invoke<void>("dismiss_bot_import");
+export const startBotImportAll = () => invoke<number>("start_bot_import_all");
+export const getBotImportGate = () => invoke<BotImportGate>("get_bot_import_gate");
+export const exportBotTemplates = (urls: string[]) => invoke<string>("export_bot_templates", { urls });
+export const saveBotTemplatesFile = (file: string, urls: string[]) => invoke<void>("save_bot_templates_file", { file, urls });
+export const readBotTemplatesFile = (file: string) => invoke<string>("read_bot_templates_file", { file });
+export const previewBotTemplatesImport = (json: string) => invoke<{ total: number; newCount: number; existing: number }>("preview_bot_templates_import", { json });
+export const importBotTemplatesJson = (json: string) => invoke<{ templates: BotTemplate[]; added: number; skipped: number }>("import_bot_templates_json", { json });

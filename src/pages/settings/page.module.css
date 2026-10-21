@@ -456,3 +456,9 @@
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+.switcherField { display: flex; align-items: center; gap: 6px; color: var(--muted, inherit); }
+.switcherInput { background: var(--solid); border: 1px solid var(--input-border); border-radius: 5px; color: var(--fg); font: inherit; min-height: 30px; padding: 0 8px; width: 72px; }
+.switcherInput:disabled { opacity: 0.5; }
+.switcherAppIcon { width: 20px; height: 20px; border-radius: 4px; }
+.switcherPreview { margin-left: auto; }

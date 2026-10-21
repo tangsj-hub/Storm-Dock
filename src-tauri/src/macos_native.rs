@@ -70,3 +70,4 @@ pub(crate) fn app_path_for_bundle_id(bundle_id: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
         .find(|path| path.is_dir() && path.extension().and_then(|e| e.to_str()) == Some("app"))
 }
+

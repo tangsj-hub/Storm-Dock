@@ -4,6 +4,9 @@ const LIGHT_BG: Color = Color(255, 255, 255, 255);
 const DARK_BG: Color = Color(32, 32, 32, 255);
 
 pub(crate) fn apply(window: &Window) {
+    if crate::native_popup::is_popup_label(window.label()) {
+        return;
+    }
     apply_theme(window, window.theme().unwrap_or(Theme::Light));
 }
 
@@ -18,6 +21,9 @@ pub(crate) fn apply_webview(window: &WebviewWindow) {
 }
 
 pub(crate) fn apply_theme(window: &Window, theme: Theme) {
+    if crate::native_popup::is_popup_label(window.label()) {
+        return; // transparent popup: never paint an opaque background
+    }
     let dark = matches!(theme, Theme::Dark);
     let _ = window.set_background_color(Some(if dark { DARK_BG } else { LIGHT_BG }));
     #[cfg(windows)]

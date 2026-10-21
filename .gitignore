@@ -44,3 +44,4 @@ unsloth/
 *.key.pub
 
 __pycache__/
+.tmp/

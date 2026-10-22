@@ -529,7 +529,7 @@ fn perform(app: &AppHandle, live: &mut HashMap<&'static str, Live>, effect: Effe
             // cannot leak into the next show.
             let (x, y) = entry.home;
             let _ = entry.window.set_position(tauri::LogicalPosition::new(x + SLIDE, y));
-            let _ = entry.window.hide();
+            hide_popup_window(&entry.window);
             None
         }
         Effect::Expired { label, generation } => {
@@ -544,7 +544,8 @@ fn perform(app: &AppHandle, live: &mut HashMap<&'static str, Live>, effect: Effe
 
 /// Never take key / focus from the main window or other apps.
 /// macOS: `orderFrontRegardless` instead of Tauri's `show()` (makeKeyAndOrderFront).
-/// Windows: `SW_SHOWNOACTIVATE` (the window is also WS_EX_NOACTIVATE via focusable(false)).
+/// Windows: `SW_SHOWNOACTIVATE`. That bypasses tao's `WindowFlags::VISIBLE`, so
+/// [`hide_popup_window`] must hide with `SW_HIDE` itself.
 fn show_without_focus(window: &WebviewWindow) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     {
@@ -570,6 +571,87 @@ fn show_without_focus(window: &WebviewWindow) -> tauri::Result<()> {
     {
         window.show()
     }
+}
+
+/// Hide the popup. On Windows, `window.hide()` is a no-op: `show_without_focus`
+/// calls `ShowWindow(SW_SHOWNOACTIVATE)` without setting tao's VISIBLE flag, and
+/// tao returns before `SW_HIDE` when that flag is already clear.
+fn hide_popup_window(window: &WebviewWindow) {
+    #[cfg(windows)]
+    if let Some(hwnd) = raw_hwnd(window) {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_HIDE};
+        // SAFETY: hwnd belongs to this popup for its lifetime.
+        unsafe { ShowWindow(hwnd, SW_HIDE) };
+    }
+    let _ = window.hide();
+}
+
+/// Clicks reach WebView2, but the popup does not become the foreground window.
+/// Chains via `SetWindowSubclass` so tao's own subclass keeps running.
+/// `WS_EX_TOOLWINDOW` keeps the now-focusable window out of Alt-Tab.
+#[cfg(windows)]
+fn prepare_windows_popup(window: &WebviewWindow) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindowLongPtrW, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_NOZORDER, WS_EX_TOOLWINDOW,
+    };
+
+    let Some(hwnd) = raw_hwnd(window) else { return };
+    unsafe {
+        // SAFETY: comctl32 is already loaded (tao subclasses every window). Our proc
+        // runs before tao's and only short-circuits WM_MOUSEACTIVATE.
+        let _ = SetWindowSubclass(hwnd, Some(popup_subclass), POPUP_SUBCLASS_ID, 0);
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | WS_EX_TOOLWINDOW as isize);
+        let _ = SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+    }
+}
+
+#[cfg(windows)]
+const POPUP_SUBCLASS_ID: usize = 0x5D0C;
+
+#[cfg(windows)]
+unsafe extern "system" fn popup_subclass(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+    _id: usize,
+    _data: usize,
+) -> isize {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MA_NOACTIVATE, WM_MOUSEACTIVATE};
+    if msg == WM_MOUSEACTIVATE {
+        // Deliver the click, do not activate. MA_NOACTIVATEANDEAT would drop it.
+        return MA_NOACTIVATE as isize;
+    }
+    DefSubclassProc(hwnd, msg, wparam, lparam)
+}
+
+#[cfg(windows)]
+#[link(name = "comctl32")]
+extern "system" {
+    fn SetWindowSubclass(
+        hwnd: windows_sys::Win32::Foundation::HWND,
+        pfn: Option<
+            unsafe extern "system" fn(windows_sys::Win32::Foundation::HWND, u32, usize, isize, usize, usize) -> isize,
+        >,
+        id: usize,
+        data: usize,
+    ) -> i32;
+    fn DefSubclassProc(hwnd: windows_sys::Win32::Foundation::HWND, msg: u32, wparam: usize, lparam: isize) -> isize;
+}
+
+#[cfg(windows)]
+fn raw_hwnd(window: &WebviewWindow) -> Option<windows_sys::Win32::Foundation::HWND> {
+    window.hwnd().ok().map(|hwnd| hwnd.0 as _)
 }
 
 fn pointer_over(app: &AppHandle, window: &WebviewWindow) -> bool {
@@ -621,14 +703,21 @@ fn create(app: &AppHandle, label: &'static str, page: &'static str) -> Option<Li
             .visible_on_all_workspaces(true)
             .skip_taskbar(true)
             .focused(false)
-            // Non-activating: showing never steals focus; the first click still hits the button.
-            .focusable(false)
+            // macOS stays non-focusable (`accept_first_mouse` delivers the click).
+            // Windows must be focusable: WS_EX_NOACTIVATE makes WebView2 drop
+            // mouse input, so 忽略 never reaches the page. Activation is refused
+            // in `prepare_windows_popup` instead.
+            .focusable(cfg!(windows))
             .accept_first_mouse(true)
             // macOS: native shadow follows the vibrancy mask. Windows: an undecorated
             // transparent window's shadow draws a square frame.
             .shadow(cfg!(target_os = "macos"))
             .build()
             .ok();
+        #[cfg(windows)]
+        if let Some(window) = &built {
+            prepare_windows_popup(window);
+        }
         #[cfg(target_os = "macos")]
         if let Some(window) = &built {
             use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};

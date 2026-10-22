@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
 import appIcon from "../assets/app-icon.png";
+import { consumePopupButtonPress } from "../lib/popupButton";
 import styles from "./NativePopup.module.css";
 
 // Platform class drives the look: macOS = native vibrancy (no CSS card),
@@ -111,8 +112,25 @@ export function NativePopup({ actions, ariaLabel, body, detail, icon, onDismiss,
       </div>
       <div className={styles.message}>{body}{detail ? <span className={styles.detail}>{detail}</span> : null}</div>
       <div className={styles.actions}>
-        {actions.map((action) => <button className={`${styles.button} ${action.primary ? styles.primary : ""}`} disabled={action.disabled} key={action.label} onClick={action.onClick} type="button">{action.label}</button>)}
+        {actions.map((action) => <PopupButton action={action} key={action.label} resetKey={resetKey} />)}
       </div>
     </div>
   </div>;
+}
+
+function PopupButton({ action, resetKey }: { action: NativePopupAction; resetKey?: number }) {
+  const armed = useRef(false);
+  useEffect(() => { armed.current = false; }, [resetKey]);
+  const press = (type: "pointerdown" | "click", button?: number) => {
+    const next = consumePopupButtonPress({ type, button }, armed.current);
+    armed.current = next.armed;
+    if (next.run) action.onClick();
+  };
+  return <button
+    className={`${styles.button} ${action.primary ? styles.primary : ""}`}
+    disabled={action.disabled}
+    onClick={(event) => press("click", event.button)}
+    onPointerDown={(event) => press("pointerdown", event.button)}
+    type="button"
+  >{action.label}</button>;
 }

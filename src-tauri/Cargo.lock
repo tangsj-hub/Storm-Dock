@@ -3783,6 +3783,7 @@ dependencies = [
  "cbc",
  "dirs 5.0.1",
  "libc",
+ "objc2-app-kit",
  "once_cell",
  "pbkdf2",
  "regex",
@@ -3806,6 +3807,7 @@ dependencies = [
  "toml 0.8.2",
  "uuid",
  "window-vibrancy",
+ "windows-sys 0.59.0",
  "winreg 0.55.0",
  "zstd",
 ]

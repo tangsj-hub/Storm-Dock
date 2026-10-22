@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
+/** Must match POPUP_AUTO_HIDE in switcher/runtime.rs */
 export const SWITCH_POPUP_SECONDS = 5;
 
 export type SwitchReason = "lowQuota" | "expiring";
@@ -44,7 +45,7 @@ export const setSwitcherSettings = (settings: SwitcherSettings) => invoke<Switch
 export const previewSwitchOffer = (providerId: string) => invoke<void>("preview_switch_offer", { providerId });
 export const getSwitchOffer = () => invoke<SwitchOffer | null>("get_switch_offer");
 export interface ConfirmLabels { title: string; message: string; ok: string; cancel: string }
-export const respondSwitchOffer = (accept: boolean, confirm?: ConfirmLabels) => invoke<void>("respond_switch_offer", { accept, confirm: confirm ?? null });
+export const respondSwitchOffer = (generation: number, accept: boolean, confirm?: ConfirmLabels, instant = false) => invoke<void>("respond_switch_offer", { generation, accept, confirm: confirm ?? null, instant });
 
 type T = (key: string, options?: Record<string, unknown>) => string;
 

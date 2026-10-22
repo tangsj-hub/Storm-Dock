@@ -17,6 +17,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub(crate) const WINDOW_LABEL: &str = "popup-bot-import";
+pub(crate) const PAGE: &str = "switcher.html?mode=import";
 pub(crate) const PROGRESS_EVENT: &str = "bot-import-progress";
 const ITEM_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_secs(1);
@@ -142,6 +143,8 @@ pub(crate) fn detect_new_agent(
 
 struct Active {
     generation: u64,
+    /// Generation of the banner showing this queue.
+    popup: u64,
     queue: ImportQueue,
 }
 
@@ -171,13 +174,14 @@ pub(crate) fn cancel(app: &AppHandle) {
     emit(app);
 }
 
-pub(crate) fn dismiss(app: &AppHandle) {
+/// Hide the banner showing `popup` (stale answers are ignored by the popup manager).
+pub(crate) fn dismiss(popup: u64, animate: bool) {
     if let Ok(mut active) = ACTIVE.lock() {
-        if active.as_ref().is_some_and(|a| a.queue.is_done()) {
+        if active.as_ref().is_some_and(|a| a.popup == popup && a.queue.is_done()) {
             *active = None;
         }
     }
-    crate::native_popup::close(app, WINDOW_LABEL);
+    crate::native_popup::hide(WINDOW_LABEL, Some(popup), animate);
 }
 
 fn roster_ids() -> HashSet<String> {
@@ -232,10 +236,10 @@ pub(crate) fn start(app: &AppHandle, items: Vec<QueueItem>) -> Result<(), String
                 ImportQueue::blocked(items, current.clone())
             }
         };
-        *active = Some(Active { generation, queue });
+        let popup = crate::native_popup::show(WINDOW_LABEL, PAGE, serde_json::json!({ "preview": false }));
+        *active = Some(Active { generation, popup, queue });
         generation
     };
-    crate::native_popup::show(app, WINDOW_LABEL, "switcher.html?mode=import");
     let app = app.clone();
     thread::spawn(move || {
         loop {
@@ -258,13 +262,13 @@ pub(crate) fn start(app: &AppHandle, items: Vec<QueueItem>) -> Result<(), String
             }
         }
         emit(&app);
-        thread::sleep(Duration::from_secs(SUMMARY_SECS));
-        let same = ACTIVE
+        // The popup manager hides it later unless a newer banner superseded it.
+        let popup = ACTIVE
             .lock()
-            .map(|a| a.as_ref().is_some_and(|a| a.generation == generation))
-            .unwrap_or(false);
-        if same {
-            dismiss(&app);
+            .ok()
+            .and_then(|a| a.as_ref().filter(|a| a.generation == generation).map(|a| a.popup));
+        if let Some(popup) = popup {
+            crate::native_popup::auto_hide(WINDOW_LABEL, popup, Duration::from_secs(SUMMARY_SECS));
         }
     });
     Ok(())
@@ -288,8 +292,8 @@ pub(crate) fn cancel_bot_import(app: AppHandle) {
 }
 
 #[tauri::command]
-pub(crate) fn dismiss_bot_import(app: AppHandle) {
-    dismiss(&app);
+pub(crate) fn dismiss_bot_import(generation: u64, instant: Option<bool>) {
+    dismiss(generation, !instant.unwrap_or(false));
 }
 
 #[tauri::command]

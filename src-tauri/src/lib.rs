@@ -165,6 +165,13 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
+                // Popups are persistent: never destroy them, just hide.
+                if crate::native_popup::is_popup_label(window.label()) {
+                    api.prevent_close();
+                    crate::native_popup::hide(crate::switcher::runtime::POPUP_LABEL, None, false);
+                    crate::native_popup::hide(crate::bot_import_queue::WINDOW_LABEL, None, false);
+                    return;
+                }
                 if window.label() != "main" {
                     return;
                 }
@@ -277,6 +284,13 @@ pub fn run() {
             }
             crate::autostart::migrate_windows_autostart();
             crate::grok_bot::spawn_active_slot_watcher(app.handle().clone());
+            crate::native_popup::init(
+                app.handle(),
+                &[
+                    (crate::switcher::runtime::POPUP_LABEL, crate::switcher::runtime::POPUP_PAGE),
+                    (crate::bot_import_queue::WINDOW_LABEL, crate::bot_import_queue::PAGE),
+                ],
+            );
             crate::switcher::runtime::spawn(app.handle().clone());
             Ok(())
         })
@@ -387,6 +401,8 @@ pub fn run() {
             switcher::runtime::list_account_switcher_providers,
             switcher::runtime::set_account_switcher_settings,
             switcher::runtime::get_switch_offer,
+            native_popup::get_popup_payload,
+            native_popup::popup_hover,
             switcher::runtime::preview_switch_offer,
             switcher::runtime::respond_switch_offer,
             switcher::runtime::run_account_switcher_check,

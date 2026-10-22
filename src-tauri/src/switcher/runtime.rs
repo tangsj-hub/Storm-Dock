@@ -22,19 +22,33 @@ use super::{
 use crate::models::now;
 
 pub(crate) const POPUP_LABEL: &str = "popup-switcher";
-/// Safety net if the popup page never answers (its own countdown is 5 s).
-const POPUP_FORCE_CLOSE_SECS: u64 = 12;
+pub(crate) const POPUP_PAGE: &str = "switcher.html";
+/// Reminder hides itself (= 忽略) this long after each show; paused while hovered
+/// or while the native confirm is open. No visible countdown.
+const POPUP_AUTO_HIDE: Duration = Duration::from_secs(5);
 const STARTUP_DELAY_SECS: u64 = 90;
 const TICK_SECS: u64 = 60;
 const ACTIVE_REFRESH_SECS: u64 = 5 * 60;
 const OTHERS_REFRESH_SECS: u64 = 15 * 60;
 const SETTINGS_FILE: &str = "account_switcher.json";
 
+struct Pending {
+    generation: u64,
+    offer: SwitchOffer,
+}
+
+impl Runtime {
+    fn offer_for(&self, generation: u64) -> Option<&SwitchOffer> {
+        self.pending.as_ref().filter(|p| p.generation == generation).map(|p| &p.offer)
+    }
+}
+
 #[derive(Default)]
 struct Runtime {
     cooldown: Cooldown,
-    pending: Option<SwitchOffer>,
-    /// A native confirm dialog is open: the watchdog must not close the popup.
+    /// The offer on screen, tied to the popup generation that shows it.
+    pending: Option<Pending>,
+    /// A native confirm dialog is open.
     confirming: bool,
     switching: bool,
     last_active_refresh: HashMap<&'static str, u64>,
@@ -96,8 +110,9 @@ pub(crate) fn spawn(app: AppHandle) {
     #[cfg(debug_assertions)]
     {
         spawn_dev_preview_trigger(app.clone());
-        crate::native_popup::spawn_dev_import_preview_trigger(app.clone());
+        crate::native_popup::spawn_dev_import_preview_trigger();
     }
+    crate::native_popup::on_expire(POPUP_LABEL, on_popup_expired);
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(STARTUP_DELAY_SECS));
         loop {
@@ -142,23 +157,16 @@ fn tick(app: &AppHandle) {
         ) else {
             continue;
         };
-        let should_show = {
-            let mut runtime = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
-            if runtime.pending.is_some()
-                || runtime.switching
-                || !runtime.cooldown.allows(&offer, now(), DEFAULT_COOLDOWN_SECS)
-            {
-                false
-            } else {
-                runtime.cooldown.record(&offer, now());
-                runtime.pending = Some(offer);
-                true
-            }
-        };
-        if should_show {
-            show_popup(app);
-            return; // one popup at a time
+        let mut runtime = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
+        if runtime.pending.is_some()
+            || runtime.switching
+            || !runtime.cooldown.allows(&offer, now(), DEFAULT_COOLDOWN_SECS)
+        {
+            continue;
         }
+        runtime.cooldown.record(&offer, now());
+        show_offer(&mut runtime, offer);
+        return; // one popup at a time
     }
 }
 
@@ -193,33 +201,27 @@ fn refresh_if_due(app: &AppHandle, provider: &dyn AccountProvider) {
     }
 }
 
-fn show_popup(app: &AppHandle) {
-    crate::native_popup::show(app, POPUP_LABEL, "switcher.html");
-    watch_popup(app);
+/// Caller holds the lock, so pending and the popup generation always agree.
+fn show_offer(runtime: &mut Runtime, offer: SwitchOffer) {
+    let generation = crate::native_popup::show_with(POPUP_LABEL, POPUP_PAGE, &offer, Some(POPUP_AUTO_HIDE));
+    runtime.pending = Some(Pending { generation, offer });
 }
 
-fn watch_popup(app: &AppHandle) {
-    let watchdog = app.clone();
-    thread::spawn(move || {
-        thread::sleep(Duration::from_secs(POPUP_FORCE_CLOSE_SECS));
-        let still_pending = RUNTIME
-            .lock()
-            .map(|runtime| runtime.pending.is_some() && !runtime.switching && !runtime.confirming)
-            .unwrap_or(false);
-        if still_pending {
-            dismiss(&watchdog);
-        }
-    });
+/// Auto-hide fired (actor thread): same as 忽略 for that generation only.
+fn on_popup_expired(generation: u64) {
+    let mut runtime = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
+    if runtime.offer_for(generation).is_some() && !runtime.confirming && !runtime.switching {
+        runtime.pending = None;
+    }
 }
 
-fn close_popup(app: &AppHandle) {
-    crate::native_popup::close(app, POPUP_LABEL);
-}
-
-
-fn dismiss(app: &AppHandle) {
-    RUNTIME.lock().unwrap_or_else(|e| e.into_inner()).pending = None;
-    close_popup(app);
+/// Clears the offer and hides the popup only if `generation` is still current.
+fn dismiss(generation: u64, animate: bool) {
+    let mut runtime = RUNTIME.lock().unwrap_or_else(|e| e.into_inner());
+    if runtime.offer_for(generation).is_some() {
+        runtime.pending = None;
+    }
+    crate::native_popup::hide(POPUP_LABEL, Some(generation), animate);
 }
 
 #[tauri::command]
@@ -258,7 +260,7 @@ pub(crate) fn set_account_switcher_settings(
 
 #[tauri::command]
 pub(crate) fn get_switch_offer() -> Option<SwitchOffer> {
-    RUNTIME.lock().ok().and_then(|runtime| runtime.pending.clone())
+    RUNTIME.lock().ok().and_then(|runtime| runtime.pending.as_ref().map(|p| p.offer.clone()))
 }
 
 /// Labels for the native pre-switch confirm, localized by the popup page
@@ -286,82 +288,64 @@ fn confirm_natively(app: &AppHandle, labels: &ConfirmLabels) -> bool {
         .blocking_show()
 }
 
-/// `accept = false` (button 忽略 or the 5 s countdown) keeps the current account.
-/// `accept = true` first shows a native confirm (countdown paused); cancel = no switch.
+/// Answer from the popup showing `generation`; answers from a superseded popup
+/// are ignored. `accept = false` (忽略 / swipe) keeps the current account;
+/// `accept = true` first shows a native confirm, cancel = no switch.
+/// `instant` hides without the slide-out (the page already swiped it away).
 #[tauri::command]
 pub(crate) async fn respond_switch_offer(
     app: AppHandle,
+    generation: u64,
     accept: bool,
     confirm: Option<ConfirmLabels>,
+    instant: Option<bool>,
 ) -> Result<(), String> {
-    let pending_preview = RUNTIME
+    let animate = !instant.unwrap_or(false);
+    let Some(offer) = RUNTIME
         .lock()
-        .ok()
-        .and_then(|runtime| runtime.pending.as_ref().map(|offer| offer.preview))
-        .unwrap_or(false);
-    if pending_preview {
-        // Preview: show the same native confirm so the flow is visible, then just close.
-        if accept {
-            if let Some(labels) = confirm {
-                {
-                    let mut runtime = RUNTIME.lock().map_err(|_| "切换器不可用".to_string())?;
-                    if runtime.confirming {
-                        return Ok(());
-                    }
-                    runtime.confirming = true;
-                }
-                let dialog_app = app.clone();
-                let _ = tauri::async_runtime::spawn_blocking(move || {
-                    confirm_natively(&dialog_app, &labels)
-                })
-                .await;
-                RUNTIME.lock().unwrap_or_else(|e| e.into_inner()).confirming = false;
-            }
-        }
-        dismiss(&app);
+        .map_err(|_| "切换器不可用".to_string())?
+        .offer_for(generation)
+        .cloned()
+    else {
         return Ok(());
-    }
-    let confirm_needed = accept
-        && RUNTIME
-            .lock()
-            .ok()
-            .and_then(|runtime| runtime.pending.as_ref().map(|offer| offer.provider.clone()))
-            .and_then(|id| provider(&id))
-            .is_some_and(|provider| provider.needs_confirm());
-    if confirm_needed {
-        if let Some(labels) = confirm {
-            {
-                let mut runtime = RUNTIME.lock().map_err(|_| "切换器不可用".to_string())?;
-                if runtime.pending.is_none() || runtime.confirming {
-                    return Ok(());
-                }
-                runtime.confirming = true;
-            }
-            let dialog_app = app.clone();
-            let confirmed = tauri::async_runtime::spawn_blocking(move || {
-                confirm_natively(&dialog_app, &labels)
-            })
-            .await
-            .unwrap_or(false);
-            RUNTIME.lock().unwrap_or_else(|e| e.into_inner()).confirming = false;
-            if !confirmed {
-                dismiss(&app);
+    };
+    // Preview shows the same native confirm so the flow is visible, then just hides.
+    let confirm_needed =
+        accept && (offer.preview || provider(&offer.provider).is_some_and(|p| p.needs_confirm()));
+    if let Some(labels) = confirm.filter(|_| confirm_needed) {
+        {
+            let mut runtime = RUNTIME.lock().map_err(|_| "切换器不可用".to_string())?;
+            if runtime.confirming || runtime.offer_for(generation).is_none() {
                 return Ok(());
             }
+            runtime.confirming = true;
         }
+        let hold = |on| crate::native_popup::pause(POPUP_LABEL, generation, crate::native_popup::PauseReason::Hold, on);
+        hold(true);
+        let dialog_app = app.clone();
+        let confirmed = tauri::async_runtime::spawn_blocking(move || confirm_natively(&dialog_app, &labels))
+            .await
+            .unwrap_or(false);
+        RUNTIME.lock().unwrap_or_else(|e| e.into_inner()).confirming = false;
+        hold(false);
+        if !confirmed {
+            dismiss(generation, true);
+            return Ok(());
+        }
+    }
+    if offer.preview || !accept {
+        dismiss(generation, animate);
+        return Ok(());
     }
     let offer = {
         let mut runtime = RUNTIME.lock().map_err(|_| "切换器不可用".to_string())?;
-        let offer = runtime.pending.take();
-        if accept && offer.is_some() {
-            runtime.switching = true;
+        if runtime.offer_for(generation).is_none() {
+            return Ok(());
         }
-        offer
+        runtime.switching = true;
+        runtime.pending.take().map(|p| p.offer).unwrap_or(offer)
     };
-    close_popup(&app);
-    let Some(offer) = offer.filter(|_| accept) else {
-        return Ok(());
-    };
+    crate::native_popup::hide(POPUP_LABEL, Some(generation), animate);
     let Some(provider) = provider(&offer.provider) else {
         RUNTIME.lock().unwrap_or_else(|e| e.into_inner()).switching = false;
         return Err("未知的切换来源".into());
@@ -399,7 +383,8 @@ pub(crate) async fn respond_switch_offer(
 }
 
 /// Settings-page preview of the real popup. Skips cooldown and never switches;
-/// refused only while a real reminder or switch is in progress.
+/// refused only while a real reminder or switch is in progress. Repeated clicks
+/// just replace the preview offer and update the popup already on screen.
 #[tauri::command]
 pub(crate) fn preview_switch_offer(app: AppHandle, provider_id: String) -> Result<(), String> {
     let provider = provider(&provider_id).ok_or_else(|| "未知的切换来源".to_string())?;
@@ -416,12 +401,11 @@ pub(crate) fn preview_switch_offer(app: AppHandle, provider_id: String) -> Resul
         if runtime.switching || runtime.confirming {
             return Err("正在切换账号，请稍后再试。".into());
         }
-        if runtime.pending.as_ref().is_some_and(|offer| !offer.preview) {
+        if runtime.pending.as_ref().is_some_and(|p| !p.offer.preview) {
             return Err("已有提醒正在显示。".into());
         }
-        runtime.pending = Some(offer);
+        show_offer(&mut runtime, offer);
     }
-    show_popup(&app);
     Ok(())
 }
 

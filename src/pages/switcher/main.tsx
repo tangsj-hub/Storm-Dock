@@ -3,35 +3,35 @@ import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { useTranslation } from "react-i18next";
 import "../../i18n";
-import { SWITCH_POPUP_SECONDS, confirmLabels, getSwitchOffer, offerMessage, respondSwitchOffer, type SwitchOffer } from "../../lib/accountSwitcher";
+import { confirmLabels, offerMessage, respondSwitchOffer, SWITCH_POPUP_SECONDS, type SwitchOffer } from "../../lib/accountSwitcher";
 import { cancelBotImport, dismissBotImport, getBotImportProgress } from "../../lib/api";
 import type { BotImportProgress } from "../../lib/botTemplates";
+import { setPopupHover, usePopupPayload } from "../../lib/popup";
 import { NativePopup } from "../../components/NativePopup";
+
+// This window is created once and reused: every show pushes a new generation,
+// local state is keyed on it so it resets without remounting.
 
 function SwitcherPopup() {
   const { t } = useTranslation();
-  const [offer, setOffer] = useState<SwitchOffer | null>();
-  const [left, setLeft] = useState(SWITCH_POPUP_SECONDS);
-  const [busy, setBusy] = useState(false);
-  const answered = useRef(false);
+  const envelope = usePopupPayload<SwitchOffer>();
+  const [answeredGen, setAnsweredGen] = useState(0);
+  const [hovering, setHovering] = useState(false);
+  const answeredRef = useRef(0);
+  const generation = envelope?.generation ?? 0;
+  const offer = envelope?.payload;
+  const busy = generation > 0 && answeredGen === generation;
+  // Local mirror of the backend 5s auto-hide; pauses on hover and while confirm/switch is in flight.
+  const seconds = useAutoHideSeconds(generation, SWITCH_POPUP_SECONDS, hovering || busy);
+  useEffect(() => { setHovering(false); }, [generation]);
 
-  const answer = (accept: boolean) => {
-    if (answered.current) return;
-    answered.current = true;
-    setBusy(true);
-    // busy pauses the countdown while the native confirm is open. Backend closes this
-    // window; default (timeout / ignore / cancel) keeps the current account.
-    void respondSwitchOffer(accept, accept && offer ? confirmLabels(offer, t) : undefined).catch(() => undefined);
+  const answer = (accept: boolean, instant = false) => {
+    if (!offer || answeredRef.current === generation) return;
+    answeredRef.current = generation;
+    setAnsweredGen(generation);
+    // Backend hides this window; ignore / cancel keeps the current account.
+    void respondSwitchOffer(generation, accept, accept ? confirmLabels(offer, t) : undefined, instant).catch(() => undefined);
   };
-
-  useEffect(() => { void getSwitchOffer().then(setOffer).catch(() => setOffer(null)); }, []);
-  useEffect(() => { if (offer === null) answer(false); }, [offer]);
-  useEffect(() => {
-    if (!offer || busy) return;
-    if (left <= 0) { answer(false); return; }
-    const timer = window.setTimeout(() => setLeft((value) => value - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [offer, left, busy]);
 
   if (!offer) return null;
   return <NativePopup
@@ -40,31 +40,62 @@ function SwitcherPopup() {
       { label: t("switcherSwitch"), onClick: () => answer(true), disabled: busy, primary: true },
     ]}
     ariaLabel={t("switcherTitle", { provider: offer.providerName })}
+    onDismiss={busy ? undefined : () => answer(false, true)}
+    onHover={(next) => {
+      setHovering(next);
+      if (generation) void setPopupHover(generation, next);
+    }}
     body={offerMessage(offer, t)}
     preview={offer.preview ? t("switcherPreviewTag") : undefined}
+    resetKey={generation}
     role="alertdialog"
-    time={busy ? t("switcherNow") : t("switcherCountdownShort", { count: left })}
+    time={t("switcherCountdownShort", { count: seconds })}
     title={offer.providerName}
   />;
 }
 
+/** Counts down from `total` each time `resetKey` changes; freezes while `paused`. */
+function useAutoHideSeconds(resetKey: number, total: number, paused: boolean) {
+  const [seconds, setSeconds] = useState(total);
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  useEffect(() => {
+    if (!resetKey) return;
+    setSeconds(total);
+    const id = window.setInterval(() => {
+      if (pausedRef.current) return;
+      setSeconds((value) => (value > 0 ? value - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [resetKey, total]);
+  return seconds;
+}
+
 /** Debug-trigger preview of the import banner (sample data, buttons do nothing). */
-const PREVIEW = new URLSearchParams(window.location.search).get("preview") === "1";
 const PREVIEW_PROGRESS: BotImportProgress = { total: 3, position: 2, currentName: "Sample Bot", done: false, cancelled: false, imported: ["Bot A"], skipped: [], blockedVersion: null, requiredVersion: "" };
 
 /** Bot模版 import queue banner: stays up while running, backend hides it ~5 s after the summary. */
 function ImportProgressBanner() {
   const { t } = useTranslation();
-  const [progress, setProgress] = useState<BotImportProgress | null>();
-  const [cancelling, setCancelling] = useState(false);
+  const envelope = usePopupPayload<{ preview: boolean }>();
+  const [live, setLive] = useState<BotImportProgress | null>(null);
+  const [cancelledGen, setCancelledGen] = useState(0);
+  const generation = envelope?.generation ?? 0;
+  const preview = envelope?.payload.preview ?? false;
+  const cancelling = generation > 0 && cancelledGen === generation;
 
   useEffect(() => {
-    if (PREVIEW) { setProgress(PREVIEW_PROGRESS); return; }
-    void getBotImportProgress().then(setProgress).catch(() => setProgress(null));
-    const unlisten = listen<BotImportProgress>("bot-import-progress", (event) => setProgress(event.payload));
+    const unlisten = listen<BotImportProgress>("bot-import-progress", (event) => setLive(event.payload));
     return () => { void unlisten.then((stop) => stop()); };
   }, []);
+  // New banner: re-pull so a previous run's summary never flashes.
+  useEffect(() => {
+    if (!generation || preview) return;
+    void getBotImportProgress().then(setLive).catch(() => setLive(null));
+  }, [generation, preview]);
 
+  const progress = preview ? PREVIEW_PROGRESS : live;
+  const dismiss = (instant = false) => { if (!preview) void dismissBotImport(generation, instant); };
   if (!progress) return null;
   const blocked = progress.blockedVersion != null;
   const message = blocked
@@ -79,11 +110,14 @@ function ImportProgressBanner() {
     : t("botImportConfirmHint");
   return <NativePopup
     actions={[progress.done
-      ? { label: t("botImportClose"), onClick: () => { if (!PREVIEW) void dismissBotImport(); } }
-      : { label: t("botImportCancelRemaining"), onClick: () => { if (PREVIEW) return; setCancelling(true); void cancelBotImport(); }, disabled: cancelling }]}
+      ? { label: t("botImportClose"), onClick: () => dismiss() }
+      : { label: t("botImportCancelRemaining"), onClick: () => { if (preview) return; setCancelledGen(generation); void cancelBotImport(); }, disabled: cancelling }]}
     body={message}
     detail={detail}
-    preview={PREVIEW ? t("switcherPreviewTag") : undefined}
+    onDismiss={progress.done && !preview ? () => dismiss(true) : undefined}
+    onHover={(hovering) => { if (generation) void setPopupHover(generation, hovering); }}
+    preview={preview ? t("switcherPreviewTag") : undefined}
+    resetKey={generation}
     time={`${progress.position}/${progress.total}`}
     title={t("botImportTitle")}
   />;

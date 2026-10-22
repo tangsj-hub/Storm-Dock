@@ -68,7 +68,7 @@ export const updateBotTemplate = (url: string, patch: BotTemplatePatch) => invok
 export const importBotTemplateInClient = (url: string) => invoke<"client" | "web">("import_bot_template_in_client", { url });
 export const getBotImportProgress = () => invoke<BotImportProgress | null>("get_bot_import_progress");
 export const cancelBotImport = () => invoke<void>("cancel_bot_import");
-export const dismissBotImport = () => invoke<void>("dismiss_bot_import");
+export const dismissBotImport = (generation: number, instant = false) => invoke<void>("dismiss_bot_import", { generation, instant });
 export const startBotImportAll = () => invoke<number>("start_bot_import_all");
 export const getBotImportGate = () => invoke<BotImportGate>("get_bot_import_gate");
 export const exportBotTemplates = (urls: string[]) => invoke<string>("export_bot_templates", { urls });

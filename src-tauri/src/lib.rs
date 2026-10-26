@@ -251,8 +251,16 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .map_err(|error| AppError::Message(error.to_string()))?;
-            app.manage(AppState(Mutex::new(Controller::new(data_dir)?)));
+            let controller = Controller::new(data_dir)?;
+            let load_status = controller.load_status().clone();
+            app.manage(AppState(Mutex::new(controller)));
             app.manage(OauthLoginState::default());
+            if load_status.schema_too_new
+                || load_status.skipped_account_count > 0
+                || !load_status.warnings.is_empty()
+            {
+                let _ = app.emit("store-load-status", load_status);
+            }
             load_close_behavior(app.handle());
             let menu = build_tray_menu(app.handle())?;
             let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
@@ -297,6 +305,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_applications,
+            commands::get_store_load_status,
             commands::list_bot_templates,
             commands::fetch_bot_template_meta,
             commands::add_bot_template,

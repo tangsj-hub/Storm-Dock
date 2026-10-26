@@ -20,6 +20,21 @@ pub(crate) const EMAIL_KEY: &str = "cursorAuth/cachedEmail";
 pub(crate) const AUTH_ID_KEY: &str = "glass.lastSignedInAuthId";
 pub(crate) const MEMBERSHIP_TYPE_KEY: &str = "cursorAuth/stripeMembershipType";
 
+/// Client-understood SQLite schema revision (`PRAGMA user_version`).
+/// Bump only for breaking on-disk shape changes — not for new `application` string values.
+pub(crate) const SCHEMA_VERSION: i32 = 1;
+
+/// Soft load diagnostics: unknown application rows are skipped so older clients can still boot.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct StoreLoadStatus {
+    pub(crate) schema_version: i32,
+    pub(crate) client_schema_version: i32,
+    pub(crate) schema_too_new: bool,
+    pub(crate) warnings: Vec<String>,
+    pub(crate) skipped_account_count: usize,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) enum ApplicationKind {

@@ -18,6 +18,14 @@
 
 SQLite 里账号按 `application` 列隔离；新 kind 的字符串要与 Rust `serde` / FE 一致（camelCase / 小写 slug）。
 
+
+## 向前兼容（必守）
+
+- **禁止**在 `all_accounts` / `Controller::new` 里因未知 `application` 字符串返回 `Err` 或让 setup panic。旧客户端遇到新 kind 时应 **跳过该行**、写入 `StoreLoadStatus.warnings`，应用仍可启动。
+- 新增应用 kind **通常不必** bump `SCHEMA_VERSION`（只是 `accounts.application` 的新取值）。仅当改表结构 / 破坏性列语义时才 bump，并保证旧客户端读到更高 `user_version` 时提示升级而不是降级或崩溃。
+- 未知 `import_type`：回退 `Native` 并告警，不要丢弃整条账号（若 application 仍认识）。
+
+
 ---
 
 ## 2. 后端模块（按需裁剪）

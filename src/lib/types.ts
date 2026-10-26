@@ -1,3 +1,11 @@
+export type StoreLoadStatus = {
+  schemaVersion: number;
+  clientSchemaVersion: number;
+  schemaTooNew: boolean;
+  warnings: string[];
+  skippedAccountCount: number;
+};
+
 export type ApplicationKind = "cursor" | "codex" | "grok" | "workbuddy";
 
 export const APPLICATION_KINDS = ["cursor", "codex", "grok", "workbuddy"] as const;

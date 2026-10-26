@@ -16,6 +16,24 @@ pub(crate) fn build_tray_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>
         None::<&str>,
     )?;
     let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![&title];
+    let status = controller.load_status();
+    let compat = if status.schema_too_new {
+        Some("需要升级 Storm Dock（数据库更新）".to_string())
+    } else if status.skipped_account_count > 0 {
+        Some(format!(
+            "已跳过 {} 个不兼容账号",
+            status.skipped_account_count
+        ))
+    } else {
+        None
+    };
+    let compat_item = compat
+        .as_ref()
+        .map(|label| MenuItem::with_id(app, "compat", label, false, None::<&str>))
+        .transpose()?;
+    if let Some(item) = compat_item.as_ref() {
+        items.push(item);
+    }
     let separator = PredefinedMenuItem::separator(app)?;
     items.push(&separator);
     let open = MenuItem::with_id(app, "open", "打开 Storm Dock", true, None::<&str>)?;

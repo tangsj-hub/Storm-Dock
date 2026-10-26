@@ -15,8 +15,8 @@ use crate::desktop::{self, DesktopApp};
 use crate::error::{AppError, Result};
 use crate::models::{
     days_remaining, matching_account_index, now, Account, AccountSummary, ApplicationKind,
-    ApplicationStatus, CursorUsageDetails, ImportType, Session, SubscriptionSummary, SwitchOutcome,
-    ACCESS_TOKEN_KEY, AUTH_ID_KEY, EMAIL_KEY,
+    ApplicationStatus, CursorUsageDetails, ImportType, Session, StoreLoadStatus,
+    SubscriptionSummary, SwitchOutcome, ACCESS_TOKEN_KEY, AUTH_ID_KEY, EMAIL_KEY, SCHEMA_VERSION,
 };
 
 #[cfg(test)]
@@ -35,6 +35,7 @@ pub(crate) struct Controller {
     codex: CodexAdapter,
     grok: GrokAdapter,
     workbuddy: WorkbuddyAdapter,
+    load_status: StoreLoadStatus,
 }
 
 fn grok_bot_list_eligible(account: &AccountSummary) -> bool {
@@ -57,7 +58,7 @@ impl Controller {
             .map(|value| PathBuf::from(value.trim()))
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| data_dir.join(DATABASE_NAME));
-        let database = Self::open_database(&database_path)?;
+        let (database, load_status) = Self::open_database(&database_path)?;
         let mut controller = Self {
             pointer_file,
             database_path,
@@ -66,12 +67,62 @@ impl Controller {
             codex: CodexAdapter::default(),
             grok: GrokAdapter::default(),
             workbuddy: WorkbuddyAdapter::default(),
+            load_status,
         };
-        controller.migrate_raw_exports()?;
+        // Unknown application rows must never abort startup; migrate only when we own the schema.
+        if !controller.load_status.schema_too_new {
+            if let Err(error) = controller.migrate_raw_exports() {
+                let message = format!("账号数据迁移跳过：{error}");
+                eprintln!("[storm-dock] {message}");
+                controller
+                    .load_status
+                    .warnings
+                    .push(message);
+            }
+        }
+        controller.refresh_load_status();
         Ok(controller)
     }
 
-    pub(crate) fn open_database(path: &std::path::Path) -> Result<Connection> {
+    pub(crate) fn load_status(&self) -> &StoreLoadStatus {
+        &self.load_status
+    }
+
+    pub(crate) fn refresh_load_status(&mut self) {
+        let schema_version = self
+            .database
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
+            .unwrap_or(self.load_status.schema_version);
+        let schema_too_new = schema_version > SCHEMA_VERSION;
+        let mut warnings = Vec::new();
+        if schema_too_new {
+            warnings.push(format!(
+                "数据库 schema 版本 {schema_version} 高于当前客户端支持的 {SCHEMA_VERSION}，请升级 Storm Dock。未知字段已尽量忽略。"
+            ));
+        }
+        let mut skipped = 0usize;
+        match self.load_accounts_tolerant() {
+            Ok((_accounts, row_warnings, skipped_count)) => {
+                skipped = skipped_count;
+                warnings.extend(row_warnings);
+            }
+            Err(error) => {
+                let message = format!("读取账号列表时出现问题：{error}");
+                eprintln!("[storm-dock] {message}");
+                warnings.push(message);
+            }
+        }
+        self.load_status = StoreLoadStatus {
+            schema_version,
+            client_schema_version: SCHEMA_VERSION,
+            schema_too_new,
+            warnings,
+            skipped_account_count: skipped,
+        };
+    }
+
+    /// Opens (or creates) the DB. Never downgrades `user_version` when the file is newer than this client.
+    pub(crate) fn open_database(path: &std::path::Path) -> Result<(Connection, StoreLoadStatus)> {
         let parent = path
             .parent()
             .ok_or_else(|| AppError::Message("数据库路径无效".into()))?;
@@ -98,29 +149,54 @@ impl Controller {
              );
              CREATE TABLE IF NOT EXISTS app_kv (
                key TEXT PRIMARY KEY, value TEXT NOT NULL
-             );
-             PRAGMA user_version=1;",
+             );",
         )?;
-        let columns = database
-            .prepare("PRAGMA table_info(accounts)")?
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        if !columns.iter().any(|name| name == "usage_raw_json") {
-            database.execute("ALTER TABLE accounts ADD COLUMN usage_raw_json TEXT", [])?;
+        let schema_version: i32 = database.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        let schema_too_new = schema_version > SCHEMA_VERSION;
+        let mut warnings = Vec::new();
+        if schema_too_new {
+            warnings.push(format!(
+                "数据库 schema 版本 {schema_version} 高于当前客户端支持的 {SCHEMA_VERSION}，请升级 Storm Dock。"
+            ));
+            eprintln!(
+                "[storm-dock] database schema {schema_version} is newer than client {SCHEMA_VERSION}"
+            );
+        } else {
+            // Column migrations for older files; safe no-ops when columns already exist.
+            let columns = database
+                .prepare("PRAGMA table_info(accounts)")?
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if !columns.iter().any(|name| name == "usage_raw_json") {
+                database.execute("ALTER TABLE accounts ADD COLUMN usage_raw_json TEXT", [])?;
+            }
+            if !columns.iter().any(|name| name == "raw_export_json") {
+                database.execute("ALTER TABLE accounts ADD COLUMN raw_export_json TEXT", [])?;
+            }
+            if !columns.iter().any(|name| name == "token_status") {
+                database.execute("ALTER TABLE accounts ADD COLUMN token_status TEXT", [])?;
+            }
+            if !columns.iter().any(|name| name == "usage_summary_json") {
+                database.execute(
+                    "ALTER TABLE accounts ADD COLUMN usage_summary_json TEXT",
+                    [],
+                )?;
+            }
+            if schema_version < SCHEMA_VERSION {
+                database.execute_batch(&format!("PRAGMA user_version={SCHEMA_VERSION};"))?;
+            }
         }
-        if !columns.iter().any(|name| name == "raw_export_json") {
-            database.execute("ALTER TABLE accounts ADD COLUMN raw_export_json TEXT", [])?;
-        }
-        if !columns.iter().any(|name| name == "token_status") {
-            database.execute("ALTER TABLE accounts ADD COLUMN token_status TEXT", [])?;
-        }
-        if !columns.iter().any(|name| name == "usage_summary_json") {
-            database.execute(
-                "ALTER TABLE accounts ADD COLUMN usage_summary_json TEXT",
-                [],
-            )?;
-        }
-        Ok(database)
+        let effective_version: i32 = database.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        Ok((
+            database,
+            StoreLoadStatus {
+                schema_version: effective_version,
+                client_schema_version: SCHEMA_VERSION,
+                schema_too_new,
+                warnings,
+                skipped_account_count: 0,
+            },
+        ))
     }
 
     pub(crate) fn kind_value(kind: ApplicationKind) -> &'static str {
@@ -153,35 +229,129 @@ impl Controller {
         }
     }
 
-    pub(crate) fn all_accounts(&self) -> Result<Vec<Account>> {
-        let mut statement = self.database.prepare("SELECT id, application, label, email, import_type, subscription_json, usage_json, usage_raw_json, raw_export_json, created_at, updated_at, last_used_at FROM accounts ORDER BY application, sort_order")?;
+    /// Unknown import types fall back to Native so a single new variant cannot poison the whole list.
+    fn import_type_from_lenient(value: &str, account_id: &str, warnings: &mut Vec<String>) -> ImportType {
+        match Self::import_type_from(value) {
+            Ok(import_type) => import_type,
+            Err(_) => {
+                let message = format!(
+                    "账号 {account_id} 的导入类型 `{value}` 当前版本不支持，已按本机导入处理"
+                );
+                eprintln!("[storm-dock] {message}");
+                warnings.push(message);
+                ImportType::Native
+            }
+        }
+    }
+
+    fn application_kind_from(value: &str) -> Option<ApplicationKind> {
+        match value {
+            "cursor" => Some(ApplicationKind::Cursor),
+            "codex" => Some(ApplicationKind::Codex),
+            "grok" => Some(ApplicationKind::Grok),
+            "workbuddy" => Some(ApplicationKind::Workbuddy),
+            _ => None,
+        }
+    }
+
+    /// Loads known accounts; skips unknown application / corrupt rows instead of failing the whole store.
+    fn load_accounts_tolerant(&self) -> Result<(Vec<Account>, Vec<String>, usize)> {
+        let mut statement = self.database.prepare(
+            "SELECT id, application, label, email, import_type, subscription_json, usage_json, usage_raw_json, raw_export_json, created_at, updated_at, last_used_at FROM accounts ORDER BY application, sort_order",
+        )?;
         let mut rows = statement.query([])?;
         let mut accounts = Vec::new();
+        let mut warnings = Vec::new();
+        let mut skipped = 0usize;
         while let Some(row) = rows.next()? {
-            let application = match row.get::<_, String>(1)?.as_str() {
-                "cursor" => ApplicationKind::Cursor,
-                "codex" => ApplicationKind::Codex,
-                "grok" => ApplicationKind::Grok,
-                "workbuddy" => ApplicationKind::Workbuddy,
-                _ => return Err(AppError::Message("数据库中的应用类型无效".into())),
+            let id: String = match row.get(0) {
+                Ok(value) => value,
+                Err(error) => {
+                    skipped += 1;
+                    let message = format!("跳过无法读取 id 的账号行：{error}");
+                    eprintln!("[storm-dock] {message}");
+                    warnings.push(message);
+                    continue;
+                }
             };
+            let application_raw: String = match row.get(1) {
+                Ok(value) => value,
+                Err(error) => {
+                    skipped += 1;
+                    let message = format!("跳过账号 {id}：无法读取应用类型（{error}）");
+                    eprintln!("[storm-dock] {message}");
+                    warnings.push(message);
+                    continue;
+                }
+            };
+            let Some(application) = Self::application_kind_from(&application_raw) else {
+                skipped += 1;
+                let message = format!(
+                    "跳过账号 {id}：应用类型 `{application_raw}` 当前版本不支持，请升级 Storm Dock"
+                );
+                eprintln!("[storm-dock] {message}");
+                warnings.push(message);
+                continue;
+            };
+            let import_raw: String = match row.get(4) {
+                Ok(value) => value,
+                Err(error) => {
+                    skipped += 1;
+                    let message = format!("跳过账号 {id}：无法读取导入类型（{error}）");
+                    eprintln!("[storm-dock] {message}");
+                    warnings.push(message);
+                    continue;
+                }
+            };
+            let import_type = Self::import_type_from_lenient(&import_raw, &id, &mut warnings);
+            let subscription = match row
+                .get::<_, String>(5)
+                .ok()
+                .and_then(|json| serde_json::from_str(&json).ok())
+            {
+                Some(value) => value,
+                None => {
+                    warnings.push(format!("账号 {id} 的订阅信息无法解析，已使用空订阅"));
+                    SubscriptionSummary::default()
+                }
+            };
+            let raw_export = match row.get::<_, Option<String>>(8) {
+                Ok(Some(json)) => match serde_json::from_str(&json) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        warnings.push(format!("账号 {id} 的 raw_export 无法解析，已忽略（{error}）"));
+                        serde_json::Value::Null
+                    }
+                },
+                Ok(None) => serde_json::Value::Null,
+                Err(error) => {
+                    warnings.push(format!("账号 {id} 的 raw_export 读取失败，已忽略（{error}）"));
+                    serde_json::Value::Null
+                }
+            };
+            let label: String = row.get(2).unwrap_or_else(|_| id.clone());
+            let email: Option<String> = row.get(3).unwrap_or(None);
+            let created_at: u64 = row.get(9).unwrap_or(0);
+            let updated_at: u64 = row.get(10).unwrap_or(created_at);
+            let last_used_at: u64 = row.get(11).unwrap_or(updated_at);
             accounts.push(Account {
-                id: row.get(0)?,
+                id,
                 application,
-                label: row.get(2)?,
-                email: row.get(3)?,
-                import_type: Self::import_type_from(&row.get::<_, String>(4)?)?,
-                subscription: serde_json::from_str(&row.get::<_, String>(5)?)?,
-                raw_export: row
-                    .get::<_, Option<String>>(8)?
-                    .map(|json| serde_json::from_str(&json))
-                    .transpose()?
-                    .unwrap_or(serde_json::Value::Null),
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                last_used_at: row.get(11)?,
+                label,
+                email,
+                import_type,
+                subscription,
+                raw_export,
+                created_at,
+                updated_at,
+                last_used_at,
             });
         }
+        Ok((accounts, warnings, skipped))
+    }
+
+    pub(crate) fn all_accounts(&self) -> Result<Vec<Account>> {
+        let (accounts, _warnings, _skipped) = self.load_accounts_tolerant()?;
         Ok(accounts)
     }
 
@@ -215,6 +385,9 @@ impl Controller {
     }
 
     pub(crate) fn migrate_raw_exports(&mut self) -> Result<()> {
+        if self.load_status.schema_too_new {
+            return Ok(());
+        }
         for account in self.all_accounts()? {
             let mut raw = account.raw_export;
             let mut changed = false;
@@ -1294,9 +1467,11 @@ impl Controller {
         drop(check);
         fs::rename(&temporary, &target)?;
         fs::write(&self.pointer_file, target.to_string_lossy().as_bytes())?;
-        let database = Self::open_database(&target)?;
+        let (database, load_status) = Self::open_database(&target)?;
         self.database = database;
+        self.load_status = load_status;
         self.database_path = target;
+        self.refresh_load_status();
         let _ = fs::remove_file(source);
         Ok(self.database_path())
     }
@@ -1430,26 +1605,43 @@ impl Controller {
             let _ = fs::remove_file(&backup);
         }
         if let Err(error) = fs::rename(&live, &backup) {
-            self.database = Self::open_database(&live)?;
+            let (database, load_status) = Self::open_database(&live)?;
+            self.database = database;
+            self.load_status = load_status;
+            self.refresh_load_status();
             let _ = fs::remove_file(&temporary);
             return Err(error.into());
         }
         if let Err(error) = fs::rename(&temporary, &live) {
             let _ = fs::rename(&backup, &live);
-            self.database = Self::open_database(&live)?;
+            let (database, load_status) = Self::open_database(&live)?;
+            self.database = database;
+            self.load_status = load_status;
+            self.refresh_load_status();
             return Err(error.into());
         }
         match Self::open_database(&live) {
-            Ok(database) => {
+            Ok((database, load_status)) => {
                 self.database = database;
+                self.load_status = load_status;
                 let _ = fs::remove_file(&backup);
-                self.migrate_raw_exports()?;
+                if !self.load_status.schema_too_new {
+                    if let Err(error) = self.migrate_raw_exports() {
+                        let message = format!("账号数据迁移跳过：{error}");
+                        eprintln!("[storm-dock] {message}");
+                        self.load_status.warnings.push(message);
+                    }
+                }
+                self.refresh_load_status();
                 Ok(self.database_path())
             }
             Err(error) => {
                 let _ = fs::remove_file(&live);
                 let _ = fs::rename(&backup, &live);
-                self.database = Self::open_database(&live)?;
+                let (database, load_status) = Self::open_database(&live)?;
+                self.database = database;
+                self.load_status = load_status;
+                self.refresh_load_status();
                 Err(error)
             }
         }
@@ -2495,4 +2687,120 @@ INSERT INTO providers (id, app_type, name, settings_config, meta, is_current, in
         assert!(!controller.preserve_codex_official_auth());
         let _ = fs::remove_dir_all(data_dir);
     }
+
+    #[test]
+    fn unknown_application_rows_are_skipped_on_load() {
+        let data_dir = env::temp_dir().join(format!(
+            "storm-dock-unknown-app-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        controller
+            .save_imported_session(
+                ApplicationKind::Cursor,
+                Some("Known".into()),
+                Session {
+                    values: BTreeMap::from([(ACCESS_TOKEN_KEY.into(), "known-token".into())]),
+                    raw_export: None,
+                },
+                ImportType::Token,
+            )
+            .unwrap();
+        let stamp = now();
+        controller
+            .database
+            .execute(
+                "INSERT INTO accounts (
+                    id, application, label, email, import_type, subscription_json,
+                    created_at, updated_at, last_used_at, sort_order
+                 ) VALUES (?1, ?2, ?3, NULL, 'native', '{}', ?4, ?4, ?4, 99)",
+                params![
+                    "future-account",
+                    "future-app",
+                    "Future App Account",
+                    stamp as i64
+                ],
+            )
+            .unwrap();
+        let accounts = controller.all_accounts().unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].label, "Known");
+        controller.refresh_load_status();
+        assert!(controller.load_status().skipped_account_count >= 1);
+        assert!(controller
+            .load_status()
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("future-app")));
+
+        // Reloading through Controller::new must stay Ok (the old panic path).
+        let reloaded = Controller::new(data_dir.clone()).unwrap();
+        assert_eq!(reloaded.all_accounts().unwrap().len(), 1);
+        assert!(reloaded.load_status().skipped_account_count >= 1);
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn unknown_import_type_falls_back_without_dropping_account() {
+        let data_dir = env::temp_dir().join(format!(
+            "storm-dock-unknown-import-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        let stamp = now();
+        controller
+            .database
+            .execute(
+                "INSERT INTO accounts (
+                    id, application, label, email, import_type, subscription_json,
+                    created_at, updated_at, last_used_at, sort_order
+                 ) VALUES (?1, 'cursor', ?2, NULL, 'brand-new-import', '{}', ?3, ?3, ?3, 1)",
+                params!["import-fallback", "Fallback", stamp as i64],
+            )
+            .unwrap();
+        let accounts = controller.all_accounts().unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].import_type, ImportType::Native);
+        controller.refresh_load_status();
+        assert!(controller
+            .load_status()
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("brand-new-import")));
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn newer_schema_version_does_not_abort_or_downgrade() {
+        let data_dir = env::temp_dir().join(format!(
+            "storm-dock-schema-new-{}",
+            uuid::Uuid::new_v4()
+        ));
+        {
+            let controller = Controller::new(data_dir.clone()).unwrap();
+            controller
+                .database
+                .execute_batch("PRAGMA user_version=99;")
+                .unwrap();
+        }
+        let controller = Controller::new(data_dir.clone()).unwrap();
+        assert!(controller.load_status().schema_too_new);
+        assert_eq!(controller.load_status().schema_version, 99);
+        assert_eq!(
+            controller.load_status().client_schema_version,
+            crate::models::SCHEMA_VERSION
+        );
+        let version: i32 = controller
+            .database
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 99, "client must not downgrade a newer database");
+        assert!(controller
+            .load_status()
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("升级")));
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
 }

@@ -77,6 +77,7 @@ import {
   getGrokBotExportRecord,
   listGrokBotAccounts,
   refreshGrokBotAccounts,
+  getStoreLoadStatus,
   listApplications,
   listCodexPlugins,
   listCodexSessions,
@@ -383,6 +384,54 @@ export function HomePage() {
     if (requestedHomeTab() === view.tab) return;
     window.history.replaceState({}, "", homePath(view.tab));
   }, []);
+
+  useEffect(() => {
+    let unlisten: () => void = () => {};
+    const present = (status: {
+      schemaTooNew: boolean;
+      schemaVersion: number;
+      clientSchemaVersion: number;
+      skippedAccountCount: number;
+      warnings: string[];
+    }) => {
+      if (status.schemaTooNew) {
+        const message = t("storeSchemaTooNew", {
+          schemaVersion: status.schemaVersion,
+          clientSchemaVersion: status.clientSchemaVersion,
+        });
+        setErrorNotice(message);
+        setNotice(message);
+        return;
+      }
+      if (status.skippedAccountCount > 0) {
+        const message = t("storeSkippedAccounts", { count: status.skippedAccountCount });
+        setErrorNotice(message);
+        setNotice(message);
+        return;
+      }
+      const warning = status.warnings[0];
+      if (warning) {
+        setErrorNotice(warning);
+        setNotice(warning);
+      }
+    };
+    void getStoreLoadStatus()
+      .then(present)
+      .catch(() => undefined);
+    void listen<{
+      schemaTooNew: boolean;
+      schemaVersion: number;
+      clientSchemaVersion: number;
+      skippedAccountCount: number;
+      warnings: string[];
+    }>("store-load-status", ({ payload }) => {
+      if (payload) present(payload);
+    }).then((stop) => {
+      unlisten = stop;
+    });
+    return () => unlisten();
+  }, [t]);
+
   const showError = useCallback(
     (error: unknown) =>
       setNotice(error instanceof Error ? error.message : String(error)),

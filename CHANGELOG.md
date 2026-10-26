@@ -6,6 +6,16 @@ Storm Dock 的重要变更记录在此。
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-10-27
+
+### Fixed
+
+- 启动时若账号库含当前版本不认识的应用类型（或 schema 更新），不再 panic 退出：跳过不兼容账号、保留可读数据，并通过首页 Toast / 托盘提示升级。
+
+### Added
+
+- `SCHEMA_VERSION` / `StoreLoadStatus`：向前兼容读库；未知 `import_type` 回退为 Native。
+
 ## [1.7.2] - 2026-10-26
 
 ### Added
@@ -238,7 +248,11 @@ Storm Dock 的重要变更记录在此。
 4. CI 发布安装包与 latest.json；notes 优先取本 CHANGELOG 对应小节。
 -->
 
-[Unreleased]: https://github.com/tangsj-hub/Storm-Dock/compare/v1.5.4...HEAD
+[Unreleased]: https://github.com/tangsj-hub/Storm-Dock/compare/v1.7.3...HEAD
+[1.7.3]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.7.3
+[1.7.2]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.7.2
+[1.7.1]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.7.1
+[1.7.0]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.7.0
 [1.5.4]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.5.4
 [1.5.3]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.5.3
 [1.5.2]: https://github.com/tangsj-hub/Storm-Dock/releases/tag/v1.5.2

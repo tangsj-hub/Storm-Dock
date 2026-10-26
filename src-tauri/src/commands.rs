@@ -28,7 +28,7 @@ use crate::workbuddy::usage::{
     fetch_workbuddy_snapshot_with,
 };
 use crate::models::{
-    import_type, Account, AccountSummary, ApplicationKind, ApplicationStatus, CursorUsageDetails,
+    import_type, Account, AccountSummary, ApplicationKind, ApplicationStatus, CursorUsageDetails, StoreLoadStatus,
     ImportType, McpServer, Plugin, PluginCapability, Session, SwitchOutcome, SwitchProgress,
     MEMBERSHIP_TYPE_KEY,
 };
@@ -157,6 +157,19 @@ pub(crate) fn list_applications(
         .map_err(|_| "应用状态不可用".to_string())
         .map(|controller| controller.statuses())
 }
+
+
+#[tauri::command]
+pub(crate) fn get_store_load_status(
+    state: State<'_, AppState>,
+) -> std::result::Result<StoreLoadStatus, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "应用状态不可用".to_string())
+        .map(|controller| controller.load_status().clone())
+}
+
 
 #[tauri::command]
 pub(crate) async fn list_cursor_plugins(

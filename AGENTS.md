@@ -9,3 +9,5 @@
 - Preserve Cursor write verification and rollback behavior. Never force-quit Cursor without an explicit user confirmation.
 - Validate frontend changes with npm run build; validate Rust changes with cargo test --manifest-path src-tauri/Cargo.toml.
 - Run the native test app with npm run tauri dev; npm run dev starts only Vite.
+
+- Account DB forward-compat: unknown `application` / `import_type` values must never abort startup. Skip unknown application rows (log + `StoreLoadStatus` warnings); treat unknown import types as Native. Use `PRAGMA user_version` / `SCHEMA_VERSION` — never downgrade a newer schema; surface an update prompt instead. New application kinds are string values and do **not** require a schema bump by themselves.

@@ -536,6 +536,17 @@ Object.assign(resources.en.translation, {
   switcherTitle: "{{provider}} account", switcherLowQuota: "Current account has {{percent}} quota left", switcherExpiring: "Current account expires within {{count}} h", switcherExpired: "Current account has expired", switcherJoin: ". ", switcherTarget: "Switch to {{account}} ({{percent}} left)?", switcherSwitch: "Switch", switcherIgnore: "Ignore", switcherSwitching: "Switching...",
   accountSwitcher: "Account switch reminder", accountSwitcherDescription: "Suggest an account with more quota when the current one runs low or expires.", accountSwitcherThreshold: "Quota threshold", accountSwitcherThresholdDescription: "Remind when remaining quota drops below this.", accountSwitcherExpiry: "Expiry reminder", accountSwitcherExpiryDescription: "Remind when expiry is closer than this.", accountSwitcherHoursUnit: "hours", settingsTabSwitcher: "Auto Switcher", switcherPreview: "Preview reminder", switcherPreviewTag: "Preview", switcherNow: "now", switcherCountdownShort: "now · {{count}}s",
 });
+Object.assign(resources.zh.translation, {
+  storeSchemaTooNew: "账号数据库来自更新版本的 Storm Dock（schema {{schemaVersion}} > {{clientSchemaVersion}}）。请升级应用后再使用全部功能；已尽量跳过不兼容账号。",
+  storeSkippedAccounts: "有 {{count}} 个账号因当前版本不支持其应用类型而被跳过，请升级 Storm Dock。",
+  storeLoadWarnings: "{{message}}",
+});
+Object.assign(resources.en.translation, {
+  storeSchemaTooNew: "The account database was written by a newer Storm Dock (schema {{schemaVersion}} > {{clientSchemaVersion}}). Update the app for full support; incompatible accounts were skipped when possible.",
+  storeSkippedAccounts: "{{count}} account(s) were skipped because this version does not support their application type. Please update Storm Dock.",
+  storeLoadWarnings: "{{message}}",
+});
+
 void i18n.use(initReactI18next).init({
   resources,
   lng: localStorage.getItem("language") ?? "zh",

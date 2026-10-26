@@ -1,8 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { BotImportGate, BotImportProgress, BotTemplate, BotTemplateMeta, BotTemplatePatch } from "./botTemplates";
-import type { Account, ApplicationKind, ApplicationStatus, CodexSession, CodexSessionMessage, CursorUsageDetails, GrokBotStatus, LocalSession, LocalSessionMessage, McpServer, Plugin, SessionDeleteBatchResult, AttachmentAvailability} from "./types";
+import type { Account, ApplicationKind, ApplicationStatus, StoreLoadStatus, CodexSession, CodexSessionMessage, CursorUsageDetails, GrokBotStatus, LocalSession, LocalSessionMessage, McpServer, Plugin, SessionDeleteBatchResult, AttachmentAvailability} from "./types";
 
 export const listApplications = () => invoke<ApplicationStatus[]>("list_applications");
+export const getStoreLoadStatus = () => invoke<StoreLoadStatus>("get_store_load_status");
 export const listAccounts = (kind: ApplicationKind) => invoke<Account[]>("list_accounts", { kind });
 export const listGrokBotAccounts = () => invoke<Account[]>("list_grok_bot_accounts");
 export const refreshGrokBotAccounts = () => invoke<{ total: number; failed: number; invalid: number; missing: number; blocked?: number }>("refresh_grok_bot_accounts");

@@ -85,10 +85,14 @@ function AddPage() {
     setNotice(undefined);
     try { await work(); return true; } catch (error) { showError(error); return false; } finally { if (attempt === loginAttempt.current) setBusy(false); }
   };
-  const returnWithNotice = (message: string) => window.location.assign(homePath(kind, message));
+  const returnWithNotice = (message: string, pendingSubscriptionId?: string) =>
+    window.location.assign(homePath(kind, message, pendingSubscriptionId));
   const importCurrent = () => act(async () => {
-    const account = await invoke<{ label: string }>("import_current_account", { kind, label: null });
-    returnWithNotice(t("imported", { account: account.label }));
+    const account = await invoke<{ id: string; label: string }>("import_current_account", { kind, label: null });
+    returnWithNotice(
+      t("imported", { account: account.label }),
+      kind === "workbuddy" ? account.id : undefined,
+    );
   });
   const startOfficialLogin = (browser?: string) => {
     const attempt = ++loginAttempt.current;
@@ -113,7 +117,7 @@ function AddPage() {
           setNotice(t("imported", { account: account.label }));
           return;
         }
-        returnWithNotice(t("imported", { account: account.label }));
+        returnWithNotice(t("imported", { account: account.label }), kind === "workbuddy" ? account.id : undefined);
       } catch (error) {
         if (attempt !== loginAttempt.current) return;
         loginListening.current = false;
@@ -151,15 +155,15 @@ function AddPage() {
     returnWithNotice(t("imported", { account: pendingAccount.label }));
   };
   const importPayload = () => act(async () => {
-    const account = await invoke<{ label: string }>("import_token_or_json", { kind, label: null, payload });
-    returnWithNotice(t("imported", { account: account.label }));
+    const account = await invoke<{ id: string; label: string }>("import_token_or_json", { kind, label: null, payload });
+    returnWithNotice(t("imported", { account: account.label }), kind === "workbuddy" ? account.id : undefined);
   });
   const importApiKey = () => act(async () => {
     const key = apiKey.trim();
     const url = baseUrl.trim();
     const payload = url ? JSON.stringify({ OPENAI_API_KEY: key, base_url: url }) : key;
-    const account = await invoke<{ label: string }>("import_token_or_json", { kind, label: note.trim() || null, payload });
-    returnWithNotice(t("imported", { account: account.label }));
+    const account = await invoke<{ id: string; label: string }>("import_token_or_json", { kind, label: note.trim() || null, payload });
+    returnWithNotice(t("imported", { account: account.label }), kind === "workbuddy" ? account.id : undefined);
   });
 
 

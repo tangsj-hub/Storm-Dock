@@ -17,9 +17,14 @@ export function syncDocumentAppKind(kind?: ApplicationKind | "grokBot") {
   else delete document.documentElement.dataset.app;
 }
 
-export function homePath(kind: ApplicationKind | "grokBot", notice?: string) {
+export function homePath(
+  kind: ApplicationKind | "grokBot",
+  notice?: string,
+  pendingSubscriptionId?: string,
+) {
   const params = new URLSearchParams({ kind });
   if (notice) params.set("notice", notice);
+  if (pendingSubscriptionId) params.set("pendingSub", pendingSubscriptionId);
   return `/?${params}`;
 }
 
@@ -108,7 +113,7 @@ export type CursorUsageDetails = {
   onDemand?: { kind: "currency"; used: number; limit?: number; percent: number };
   grokBot?: { kind: "percent"; used: number; percent: number };
   grokBotResetAt?: string;
-  products?: { name: string; percent: number }[];
+  products?: { name: string; percent: number; used?: number; limit?: number; expiresAt?: string }[];
   /** Individual two-pool (Pro-style) breakdown; absent for team/enterprise/Grok. Cents / 0-100. */
   breakdown?: CursorUsageBreakdown;
   models: { name: string; requests: number }[];
@@ -152,5 +157,7 @@ export type UsageEvent = {
   outputTokens?: number;
   costUsd?: number;
   chargedCents?: number;
+  /** WorkBuddy absolute credits (not cents). Prefer over chargedCents for spend UI. */
+  credits?: number;
   onDemand: boolean;
 };

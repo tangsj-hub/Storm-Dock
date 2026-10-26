@@ -3,7 +3,7 @@ import * as Tabs from "@radix-ui/react-tabs";
 import { Check, ChevronDown, Play } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HomeTabId } from "../../../lib/homeTabs";
+import { iconInkClass, type HomeTabId } from "../../../lib/homeTabs";
 import { planTabOverflow, type TabOverflowPlan } from "../lib/tabOverflow";
 import styles from "../page.module.css";
 
@@ -36,11 +36,11 @@ function TabGlyph({
   launchLabel: string;
 }) {
   if (!hoverLaunch) {
-    return <img alt="" className="ink" src={icon} />;
+    return <img alt="" className={iconInkClass(kind)} src={icon} />;
   }
   return (
     <span className={styles.appTabIcon}>
-      <img alt="" className={`${styles.appTabIconGlyph} ${styles.appTabIdle} ink`} src={icon} />
+      <img alt="" className={iconInkClass(kind, `${styles.appTabIconGlyph} ${styles.appTabIdle}`)} src={icon} />
       <span
         aria-label={launchLabel}
         className={styles.appTabLaunchHit}
@@ -196,7 +196,7 @@ export function AppTabSwitcher({
               tabIndex={-1}
               type="button"
             >
-              <img alt="" className="ink" src={icons[kind]} />
+              <img alt="" className={iconInkClass(kind)} src={icons[kind]} />
               {labelFor(kind)}
             </button>
           ))}
@@ -254,7 +254,7 @@ export function AppTabSwitcher({
                       onSelect={() => onValueChange(kind)}
                     >
                       <span className={styles.appTabMenuItemLabel}>
-                        <img alt="" className="ink" src={icons[kind]} />
+                        <img alt="" className={iconInkClass(kind)} src={icons[kind]} />
                         {labelFor(kind)}
                       </span>
                       {value === kind ? <Check aria-hidden="true" size={16} /> : null}

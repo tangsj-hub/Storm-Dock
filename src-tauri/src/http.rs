@@ -13,6 +13,9 @@ pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 pub(crate) const USAGE_BUDGET: Duration = Duration::from_secs(35);
 pub(crate) const SUBSCRIPTION_BUDGET: Duration = Duration::from_secs(30);
 pub(crate) const TOOLS_BUDGET: Duration = Duration::from_secs(4);
+/// Interactive WorkBuddy import / home refresh: fail fast instead of 35s retries.
+pub(crate) const WORKBUDDY_IMPORT_BUDGET: Duration = Duration::from_secs(10);
+pub(crate) const WORKBUDDY_REFRESH_BUDGET: Duration = Duration::from_secs(12);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Retry {

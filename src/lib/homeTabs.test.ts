@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   getHomeTabs,
   HOME_TABS,
+  iconInkClass,
+  isColorBrandTab,
   normalizeHomeTabs,
   requestedHomeTab,
   resolveHomeView,
@@ -109,5 +111,23 @@ describe("home tab storage and view", () => {
       grokBotMode: true,
       tab: "grokBot",
     });
+  });
+});
+
+describe("iconInkClass", () => {
+  it("skips invert for colorful WorkBuddy and Grok Bot brand icons", () => {
+    expect(iconInkClass("workbuddy")).toBe("");
+    expect(iconInkClass("workbuddy", "extra")).toBe("extra");
+    expect(isColorBrandTab("workbuddy")).toBe(true);
+    expect(iconInkClass("grokBot")).toBe("");
+    expect(iconInkClass("grokBot", "extra")).toBe("extra");
+    expect(isColorBrandTab("grokBot")).toBe(true);
+  });
+
+  it("keeps ink for monochrome app icons (Cursor, Codex, Grok)", () => {
+    expect(iconInkClass("cursor")).toBe("ink");
+    expect(iconInkClass("codex", "foo")).toBe("foo ink");
+    expect(iconInkClass("grok")).toBe("ink");
+    expect(isColorBrandTab("grok")).toBe(false);
   });
 });

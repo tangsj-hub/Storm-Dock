@@ -18,7 +18,7 @@ import i18n from "../../i18n";
 import { exportDatabase, getDatabasePath, getPreserveCodexOfficialAuth, importDatabase, moveDatabase, setPreserveCodexOfficialAuth } from "../../lib/api";
 import { SWITCHER_LIMITS, getSwitcherSettings, listSwitcherProviders, previewSwitchOffer, type SwitcherProvider, providerSettings, setSwitcherSettings, withProviderSettings, type ProviderSwitcherSettings, type SwitcherSettings } from "../../lib/accountSwitcher";
 import { getCloseBehavior, setCloseBehavior, type CloseBehavior } from "../../lib/closeBehavior";
-import { getHomeTabs, resolvedHomePath, setHomeTabs, type HomeTabId, type HomeTabPref } from "../../lib/homeTabs";
+import { getHomeTabs, iconInkClass, isColorBrandTab, resolvedHomePath, setHomeTabs, type HomeTabId, type HomeTabPref } from "../../lib/homeTabs";
 import {
   ASK_BROWSER,
   LAST_BROWSER,
@@ -81,7 +81,7 @@ function SortableHomeTab({
   return <div className={`${styles.homeTabChip} ${tab.visible ? "" : styles.homeTabChipOff} ${isDragging ? styles.homeTabRowDragging : ""}`} ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
     <GripVertical aria-label={t("dragHomeTab", { tab: label })} className={styles.homeTabDrag} size={16} {...attributes} {...listeners} />
     <button aria-checked={tab.visible} className={styles.homeTabToggle} disabled={tab.visible && lastVisible} onClick={() => onToggle(tab.id)} role="switch" type="button">
-      <img alt="" className={`${styles.homeTabIcon} ink`} src={HOME_TAB_ICONS[tab.id]} />
+      <img alt="" className={iconInkClass(tab.id, styles.homeTabIcon)} src={HOME_TAB_ICONS[tab.id]} />
       <span>{label}</span>
     </button>
   </div>;
@@ -146,7 +146,7 @@ function SwitcherGroup({ onChange, onNotice, provider, settings }: { onChange: (
   const update = (patch: Partial<ProviderSwitcherSettings>) => onChange(withProviderSettings(settings, provider.id, patch));
   const icon = SWITCHER_ICONS[provider.id];
   return <>
-    <div className={styles.sectionTitle}>{icon ? <img alt="" className={`${styles.switcherAppIcon} ink`} src={icon} /> : <RefreshCw aria-hidden="true" size={20} />}<h2>{provider.name}</h2><button className={`${styles.databaseButton} ${styles.switcherPreview}`} onClick={() => void previewSwitchOffer(provider.id).catch((error) => onNotice(String(error)))} type="button">{t("switcherPreview")}</button></div>
+    <div className={styles.sectionTitle}>{icon ? <img alt="" className={`${styles.switcherAppIcon}${provider.id === "grokBot" ? "" : " ink"}`} src={icon} /> : <RefreshCw aria-hidden="true" size={20} />}<h2>{provider.name}</h2><button className={`${styles.databaseButton} ${styles.switcherPreview}`} onClick={() => void previewSwitchOffer(provider.id).catch((error) => onNotice(String(error)))} type="button">{t("switcherPreview")}</button></div>
     <div className={styles.behaviorList}>
       <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><RefreshCw aria-hidden="true" size={20} /></span><div><h2>{t("accountSwitcher")}</h2><p>{t("accountSwitcherDescription")}</p></div></div><button aria-checked={value.enabled} aria-label={`${provider.name} ${t("accountSwitcher")}`} className={styles.switch} onClick={() => update({ enabled: !value.enabled })} role="switch" type="button"><span /></button></div>
       <div className={styles.row}><div className={styles.settingCopy}><span className={styles.icon}><Gauge aria-hidden="true" size={20} /></span><div><h2>{t("accountSwitcherThreshold")}</h2><p>{t("accountSwitcherThresholdDescription")}</p></div></div>
@@ -437,7 +437,7 @@ function SettingsPage() {
                 <h3>{t("aboutAppsTitle")}</h3>
                 <ul className={styles.aboutRoster}>
                   {aboutApps.map((app) => <li className={styles.aboutBerth} key={app.nameKey}>
-                    <img alt="" className="ink" src={app.icon} />
+                    <img alt="" className={isColorBrandTab(app.nameKey as HomeTabId) ? undefined : "ink"} src={app.icon} />
                     <strong>{t(app.nameKey)}</strong>
                     <span>{t(app.detailKey)}</span>
                   </li>)}

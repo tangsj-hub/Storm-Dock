@@ -149,6 +149,9 @@ html[data-app="grok"] body::before { background-image: url("../assets/tools/grok
 html[data-app="grokBot"] body::before { background-image: url("../assets/tools/grok-bot.png"); }
 html[data-app="workbuddy"] body::before { background-image: url("../assets/workbuddy.png"); }
 html[data-theme="dark"][data-app] body::before { filter: invert(1); }
+/* Brand PNGs keep native colors — invert washes/mangles them (e.g. WorkBuddy teal → purple). */
+html[data-theme="dark"][data-app="workbuddy"] body::before,
+html[data-theme="dark"][data-app="grokBot"] body::before { filter: none; }
 html[data-theme="dark"] img.ink { filter: invert(1); }
 html:not([data-app]) body::before { content: none; }
 button, input, textarea, select { font: inherit; }

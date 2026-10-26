@@ -54,6 +54,8 @@
 .stat .statPlan { color: var(--info); }
 .stat .statDays { color: var(--danger); }
 .statSub { color: var(--muted); font-size: 11px; margin-top: -4px; }
+.poolLabel { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.poolSub { color: var(--muted); font-size: 11px; line-height: 1.2; }
 .planBar { background: var(--border); border-radius: 999px; height: 11px; margin-top: 24px; overflow: hidden; }
 .planBar span { background: var(--accent); border-radius: inherit; display: block; height: 100%; }
 .planBar .planBarOver { background: var(--danger); }
@@ -70,3 +72,30 @@
 @media (max-width: 620px) { .poolCard { grid-template-columns: 1fr; } .poolCol + .poolCol { border-left: 0; border-top: 1px solid var(--border); } }
 @media (max-width: 860px) { .charts { grid-template-columns: 1fr; } }
 @media (max-width: 620px) { .shell { padding: var(--window-titlebar-height) 18px 18px; } .header { align-items: flex-start; } .refresh { white-space: nowrap; } }
+
+.creditGroups {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.creditGroupsTitle {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  margin: 4px 0 0;
+}
+.creditGroupRow {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  color: var(--fg);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.creditGroupRow span { color: var(--muted); font-weight: 550; }
+.creditGroupRow strong { font-weight: 700; }

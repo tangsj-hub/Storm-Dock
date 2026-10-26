@@ -211,6 +211,9 @@ pub(crate) struct UsageEvent {
     pub(crate) cost_usd: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) charged_cents: Option<f64>,
+    /// WorkBuddy request credit spend (absolute credits, not cents).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) credits: Option<f64>,
     pub(crate) on_demand: bool,
 }
 
@@ -228,6 +231,15 @@ pub(crate) struct UsageMetric {
 pub(crate) struct ProductUsageShare {
     pub(crate) name: String,
     pub(crate) percent: f64,
+    /// Absolute credits used in this pool (WorkBuddy CreditGroups).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) used: Option<f64>,
+    /// Absolute credit capacity for this pool (WorkBuddy CycleTotalCapacity).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) limit: Option<f64>,
+    /// Per-pool expiry instant (RFC3339), e.g. WorkBuddy reward DeductionEndTime.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) expires_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

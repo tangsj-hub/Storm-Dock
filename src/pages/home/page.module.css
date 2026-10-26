@@ -284,3 +284,5 @@
 .modelMenuItem { border-radius: 3px; color: var(--fg); cursor: default; font-size: 12px; outline: none; padding: 7px 8px; }
 .modelMenuItem[data-highlighted] { background: var(--hover); }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.subscriptionRefreshing { align-items: center; display: inline-flex; gap: 4px; opacity: 0.85; }

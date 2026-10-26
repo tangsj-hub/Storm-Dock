@@ -84,6 +84,7 @@ pub(crate) fn usage_from_billing(
                 output_tokens: None,
                 cost_usd: Some(total / 100.0),
                 charged_cents: Some(total),
+                credits: None,
                 on_demand: on_demand_used > 0.0,
             });
         }
@@ -125,6 +126,9 @@ fn product_shares(config: &Value) -> Vec<ProductUsageShare> {
             Some(ProductUsageShare {
                 name: product_label(product.get("product")?.as_str()?),
                 percent,
+                used: None,
+                limit: None,
+                expires_at: None,
             })
         })
         .collect()

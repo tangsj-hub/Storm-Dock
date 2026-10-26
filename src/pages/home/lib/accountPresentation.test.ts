@@ -190,8 +190,31 @@ describe("workbuddy subscription badge", () => {
     );
     expect(result.name).toContain("体验版");
     expect(result.expiry).toContain("usageCreditsRemaining");
-    expect(result.expiry).toContain("2000");
+    expect(result.expiry).toContain("2,000");
+    expect(result.expiry).not.toContain("2,000.00");
     expect(result.expiry).not.toContain("subscriptionExpired");
+  });
+
+  it("keeps remaining credits when CycleEndTime is stored as billingCycleEnd", () => {
+    const result = subscriptionLabel(
+      {
+        ...account,
+        application: "workbuddy",
+        daysRemaining: 5,
+        subscription: {
+          plan: "体验版",
+          billingCycleEnd: "2026-10-31T15:59:59.000Z",
+          checkedAt: 1,
+        },
+        usage: { kind: "credits", used: 0.45, limit: 2399.55, percent: 0 },
+      },
+      t,
+    );
+    expect(result.expiry).toContain("usageCreditsRemaining");
+    expect(result.expiry).toContain("2,399.1");
+    expect(result.expiry).not.toContain("subscriptionExpired");
+    expect(result.expiry).not.toContain("subscriptionDays");
+    expect(result.expiry).not.toContain("quotaReset");
   });
 
   it("does not treat missing expiry as expired without credits usage yet", () => {
@@ -200,7 +223,7 @@ describe("workbuddy subscription badge", () => {
         ...account,
         application: "workbuddy",
         daysRemaining: -1,
-        subscription: { plan: "体验版" },
+        subscription: { plan: "体验版", billingCycleEnd: "2026-10-31T15:59:59.000Z" },
       },
       t,
     );

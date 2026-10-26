@@ -19,6 +19,7 @@ type Props = {
   kind: ApplicationKind;
   busy: boolean;
   progress?: SwitchProgress;
+  refreshingIds?: Set<string>;
   onExport: (account: Account) => void;
   onDuplicate: (account: Account) => void;
   onTest: (account: Account) => void;
@@ -30,7 +31,7 @@ type Props = {
   onReorder: (activeId: string, targetId?: string) => void;
 };
 
-function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport, onRemove, onSwitch, onLaunchCurrent, onLaunchBot, onTest, progress, dayKey }: Omit<Props, "accounts" | "onReorder"> & { account: Account; dayKey: string }) {
+function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport, onRemove, onSwitch, onLaunchCurrent, onLaunchBot, onTest, progress, refreshingIds, dayKey }: Omit<Props, "accounts" | "onReorder"> & { account: Account; dayKey: string }) {
   const { t } = useTranslation();
   void dayKey;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ disabled: busy, id: account.id });
@@ -49,6 +50,7 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
       {kind === "grok" && subscription ? (subscription.expiryTitle ? <Tooltip content={subscription.expiryTitle}><span className={styles.metaBadge} title={subscription.expiryTitle}>{subscription.expiry}</span></Tooltip> : <span className={styles.metaBadge}>{subscription.expiry}</span>) : null}
       {kind !== "grok" && !isApiKey && subscription && (subscription.expiryTitle ? <Tooltip content={subscription.expiryFull ?? subscription.expiryTitle}><span className={`${styles.metaBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`} title={subscription.expiryTitle}>{subscription.name} · {subscription.expiry}</span></Tooltip> : <span className={`${styles.metaBadge} ${styles[`plan-${subscription.plan}`] ?? styles.planDefault}`}>{subscription.name} · {subscription.expiry}</span>)}
       {usage && (usage.title ? <Tooltip content={usage.title}><span className={styles.metaBadge} title={usage.title}>{usage.text}</span></Tooltip> : <span className={styles.metaBadge}>{usage.text}</span>)}
+      {!usage && !subscription?.name && refreshingIds?.has(account.id) ? <span className={`${styles.metaBadge} ${styles.subscriptionRefreshing}`}><RefreshCw aria-hidden="true" className={styles.spinning} size={11} />{t("subscriptionRefreshing")}</span> : null}
       {grokBotUsage && (grokBotUsage.title ? <Tooltip content={grokBotUsage.title}><span className={styles.metaBadge} title={grokBotUsage.title}>{grokBotUsage.text}</span></Tooltip> : <span className={styles.metaBadge}>{grokBotUsage.text}</span>)}
       {host && <span className={styles.metaBadge}>{host}</span>}
       {account.status === "blocked" && <span className={styles.blockedBadge}>{t("tokenBlocked", { defaultValue: "账号已封禁" })}</span>}
@@ -70,8 +72,8 @@ function SortableAccount({ account, kind, busy, testingId, onDuplicate, onExport
   </article>;
 }
 
-export function AccountList({ accounts, onReorder, progress, ...props }: Props) {
+export function AccountList({ accounts, onReorder, progress, refreshingIds, ...props }: Props) {
   const dayKey = useLocalCalendarDay();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
-  return <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => onReorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount dayKey={dayKey} {...props} account={account} key={account.id} progress={progressForAccount(progress, account.id)} />)}</div></SortableContext></DndContext>;
+  return <DndContext collisionDetection={closestCenter} onDragEnd={({ active, over }) => onReorder(String(active.id), over ? String(over.id) : undefined)} sensors={sensors}><SortableContext items={accounts.map((account) => account.id)} strategy={verticalListSortingStrategy}><div className={styles.accountList}>{accounts.map((account) => <SortableAccount dayKey={dayKey} {...props} account={account} key={account.id} progress={progressForAccount(progress, account.id)} refreshingIds={refreshingIds} />)}</div></SortableContext></DndContext>;
 }

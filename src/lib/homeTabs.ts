@@ -69,3 +69,14 @@ export function resolveHomeView(search = window.location.search, tabs = getHomeT
 export function resolvedHomePath(search = window.location.search, notice?: string) {
   return homePath(resolveHomeView(search).tab, notice);
 }
+
+/** Brand marks that keep native colors — do not apply dark-theme invert (`ink`). */
+export function isColorBrandTab(kind: HomeTabId): boolean {
+  return kind === "workbuddy" || kind === "grokBot";
+}
+
+/** Class for tab/app icons: monochrome SVGs get `ink`; brand PNGs (WorkBuddy, Grok Bot) do not. */
+export function iconInkClass(kind: HomeTabId, extra = ""): string {
+  const parts = [extra, isColorBrandTab(kind) ? "" : "ink"].filter(Boolean);
+  return parts.join(" ");
+}

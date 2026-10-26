@@ -12,9 +12,9 @@ import { WindowDragSurface } from "../../components/WindowDragSurface";
 import "../../i18n";
 import { listAccounts } from "../../lib/api";
 import { homeKindFromUsageQuery, homePath, syncDocumentAppKind, type Account, type CursorUsageBreakdown, type CursorUsageDetails } from "../../lib/types";
-import { subscriptionDatedLabel, subscriptionPlanName } from "../home/lib/accountPresentation";
+import { subscriptionDatedLabel, subscriptionLabel, subscriptionPlanName } from "../home/lib/accountPresentation";
 import "../../styles/global.css";
-import { hasLimit, isOverLimit, metric, money, number, productParts, resetDatedLabel, spendCents } from "./format";
+import { creditGroupRows, credits, expirePoolLabel, hasEventSpend, hasLimit, isOverLimit, metric, money, number, productParts, resetDatedLabel } from "./format";
 import { EventLedger } from "./EventLedger";
 import { ModelBars } from "./ModelBars";
 import { WeeklyChart } from "./WeeklyChart";
@@ -105,6 +105,84 @@ function CursorBreakdownView({ b, membership, daysLeft, grokBot, grokBotResetAt 
       </div>
       {b.planTotal != null && <div className={styles.poolTotal}><span>{t("usagePlanTotal")}</span><strong>{b.planTotalLimit != null ? t("usagePlanTotalEstimate", { used: money(b.planTotal), limit: money(b.planTotalLimit), percent: Math.round((b.planTotal / b.planTotalLimit) * 100) }) : money(b.planTotal)}</strong></div>}
     </div>
+  </div>;
+}
+
+function WorkbuddyBreakdownView({
+  primary,
+  membership,
+  products,
+  resetAt,
+}: {
+  primary: CursorUsageDetails["primary"];
+  membership?: string;
+  products?: CursorUsageDetails["products"];
+  resetAt?: string;
+}) {
+  const { t } = useTranslation();
+  const groups = creditGroupRows(products);
+  const limit = primary.kind === "credits" && hasLimit(primary) ? primary.limit! : undefined;
+  const used = primary.kind === "credits" ? primary.used : 0;
+  const percent = limit != null && limit > 0
+    ? (used / limit) * 100
+    : Math.max(primary.percent, 0);
+  const exceeded = isOverLimit(primary);
+  const mid = Math.ceil(groups.length / 2);
+  const left = groups.slice(0, mid);
+  const right = groups.slice(mid);
+  const resetLabel = resetAt ? resetDatedLabel(resetAt, t) : undefined;
+  return <div className={styles.breakdown}>
+    <div className={styles.statCard}>
+      <div className={styles.stat}><span>{t("usageMembership")}</span><strong className={styles.statPlan}>{membership ?? "—"}</strong></div>
+      <div className={styles.stat}><span>{t("usagePrimaryWorkbuddy")}</span><strong>{metric(primary)}</strong></div>
+      {resetLabel && resetLabel.days !== undefined && resetLabel.days >= 0 && <div className={styles.stat} title={resetLabel.absolute}>
+        <span>{t("usageDaysLeft")}</span>
+        <strong className={styles.statDays}>{t("usageDaysCount", { count: Math.max(resetLabel.days, 0) })}</strong>
+        {resetLabel.absolute && <small className={styles.statSub}>{resetLabel.full}</small>}
+      </div>}
+    </div>
+    {limit != null && <>
+      <div className={styles.planBar} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(percent)}>
+        <span className={exceeded ? styles.planBarOver : undefined} style={{ width: `${Math.min(Math.max(percent, 0), 100)}%` }} />
+      </div>
+      <p className={styles.planCaption}>
+        {credits(used)} / {credits(limit)} ({Math.round(percent)}%)
+      </p>
+    </>}
+    {groups.length > 0 && <div className={styles.poolCard}>
+      <div className={styles.poolCol}>
+        {left.map((row) => {
+          const expire = expirePoolLabel(row.expiresAt, t);
+          return (
+          <div className={styles.poolRow} key={row.labelKey}>
+            <span className={styles.poolLabel}>
+              {t(row.labelKey)}
+              {expire && <small className={styles.poolSub} title={expire.absolute}>{expire.text}</small>}
+            </span>
+            <strong>{row.used > 0 ? `${credits(row.used)} / ${credits(row.limit)}` : credits(row.limit)}</strong>
+          </div>
+          );
+        })}
+      </div>
+      <div className={styles.poolCol}>
+        {right.map((row) => {
+          const expire = expirePoolLabel(row.expiresAt, t);
+          return (
+          <div className={styles.poolRow} key={row.labelKey}>
+            <span className={styles.poolLabel}>
+              {t(row.labelKey)}
+              {expire && <small className={styles.poolSub} title={expire.absolute}>{expire.text}</small>}
+            </span>
+            <strong>{row.used > 0 ? `${credits(row.used)} / ${credits(row.limit)}` : credits(row.limit)}</strong>
+          </div>
+          );
+        })}
+      </div>
+      {limit != null && <div className={styles.poolTotal}>
+        <span>{t("usagePlanTotal")}</span>
+        <strong>{credits(used)} / {credits(limit)}（{Math.round(percent)}%）</strong>
+      </div>}
+    </div>}
   </div>;
 }
 
@@ -258,9 +336,18 @@ function UsagePage() {
   };
   const membership = membershipLabel(data?.membershipType, t);
   const resetLabel = data?.resetAt ? resetDatedLabel(data.resetAt, t) : undefined;
-  const subscriptionDated = account ? subscriptionDatedLabel(account, t) : undefined;
+  const subscriptionDated = account && !isWorkbuddy ? subscriptionDatedLabel(account, t) : undefined;
+  const workbuddyExpiryBadge = (() => {
+    if (!account || !isWorkbuddy) return;
+    const label = subscriptionLabel(account, t);
+    const text = label.expiryFull;
+    if (!text || text === t("subscriptionUnknownExpiry")) return;
+    // Align with home list: credits remaining (or real calendar end), never fake "已过期".
+    return { text, title: label.expiryTitle };
+  })();
   void dayKey; // recompute relative labels after local midnight
   const checkedAt = data ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(data.checkedAt * 1000)) : undefined;
+
   return <Toast.Provider>
     <main className={styles.shell}>
     <WindowDragSurface />
@@ -284,7 +371,10 @@ function UsagePage() {
       <div className={styles.identity}>
         <strong>{data.email ?? data.label}</strong>
         {membership && <span className={styles.badge}>{membership}</span>}
-        {subscriptionDated && subscriptionDated.days !== undefined && (
+        {workbuddyExpiryBadge && (
+          <span className={styles.badge} title={workbuddyExpiryBadge.title}>{workbuddyExpiryBadge.text}</span>
+        )}
+        {!isWorkbuddy && subscriptionDated && subscriptionDated.days !== undefined && (
           <span className={styles.badge} title={subscriptionDated.absolute}>
             {account?.application === "codex"
               ? subscriptionDated.full
@@ -299,14 +389,15 @@ function UsagePage() {
       </div>
       {accountStatus === "blocked" && <p className={styles.blockedBanner}>{t("usageAccountBlocked", { defaultValue: "此账号已被封禁，无法刷新用量。请更换账号或联系服务方。" })}</p>}
       {!isPoolUsage && data.breakdown && <CursorBreakdownView b={data.breakdown} daysLeft={resetLabel?.days} membership={membership} grokBot={data.grokBot} grokBotResetAt={data.grokBotResetAt} />}
-      <div className={styles.usageLines}>
-        {(isPoolUsage || !data.breakdown) && <><p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(primaryLabel, data.primary, t, isPoolUsage ? productParts(data.products) : undefined)}{isGrok && data.resetAt ? <span className={styles.poolReset} title={resetLabel?.absolute}>{t("usageResetParen", { reset: resetFull(data.resetAt, t) })}</span> : null}</p>
+      {isWorkbuddy && <WorkbuddyBreakdownView membership={membership} primary={data.primary} products={data.products} resetAt={data.resetAt} />}
+      {!isWorkbuddy && <div className={styles.usageLines}>
+        {(isGrok || !data.breakdown) && <><p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(primaryLabel, data.primary, t, isGrok ? productParts(data.products) : undefined)}{isGrok && data.resetAt ? <span className={styles.poolReset} title={resetLabel?.absolute}>{t("usageResetParen", { reset: resetFull(data.resetAt, t) })}</span> : null}</p>
         {data.onDemand && <p className={isOverLimit(data.onDemand) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(onDemandLabel, data.onDemand, t)}</p>}</>}
-        {data.grokBot && (isPoolUsage || !data.breakdown) && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset} title={resetDatedLabel(data.grokBotResetAt, t).absolute}> · {resetFull(data.grokBotResetAt, t)}</span>}</p>}
-      </div>
+        {data.grokBot && (isGrok || !data.breakdown) && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset} title={resetDatedLabel(data.grokBotResetAt, t).absolute}> · {resetFull(data.grokBotResetAt, t)}</span>}</p>}
+      </div>}
       <div className={styles.charts}>
         <section><h2>{weeklyTitle}</h2>{data.weeklyAvailable ? <WeeklyChart days={data.weekly} events={data.events ?? []} /> : <p className={styles.muted}>{data.weeklyError ?? t("usageWeeklyUnavailable")}</p>}</section>
-        <section><h2>{modelsTitle}</h2>{(data.events ?? []).some((event) => spendCents(event) !== undefined) ? <ModelBars events={data.events ?? []} models={data.models} /> : <p className={styles.muted}>{noModelsCopy}</p>}</section>
+        <section><h2>{modelsTitle}</h2>{(data.events ?? []).some(hasEventSpend) ? <ModelBars events={data.events ?? []} models={data.models} /> : <p className={styles.muted}>{noModelsCopy}</p>}</section>
       </div>
       <EventLedger
         cycleTokens={!isPoolUsage && data.breakdown ? {

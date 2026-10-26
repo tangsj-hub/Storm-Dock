@@ -717,7 +717,17 @@ impl Controller {
         kind: ApplicationKind,
         label: Option<String>,
     ) -> Result<Account> {
-        let mut session = self.adapter(kind).import_current()?;
+        let session = self.adapter(kind).import_current()?;
+        self.finalize_imported_current(kind, label, session)
+    }
+
+    /// Persist a session already built/decrypted outside the store lock.
+    pub(crate) fn finalize_imported_current(
+        &mut self,
+        kind: ApplicationKind,
+        label: Option<String>,
+        mut session: Session,
+    ) -> Result<Account> {
         if kind == ApplicationKind::Workbuddy {
             if let Some(existing_id) = self.matching_workbuddy_account_id(&session)? {
                 if let Ok(saved) = self.load_session(&existing_id) {
@@ -761,7 +771,7 @@ impl Controller {
         Ok(None)
     }
 
-    fn matching_workbuddy_account_id(&self, session: &Session) -> Result<Option<String>> {
+    pub(crate) fn matching_workbuddy_account_id(&self, session: &Session) -> Result<Option<String>> {
         let Some(uid) = crate::workbuddy::session::uid(session) else {
             return Ok(None);
         };

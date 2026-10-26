@@ -49,6 +49,8 @@ impl ApplicationAdapter for WorkbuddyAdapter {
     }
 
     fn import_current(&self) -> Result<Session> {
+        // Save desktop auth as-is (may still be $wbEncrypted). Decrypt runs in a
+        // background job after import so the UI never blocks on Electron.
         let profile = auth::read_profile(self.auth_path()?)?;
         if !session::has_login_material(&profile) {
             return Err(AppError::WorkbuddyNotDetected);

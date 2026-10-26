@@ -294,6 +294,7 @@ pub(crate) fn usage_event_from_value(event: &serde_json::Value) -> Option<UsageE
         output_tokens: event_token(event, OUTPUT_TOKEN_KEYS),
         cost_usd: event_number(event, &["costUsd", "cost_usd", "costUSD"]),
         charged_cents: event_number(event, &["chargedCents", "charged_cents"]),
+        credits: None,
         on_demand: event.get("kind").and_then(serde_json::Value::as_str)
             == Some("USAGE_EVENT_KIND_USAGE_BASED"),
     })

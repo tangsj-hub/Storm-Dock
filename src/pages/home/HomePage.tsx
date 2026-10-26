@@ -322,6 +322,7 @@ export function HomePage() {
     cachedPluginCount(resolveHomeView().selected),
   );
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [refreshingIds, setRefreshingIds] = useState<Set<string>>(() => new Set());
   const [mcpServers, setMcpServers] = useState<McpServer[]>([]);
   const [mcpPending, setMcpPending] = useState<Set<string>>(() => new Set());
   const [codexSessions, setCodexSessions] = useState<CodexSession[]>([]);
@@ -401,6 +402,41 @@ export function HomePage() {
     setAccounts(nextAccounts);
     if (nextGrokBotStatus) setGrokBotStatus(nextGrokBotStatus);
   }, [beginAccountsRequest, grokBotMode, selected]);
+  const patchAccount = useCallback((next: Account) => {
+    setAccounts((prev) => {
+      const index = prev.findIndex((item) => item.id === next.id);
+      if (index < 0) return [...prev, next];
+      const copy = prev.slice();
+      copy[index] = { ...copy[index], ...next };
+      return copy;
+    });
+    setRefreshingIds((prev) => {
+      if (!prev.has(next.id)) return prev;
+      const copy = new Set(prev);
+      copy.delete(next.id);
+      return copy;
+    });
+  }, []);
+  const markRefreshing = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    setRefreshingIds((prev) => {
+      const copy = new Set(prev);
+      for (const id of ids) copy.add(id);
+      return copy;
+    });
+  }, []);
+  const clearRefreshing = useCallback((ids?: string[]) => {
+    if (!ids) {
+      setRefreshingIds(new Set());
+      return;
+    }
+    setRefreshingIds((prev) => {
+      const copy = new Set(prev);
+      for (const id of ids) copy.delete(id);
+      return copy;
+    });
+  }, []);
+
   const selectApplication = (next: ApplicationKind) => {
     // Grok Bot keeps selected="cursor". Leaving it must not clear accounts or
     // skip reload — selected does not change, so loadAccounts would not re-run.
@@ -539,20 +575,59 @@ export function HomePage() {
   }, [beginSessionMessageRequest, selected, selectedCodexSessionId, showError]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.has("notice")) {
-      params.delete("notice");
-      window.history.replaceState({}, "", `/?${params}`);
+    const pendingSub = params.get("pendingSub");
+    let clearTimer: number | undefined;
+    if (pendingSub) {
+      markRefreshing([pendingSub]);
+      // Import budget is ~10s; clear spinner if account-updated never arrives.
+      clearTimer = window.setTimeout(() => clearRefreshing([pendingSub]), 15_000);
     }
-  }, []);
+    if (params.has("notice") || params.has("pendingSub")) {
+      params.delete("notice");
+      params.delete("pendingSub");
+      const query = params.toString();
+      window.history.replaceState({}, "", query ? `/?${query}` : "/");
+    }
+    return () => {
+      if (clearTimer !== undefined) window.clearTimeout(clearTimer);
+    };
+  }, [clearRefreshing, markRefreshing]);
   useEffect(() => {
-    let unlisten: () => void = () => {};
-    void listen("accounts-changed", () => {
-      void loadAccounts().catch(showError);
+    let unlistenUpdated: () => void = () => {};
+    let unlistenPending: () => void = () => {};
+    let unlistenChanged: () => void = () => {};
+    let reloadTimer: number | undefined;
+    const scheduleFullReload = () => {
+      if (reloadTimer !== undefined) window.clearTimeout(reloadTimer);
+      // Debounce coarse accounts-changed so incremental patches win the race.
+      reloadTimer = window.setTimeout(() => {
+        void loadAccounts().catch(showError);
+      }, 400);
+    };
+    void listen<{ id: string; application: string; account: Account }>("account-updated", (event) => {
+      const payload = event.payload;
+      if (payload?.account?.id) patchAccount(payload.account);
     }).then((stop) => {
-      unlisten = stop;
+      unlistenUpdated = stop;
     });
-    return () => unlisten();
-  }, [loadAccounts, showError]);
+    void listen<{ id: string; application: string }>("account-subscription-pending", (event) => {
+      const id = event.payload?.id;
+      if (id) markRefreshing([id]);
+    }).then((stop) => {
+      unlistenPending = stop;
+    });
+    void listen("accounts-changed", () => {
+      scheduleFullReload();
+    }).then((stop) => {
+      unlistenChanged = stop;
+    });
+    return () => {
+      if (reloadTimer !== undefined) window.clearTimeout(reloadTimer);
+      unlistenUpdated();
+      unlistenPending();
+      unlistenChanged();
+    };
+  }, [loadAccounts, markRefreshing, patchAccount, showError]);
   useEffect(() => {
     let unlisten: () => void = () => {};
     void listen<SwitchProgress>("account-switch-progress", ({ payload }) => {
@@ -759,11 +834,27 @@ export function HomePage() {
     setRefreshing(true);
     setRefreshFailed(false);
     setNotice(t("refreshing"));
+    const tabAccountIds = accounts.map((item) => item.id);
+    const streamWorkbuddy = selected === "workbuddy" && !grokBotMode;
+    if (streamWorkbuddy) markRefreshing(tabAccountIds);
+    let unlistenProgress: (() => void) | undefined;
     try {
       if (!selected) {
         await loadAccounts();
         setNotice(t("refreshed"));
         return;
+      }
+      if (streamWorkbuddy) {
+        unlistenProgress = await listen<{ completed: number; total: number }>(
+          "account-refresh-progress",
+          (event) => {
+            if ((event.payload?.completed ?? 0) >= 1) {
+              // First wave landed — drop global busy; rows keep patching.
+              setBusy(false);
+              setRefreshing(false);
+            }
+          },
+        );
       }
       const result = await invoke<{
         total: number;
@@ -781,7 +872,10 @@ export function HomePage() {
               : "refresh_all_codex_accounts",
       );
       const failed = result.failed;
-      await loadAccounts();
+      // WorkBuddy streams account-updated; skip a blocking full reload.
+      if (!streamWorkbuddy) {
+        await loadAccounts();
+      }
       const other = failed - result.invalid - result.missing;
       const reasons = [
         result.blocked && t("refreshAccountBlocked", { count: result.blocked }),
@@ -800,9 +894,12 @@ export function HomePage() {
     } catch (error) {
       setRefreshFailed(true);
       showError(error);
+      if (streamWorkbuddy) clearRefreshing(tabAccountIds);
     } finally {
+      unlistenProgress?.();
       setBusy(false);
       setRefreshing(false);
+      if (streamWorkbuddy) clearRefreshing(tabAccountIds);
     }
   };
   const refreshGrokBotAccountQuotas = async () => {
@@ -1147,6 +1244,7 @@ export function HomePage() {
           onSwitch={switchTo}
           onTest={(account) => void testApiKey(account)}
           progress={switchProgress}
+          refreshingIds={refreshingIds}
           testingId={testingId}
         />
       )

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UsageEvent } from "../../lib/types";
 import { DateTimePicker } from "./DateTimePicker";
-import { displayModel, formatTokens, hourEndMs, hourStartMs, localHourKey, money, number, spendCents } from "./format";
+import { displayModel, eventSpend, formatSpend, formatTokens, hourEndMs, hourStartMs, localHourKey, number } from "./format";
 import styles from "./EventLedger.module.css";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -23,8 +23,8 @@ function lastWeekRange(max: string) {
 }
 
 function eventCost(event: UsageEvent) {
-  const cents = spendCents(event);
-  return cents === undefined ? undefined : money(cents);
+  const spend = eventSpend(event);
+  return spend === undefined ? undefined : formatSpend(spend);
 }
 
 export type CycleTokensStatus = {
@@ -83,23 +83,23 @@ export function EventLedger({ events, unavailable, cycleTokens }: {
     let input = 0;
     let output = 0;
     let hasTokens = false;
-    let cents = 0;
-    let hasCost = false;
+    let amount = 0;
+    let unit: "credits" | "currency" | undefined;
     for (const event of filtered) {
       if (event.inputTokens !== undefined || event.outputTokens !== undefined) {
         hasTokens = true;
         input += event.inputTokens ?? 0;
         output += event.outputTokens ?? 0;
       }
-      const spend = spendCents(event);
+      const spend = eventSpend(event);
       if (spend !== undefined) {
-        hasCost = true;
-        cents += spend;
+        amount += spend.amount;
+        unit = spend.unit;
       }
     }
     return {
       tokens: hasTokens ? formatTokens(input, output) : undefined,
-      cost: hasCost ? money(cents) : undefined
+      cost: unit ? formatSpend({ amount, unit }) : undefined
     };
   }, [filtered]);
   const week = lastWeekRange(bounds.max);

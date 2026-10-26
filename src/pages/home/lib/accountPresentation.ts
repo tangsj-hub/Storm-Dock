@@ -6,6 +6,7 @@ import {
   type DatedRelativeLabel,
 } from "../../../lib/calendar";
 import type { Account } from "../../../lib/types";
+import { credits } from "../../usage/format";
 
 export type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -83,7 +84,7 @@ export function subscriptionExpiryLabel(days: number | undefined, t: Translate) 
 export function workbuddyCreditsRemaining(account: Account): number | undefined {
   const usage = account.usage;
   if (!usage || usage.kind !== "credits" || usage.limit == null) return undefined;
-  return Math.max(0, Math.round(usage.limit - usage.used));
+  return Math.max(0, usage.limit - usage.used);
 }
 
 export function subscriptionLabel(account: Account, t: Translate, nowMs?: number) {
@@ -98,24 +99,27 @@ export function subscriptionLabel(account: Account, t: Translate, nowMs?: number
   }
   const normalizedPlan = plan.toLowerCase();
   const name = subscriptionPlanName(plan, t);
-  // WorkBuddy trial/paid packages are credit pools. Without a real billing end date,
-  // never fall through to daysRemaining/-1 (that showed "体验版 · 已过期").
+  // WorkBuddy packages are credit pools. List badge must stay "剩余 N 积分" even when
+  // CycleEndTime is stored as billingCycleEnd (that date is for the usage detail page).
+  // Never fall through to daysRemaining/-1 alone (that showed "体验版 · 已过期").
   if (account.application === "workbuddy") {
-    const hasCalendarEnd = !!(account.subscription.billingCycleEnd || account.subscription.expiresAt != null);
-    if (!hasCalendarEnd) {
-      const remaining = workbuddyCreditsRemaining(account);
-      const credits =
-        remaining === undefined
-          ? t("subscriptionUnknownExpiry")
-          : t("usageCreditsRemaining", { amount: remaining });
+    const remaining = workbuddyCreditsRemaining(account);
+    if (remaining !== undefined) {
+      const creditsLabel = t("usageCreditsRemaining", { amount: credits(remaining) });
       return {
         name,
-        expiry: credits,
-        expiryFull: credits,
-        expiryTitle: remaining === undefined ? undefined : credits,
+        expiry: creditsLabel,
+        expiryFull: creditsLabel,
+        expiryTitle: creditsLabel,
         plan: normalizedPlan,
       };
     }
+    return {
+      name,
+      expiry: t("subscriptionUnknownExpiry"),
+      expiryFull: t("subscriptionUnknownExpiry"),
+      plan: normalizedPlan,
+    };
   }
   const dated = subscriptionDatedLabel(account, t, nowMs);
   return {

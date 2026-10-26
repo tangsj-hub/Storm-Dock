@@ -1,10 +1,8 @@
 import { listen } from "@tauri-apps/api/event";
 import { arrayMove } from "@dnd-kit/sortable";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
-import * as Tabs from "@radix-ui/react-tabs";
 import {
   CheckSquare,
-  ChevronDown,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -14,7 +12,6 @@ import {
   KeyRound,
   LayoutTemplate,
   MessageSquareText,
-  Play,
   Plus,
   Puzzle,
   RefreshCw,
@@ -53,6 +50,7 @@ import codexIcon from "../../assets/codex.svg";
 import cursorIcon from "../../assets/cursor.svg";
 import grokIcon from "../../assets/tools/grok.svg";
 import grokBotIcon from "../../assets/tools/grok-bot.png";
+import workbuddyIcon from "../../assets/workbuddy.png";
 import "../../i18n";
 import {
   deleteCodexPlugin,
@@ -74,6 +72,7 @@ import {
   launchCursor,
   launchGrokBot,
   launchGrokSession,
+  launchWorkbuddy,
   listAccounts,
   getGrokBotExportRecord,
   listGrokBotAccounts,
@@ -118,6 +117,7 @@ import {
 } from "./lib/sessionPresentation";
 import { useLatestRequest } from "./hooks/useLatestRequest";
 import { WorkspaceToolbar } from "./components/WorkspaceToolbar";
+import { AppTabSwitcher } from "./components/AppTabSwitcher";
 import { AccountList } from "./components/AccountList";
 import { GrokBotAccountList } from "./components/GrokBotAccountList";
 import { GrokBotStatusCard } from "./components/GrokBotStatusCard";
@@ -133,6 +133,7 @@ const APP_ICONS: Record<HomeTabId, string> = {
   cursor: cursorIcon,
   codex: codexIcon,
   grok: grokIcon,
+  workbuddy: workbuddyIcon,
   grokBot: grokBotIcon,
 };
 
@@ -372,6 +373,7 @@ export function HomePage() {
   const knownSessionProjects = useRef(new Set<string>());
   const beginSessionMessageRequest = useLatestRequest();
   const isCursor = selected === "cursor";
+  const isWorkbuddy = selected === "workbuddy";
   useLayoutEffect(() => {
     syncDocumentAppKind(grokBotMode ? "grokBot" : selected);
   }, [grokBotMode, selected]);
@@ -433,6 +435,10 @@ export function HomePage() {
     if (grokBotMode) {
       if (workspaceSection !== "accounts" && workspaceSection !== "sessions" && workspaceSection !== "botTemplates")
         setWorkspaceSection("accounts");
+      return;
+    }
+    if (selected === "workbuddy") {
+      if (workspaceSection !== "accounts") setWorkspaceSection("accounts");
       return;
     }
     if (workspaceSection === "botTemplates") setWorkspaceSection("accounts");
@@ -630,13 +636,15 @@ export function HomePage() {
       setBusy(false);
     }
   };
-  const canHoverLaunchTab = (kind: HomeTabId) => kind === "cursor" || kind === "codex" || kind === "grokBot";
+  const canHoverLaunchTab = (kind: HomeTabId) =>
+    kind === "cursor" || kind === "codex" || kind === "grokBot" || kind === "workbuddy";
   const launchTabApp = async (kind: HomeTabId) => {
     if (busy || !canHoverLaunchTab(kind)) return;
     setBusy(true);
     try {
       if (kind === "codex") await launchChatgpt();
       else if (kind === "grokBot") await launchGrokBot();
+      else if (kind === "workbuddy") await launchWorkbuddy();
       else await launchCursor();
       setNotice(t("appLaunched"));
     } catch (error) {
@@ -651,7 +659,9 @@ export function HomePage() {
     }
   };
   const launchCurrentApp = async () => {
-    if (selected === "cursor" || selected === "codex") await launchTabApp(selected);
+    if (selected === "cursor" || selected === "codex" || selected === "workbuddy") {
+      await launchTabApp(selected);
+    }
   };
   const launchBot = async (account: Account) => {
     if (busy) return;
@@ -766,7 +776,9 @@ export function HomePage() {
           ? "refresh_all_cursor_accounts"
           : selected === "grok"
             ? "refresh_all_grok_accounts"
-            : "refresh_all_codex_accounts",
+            : selected === "workbuddy"
+              ? "refresh_all_workbuddy_accounts"
+              : "refresh_all_codex_accounts",
       );
       const failed = result.failed;
       await loadAccounts();
@@ -1160,70 +1172,25 @@ export function HomePage() {
             </Tooltip>
           </div>
           <div className={styles.headerModes}>
-          <Tabs.Root
-            className={styles.switcher}
-            onValueChange={(value) => {
-              if (value === "grokBot") openGrokBotMode();
-              else selectApplication(value as ApplicationKind);
+          <AppTabSwitcher
+            busy={busy}
+            canHoverLaunch={canHoverLaunchTab}
+            icons={APP_ICONS}
+            labelFor={(kind) =>
+              kind === "grokBot"
+                ? t("grokBot")
+                : kind === "codex"
+                  ? t("codex")
+                  : (applications.find((app) => app.kind === kind)?.label ?? t(kind))
+            }
+            onLaunch={(kind) => void launchTabApp(kind)}
+            onValueChange={(next) => {
+              if (next === "grokBot") openGrokBotMode();
+              else selectApplication(next as ApplicationKind);
             }}
+            tabs={homeTabs}
             value={grokBotMode ? "grokBot" : selected}
-          >
-            <Tabs.List aria-label={t("applications")}>
-              {homeTabs.map((kind) => {
-                const label =
-                  kind === "grokBot"
-                    ? t("grokBot")
-                    : kind === "codex"
-                      ? t("codex")
-                      : (applications.find((app) => app.kind === kind)?.label ??
-                        t(kind));
-                const hoverLaunch = canHoverLaunchTab(kind);
-                const isActiveTab = (grokBotMode ? "grokBot" : selected) === kind;
-                return (
-                  <Tabs.Trigger
-                    className={`${styles.appTab}${hoverLaunch ? ` ${styles.appTabLaunchable}` : ""}`}
-                    key={kind}
-                    value={kind}
-                  >
-                    {hoverLaunch ? (
-                      <span className={styles.appTabIcon}>
-                        <img alt="" className={`${styles.appTabIconGlyph} ${styles.appTabIdle} ink`} src={APP_ICONS[kind]} />
-                        <span
-                          aria-label={t("launchApp")}
-                          className={styles.appTabLaunchHit}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            if (!isActiveTab || busy) return;
-                            void launchTabApp(kind);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key !== "Enter" && event.key !== " ") return;
-                            event.preventDefault();
-                            event.stopPropagation();
-                            if (!isActiveTab || busy) return;
-                            void launchTabApp(kind);
-                          }}
-                          onPointerDown={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }}
-                          role="button"
-                          tabIndex={isActiveTab ? 0 : -1}
-                          title={t("launchApp")}
-                        >
-                          <Play aria-hidden="true" className={styles.appTabIconGlyph} size={15} strokeWidth={2.4} />
-                        </span>
-                      </span>
-                    ) : (
-                      <img alt="" className="ink" src={APP_ICONS[kind]} />
-                    )}
-                    {label}
-                  </Tabs.Trigger>
-                );
-              })}
-            </Tabs.List>
-          </Tabs.Root>
+          />
           </div>
           <WorkspaceToolbar
             onAddBotTemplate={() => setBotTemplateAddOpen(true)}
@@ -1266,6 +1233,7 @@ export function HomePage() {
             <nav className={styles.sidebarNav}>
               {workspaceSections.filter((section) => {
                 if (grokBotMode) return section.id === "accounts" || section.id === "sessions" || section.id === "botTemplates";
+                if (isWorkbuddy) return section.id === "accounts";
                 return !section.grokBotOnly && (!section.cursorOnly || isCursor);
               }).map(({ id, icon: Icon, image, labelKey }) => {
                 const count =

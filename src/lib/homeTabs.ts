@@ -1,6 +1,6 @@
 import { homePath, type ApplicationKind } from "./types";
 
-export const HOME_TABS = ["cursor", "codex", "grok", "grokBot"] as const;
+export const HOME_TABS = ["cursor", "codex", "grok", "workbuddy", "grokBot"] as const;
 export type HomeTabId = (typeof HOME_TABS)[number];
 export type HomeTabPref = { id: HomeTabId; visible: boolean };
 

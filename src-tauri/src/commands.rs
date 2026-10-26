@@ -22,6 +22,7 @@ use crate::desktop::{self, DesktopApp};
 use crate::error::AppError;
 use crate::grok::snapshot::fetch_grok_snapshot;
 use crate::grok::subscription::fetch_grok_subscription;
+use crate::workbuddy::usage::fetch_workbuddy_snapshot;
 use crate::models::{
     import_type, Account, AccountSummary, ApplicationKind, ApplicationStatus, CursorUsageDetails,
     ImportType, McpServer, Plugin, PluginCapability, Session, SwitchOutcome, SwitchProgress,
@@ -56,6 +57,7 @@ pub(crate) fn spawn_imported_refresh(app: AppHandle, account: Account) {
     }
     match account.application {
         ApplicationKind::Grok => crate::grok::snapshot::spawn_imported_refresh(app, account),
+        ApplicationKind::Workbuddy => crate::workbuddy::usage::spawn_imported_refresh(app, account),
         ApplicationKind::Cursor => {
             tauri::async_runtime::spawn_blocking(move || {
                 let session = app
@@ -420,6 +422,7 @@ pub(crate) fn set_mcp_server_enabled(
             set_json_mcp_enabled(&PathBuf::from(home).join(".cursor/mcp.json"), &id, enabled)
         }
         ApplicationKind::Grok => Err("Grok MCP 暂不支持开关。".into()),
+        ApplicationKind::Workbuddy => Err("WorkBuddy MCP 暂不支持。".into()),
     }
 }
 
@@ -871,6 +874,7 @@ fn collect_mcp_servers(kind: ApplicationKind) -> Vec<McpServer> {
             .and_then(|path| fs::read_to_string(path).ok())
             .map(|content| mcp_servers_from_json(&content))
             .unwrap_or_default(),
+        ApplicationKind::Workbuddy => Vec::new(),
     }
 }
 
@@ -1577,6 +1581,34 @@ pub(crate) fn refresh_account_subscription(
         let _ = app.emit("accounts-changed", ());
         return Ok(());
     }
+    if application == ApplicationKind::Workbuddy {
+        match fetch_workbuddy_snapshot(&account, &session) {
+            Ok((snapshot, refreshed)) => {
+                let mut controller = state
+                    .0
+                    .lock()
+                    .map_err(|_| "账户存储不可用".to_string())?;
+                if let Some(refreshed) = refreshed {
+                    controller
+                        .replace_account_session(&id, &refreshed)
+                        .map_err(error_text)?;
+                }
+                controller
+                    .save_workbuddy_snapshot(&id, snapshot)
+                    .map_err(error_text)?;
+            }
+            Err(error) => {
+                let message = error.to_string();
+                let _ = state.0.lock().ok().and_then(|mut controller| {
+                    controller.mark_token_issue_from_message(&id, &message).ok()
+                });
+                let _ = app.emit("accounts-changed", ());
+                return Err(error_text(error));
+            }
+        }
+        let _ = app.emit("accounts-changed", ());
+        return Ok(());
+    }
     let summary = match fetch_cursor_subscription(&session) {
         Ok(summary) => summary,
         Err(error) => {
@@ -2151,6 +2183,195 @@ pub(crate) fn get_saved_grok_usage(
 }
 
 #[tauri::command]
+pub(crate) async fn refresh_all_workbuddy_accounts(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> std::result::Result<RefreshAccountsResult, String> {
+    let (sessions, missing_credentials) = {
+        let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+        let mut sessions = Vec::new();
+        let mut missing = Vec::new();
+        for account in controller.accounts(ApplicationKind::Workbuddy) {
+            match controller.subscription_session(&account.id) {
+                Ok(session) => match controller.account(&account.id) {
+                    Ok(full) => sessions.push((full, session)),
+                    Err(_) => missing.push(account.id),
+                },
+                Err(_) => missing.push(account.id),
+            }
+        }
+        (sessions, missing)
+    };
+    let total = sessions.len() + missing_credentials.len();
+    if sessions.is_empty() {
+        for id in &missing_credentials {
+            if let Ok(mut controller) = state.0.lock() {
+                let _ = controller.mark_credential_missing(id);
+            }
+        }
+        if !missing_credentials.is_empty() {
+            let _ = app.emit("accounts-changed", ());
+        }
+        return Ok(RefreshAccountsResult {
+            total,
+            failed: missing_credentials.len(),
+            invalid: 0,
+            missing: missing_credentials.len(),
+            blocked: 0,
+        });
+    }
+    let progress_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let session_count = sessions.len();
+        let (job_sender, job_receiver) = mpsc::channel();
+        let (result_sender, result_receiver) = mpsc::channel();
+        for session in sessions {
+            let _ = job_sender.send(session);
+        }
+        drop(job_sender);
+        let job_receiver = Arc::new(StdMutex::new(job_receiver));
+        let workers = usize::min(3, session_count);
+        let jobs = (0..workers)
+            .map(|_| {
+                let jobs = Arc::clone(&job_receiver);
+                let results = result_sender.clone();
+                thread::spawn(move || loop {
+                    let Some((account, session)) =
+                        jobs.lock().ok().and_then(|receiver| receiver.recv().ok())
+                    else {
+                        break;
+                    };
+                    let id = account.id.clone();
+                    let refreshed = fetch_workbuddy_snapshot(&account, &session);
+                    let _ = results.send((id, refreshed));
+                })
+            })
+            .collect::<Vec<_>>();
+        drop(result_sender);
+        let mut updates = Vec::new();
+        let mut failures = Vec::new();
+        for completed in 1..=session_count {
+            match result_receiver.recv() {
+                Ok((id, Ok((snapshot, refreshed)))) => updates.push((id, snapshot, refreshed)),
+                Ok((id, Err(error))) => failures.push((id, error.to_string())),
+                Err(_) => {
+                    failures.push((String::new(), "刷新线程异常退出".into()));
+                    break;
+                }
+            }
+            let _ = progress_app.emit(
+                "account-refresh-progress",
+                RefreshAccountsProgress { completed, total },
+            );
+        }
+        for job in jobs {
+            let _ = job.join();
+        }
+        (updates, failures)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    let (updates, failures) = result;
+    let blocked = failures
+        .iter()
+        .filter(|(_, message)| crate::error::is_account_blocked_message(message))
+        .count();
+    let invalid = failures
+        .iter()
+        .filter(|(_, message)| crate::error::is_token_invalid_message(message))
+        .count();
+    let missing = missing_credentials.len();
+    let failed = failures.len() + missing;
+    let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+    for id in missing_credentials {
+        let _ = controller.mark_credential_missing(&id);
+    }
+    for (id, message) in failures {
+        if !id.is_empty() {
+            let _ = controller.mark_token_issue_from_message(&id, &message);
+        }
+    }
+    for (id, snapshot, refreshed) in updates {
+        if let Some(refreshed) = refreshed {
+            let _ = controller.replace_account_session(&id, &refreshed);
+        }
+        controller
+            .save_workbuddy_snapshot(&id, snapshot)
+            .map_err(error_text)?;
+    }
+    let _ = app.emit("accounts-changed", ());
+    Ok(RefreshAccountsResult {
+        total,
+        failed,
+        invalid,
+        missing,
+        blocked,
+    })
+}
+
+#[tauri::command]
+pub(crate) async fn get_workbuddy_usage(
+    id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> std::result::Result<CursorUsageDetails, String> {
+    let (account, session) = {
+        let mut controller = state.0.lock().map_err(|_| "账户存储不可用".to_string())?;
+        let account = controller.account(&id).map_err(error_text)?;
+        if account.application != ApplicationKind::Workbuddy {
+            return Err("仅支持 WorkBuddy 账号用量查询。".into());
+        }
+        let session = controller.subscription_session(&id).map_err(error_text)?;
+        (account, session)
+    };
+    let usage_result =
+        tauri::async_runtime::spawn_blocking(move || fetch_workbuddy_snapshot(&account, &session))
+            .await
+            .map_err(|error| error.to_string())?;
+    let (snapshot, refreshed) = match usage_result {
+        Ok(value) => value,
+        Err(error) => {
+            let message = error.to_string();
+            if let Ok(mut controller) = state.0.lock() {
+                let _ = controller.mark_token_issue_from_message(&id, &message);
+            }
+            let _ = app.emit("accounts-changed", ());
+            return Err(error_text(error));
+        }
+    };
+    let usage = snapshot.usage.clone();
+    {
+        let mut controller = state
+            .0
+            .lock()
+            .map_err(|_| "账户存储不可用".to_string())?;
+        if let Some(refreshed) = refreshed {
+            controller
+                .replace_account_session(&id, &refreshed)
+                .map_err(error_text)?;
+        }
+        controller
+            .save_workbuddy_snapshot(&id, snapshot)
+            .map_err(error_text)?;
+    }
+    let _ = app.emit("accounts-changed", ());
+    Ok(usage)
+}
+
+#[tauri::command]
+pub(crate) fn get_saved_workbuddy_usage(
+    id: String,
+    state: State<'_, AppState>,
+) -> std::result::Result<Option<CursorUsageDetails>, String> {
+    state
+        .0
+        .lock()
+        .map_err(|_| "账户存储不可用".to_string())?
+        .saved_workbuddy_usage(&id)
+        .map_err(error_text)
+}
+
+#[tauri::command]
 pub(crate) async fn get_cursor_usage(
     id: String,
     app: AppHandle,
@@ -2321,6 +2542,13 @@ pub(crate) fn import_current_account(
         .map_err(|_| "账户存储不可用".to_string())?
         .import_current(kind, label)
         .map_err(error_text)?;
+    // WorkBuddy: refresh plan/credits inline so returning to the list is not stuck
+    // on an empty subscription (async spawn can lose the race with page navigation).
+    if kind == ApplicationKind::Workbuddy {
+        let account =
+            crate::workbuddy::usage::refresh_imported_account_now(&app, account);
+        return Ok(account);
+    }
     refresh_tray(&app);
     let _ = app.emit("accounts-changed", ());
     spawn_imported_refresh(app.clone(), account.clone());
@@ -2375,6 +2603,41 @@ pub(crate) async fn import_token_or_json(
         let _ = app.emit("accounts-changed", ());
         spawn_imported_refresh(app.clone(), account.clone());
         return Ok(account);
+    }
+    if kind == ApplicationKind::Workbuddy {
+        let import_app = app.clone();
+        let accounts = tauri::async_runtime::spawn_blocking(move || {
+            let sessions =
+                crate::workbuddy::session::from_import_many(&payload).map_err(error_text)?;
+            let import_state = import_app.state::<AppState>();
+            let mut controller = import_state
+                .0
+                .lock()
+                .map_err(|_| "账户存储不可用".to_string())?;
+            let mut saved = Vec::new();
+            // Shared label only applies to a single credential paste.
+            let shared_label = if sessions.len() == 1 { label } else { None };
+            for session in sessions {
+                let import_type = crate::workbuddy::session::import_type(&session);
+                let account = controller
+                    .save_imported_session(kind, shared_label.clone(), session, import_type)
+                    .map_err(error_text)?;
+                saved.push(account);
+            }
+            Ok::<Vec<Account>, String>(saved)
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+        let mut refreshed = Vec::new();
+        for account in accounts {
+            refreshed.push(crate::workbuddy::usage::refresh_imported_account_now(
+                &app, account,
+            ));
+        }
+        return refreshed
+            .into_iter()
+            .next()
+            .ok_or_else(|| "未导入任何 WorkBuddy 账号。".to_string());
     }
     if kind != ApplicationKind::Cursor {
         return Err(AppError::ComingSoon.to_string());
@@ -2437,6 +2700,18 @@ pub(crate) async fn start_official_login(
         let worker = app.clone();
         return tauri::async_runtime::spawn_blocking(move || {
             crate::grok::oauth::complete_grok_oauth(label, login_id, worker)
+        })
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(error_text);
+    }
+    if kind == ApplicationKind::Workbuddy {
+        let login_id = app
+            .state::<OauthLoginState>()
+            .begin_with_browser(browser, false);
+        let worker = app.clone();
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::workbuddy::oauth::complete_workbuddy_oauth(label, login_id, worker)
         })
         .await
         .map_err(|error| error.to_string())?
@@ -2614,6 +2889,11 @@ pub(crate) fn launch_chatgpt() -> std::result::Result<(), String> {
 #[tauri::command]
 pub(crate) fn launch_grok_bot() -> std::result::Result<(), String> {
     desktop::launch(DesktopApp::GrokBot).map_err(error_text)
+}
+
+#[tauri::command]
+pub(crate) fn launch_workbuddy() -> std::result::Result<(), String> {
+    desktop::launch(DesktopApp::Workbuddy).map_err(error_text)
 }
 
 fn grok_bot_plan_allowed(plan: Option<&str>) -> bool {

@@ -7,7 +7,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::apps::{ApplicationAdapter, CodexAdapter, CursorAdapter, GrokAdapter};
+use crate::apps::{ApplicationAdapter, CodexAdapter, CursorAdapter, GrokAdapter, WorkbuddyAdapter};
 use crate::cursor::session::{raw_export_from_session, session_display_label};
 use crate::cursor::workos_cookie::{append_workos_token, workos_token_from_export_record};
 use crate::cursor::usage::{cursor_usage_from_snapshot, update_export_usage, usage_pools};
@@ -34,6 +34,7 @@ pub(crate) struct Controller {
     cursor: CursorAdapter,
     codex: CodexAdapter,
     grok: GrokAdapter,
+    workbuddy: WorkbuddyAdapter,
 }
 
 fn grok_bot_list_eligible(account: &AccountSummary) -> bool {
@@ -64,6 +65,7 @@ impl Controller {
             cursor: CursorAdapter::default(),
             codex: CodexAdapter::default(),
             grok: GrokAdapter::default(),
+            workbuddy: WorkbuddyAdapter::default(),
         };
         controller.migrate_raw_exports()?;
         Ok(controller)
@@ -126,6 +128,7 @@ impl Controller {
             ApplicationKind::Cursor => "cursor",
             ApplicationKind::Codex => "codex",
             ApplicationKind::Grok => "grok",
+            ApplicationKind::Workbuddy => "workbuddy",
         }
     }
 
@@ -159,6 +162,7 @@ impl Controller {
                 "cursor" => ApplicationKind::Cursor,
                 "codex" => ApplicationKind::Codex,
                 "grok" => ApplicationKind::Grok,
+                "workbuddy" => ApplicationKind::Workbuddy,
                 _ => return Err(AppError::Message("数据库中的应用类型无效".into())),
             };
             accounts.push(Account {
@@ -246,6 +250,7 @@ impl Controller {
             ApplicationKind::Cursor => &self.cursor,
             ApplicationKind::Codex => &self.codex,
             ApplicationKind::Grok => &self.grok,
+            ApplicationKind::Workbuddy => &self.workbuddy,
         }
     }
 
@@ -380,6 +385,7 @@ impl Controller {
             self.cursor.detect(),
             self.codex.detect(),
             self.grok.detect(),
+            self.workbuddy.detect(),
         ]
     }
 
@@ -392,6 +398,7 @@ impl Controller {
             ApplicationKind::Codex => self.codex.live_match_session().ok(),
             ApplicationKind::Grok => self.grok.live_match_session().ok(),
             ApplicationKind::Cursor => self.cursor.import_current().ok(),
+            ApplicationKind::Workbuddy => self.workbuddy.live_match_session().ok(),
         };
         let grok_bot_active = if matches!(kind, ApplicationKind::Cursor | ApplicationKind::Grok) {
             crate::grok_bot::active_slot()
@@ -419,6 +426,9 @@ impl Controller {
                                     !value.is_empty() && saved.values.get(*key) == Some(value)
                                 })
                             }),
+                        ApplicationKind::Workbuddy => {
+                            crate::workbuddy::session::matches_live(saved, current)
+                        }
                     });
                 let is_grok_bot_current = grok_bot_active
                     .as_deref()
@@ -467,8 +477,8 @@ impl Controller {
                         )
                         .ok()
                         .flatten(),
-                    days_remaining: if kind == ApplicationKind::Grok {
-                        account
+                    days_remaining: match kind {
+                        ApplicationKind::Grok => account
                             .subscription
                             .expires_at
                             .or_else(|| {
@@ -478,12 +488,13 @@ impl Controller {
                                     .as_deref()
                                     .and_then(crate::models::parse_iso_timestamp)
                             })
-                            .map(|expires_at| days_remaining(expires_at, now()))
-                    } else {
-                        account
+                            .map(|expires_at| days_remaining(expires_at, now())),
+                        // Credit packages have no calendar subscription end; never invent expiry.
+                        ApplicationKind::Workbuddy => None,
+                        ApplicationKind::Cursor | ApplicationKind::Codex => account
                             .subscription
                             .reset_timestamp(&account.raw_export)
-                            .map(|expires_at| days_remaining(expires_at, now()))
+                            .map(|expires_at| days_remaining(expires_at, now())),
                     },
                     base_url: match kind {
                         ApplicationKind::Codex => account_session
@@ -492,7 +503,7 @@ impl Controller {
                         ApplicationKind::Grok => account_session
                             .as_ref()
                             .and_then(crate::grok::session::base_url),
-                        ApplicationKind::Cursor => None,
+                        ApplicationKind::Cursor | ApplicationKind::Workbuddy => None,
                     },
                 }
             })
@@ -597,6 +608,7 @@ impl Controller {
             .get(match kind {
                 ApplicationKind::Codex => crate::codex::CODEX_EMAIL_KEY,
                 ApplicationKind::Grok => crate::grok::GROK_EMAIL_KEY,
+                ApplicationKind::Workbuddy => crate::workbuddy::WORKBUDDY_EMAIL_KEY,
                 ApplicationKind::Cursor => EMAIL_KEY,
             })
             .cloned()
@@ -605,10 +617,13 @@ impl Controller {
             ApplicationKind::Codex => crate::codex::session::display_label(&session),
             ApplicationKind::Grok => crate::grok::session::display_label(&session),
             ApplicationKind::Cursor => session_display_label(&session),
+            ApplicationKind::Workbuddy => crate::workbuddy::session::display_label(&session)
+                .or_else(|| Some("WorkBuddy".into())),
         };
         let existing_id = match kind {
             ApplicationKind::Codex => self.matching_codex_account_id(&session)?,
             ApplicationKind::Grok => self.matching_grok_account_id(&session)?,
+            ApplicationKind::Workbuddy => self.matching_workbuddy_account_id(&session)?,
             ApplicationKind::Cursor => {
                 if let Some(email) = email.as_deref() {
                     matching_account_index(&self.all_accounts()?, kind, email)
@@ -623,7 +638,16 @@ impl Controller {
             if let Some(label) = label.filter(|value| !value.trim().is_empty()) {
                 account.label = label;
             } else if let Some(display_label) = display_label.clone() {
-                account.label = display_label;
+                // Encrypted WorkBuddy desktop nicknames fall back to uid; keep a better
+                // existing label (e.g. from OAuth) instead of overwriting with the uid.
+                let keep_existing = kind == ApplicationKind::Workbuddy
+                    && crate::workbuddy::session::uid(&session).as_deref()
+                        == Some(display_label.as_str())
+                    && !account.label.trim().is_empty()
+                    && account.label != display_label;
+                if !keep_existing {
+                    account.label = display_label;
+                }
             }
             account.email = email.clone();
             account.import_type = import_type;
@@ -693,11 +717,18 @@ impl Controller {
         kind: ApplicationKind,
         label: Option<String>,
     ) -> Result<Account> {
-        let session = self.adapter(kind).import_current()?;
+        let mut session = self.adapter(kind).import_current()?;
+        if kind == ApplicationKind::Workbuddy {
+            if let Some(existing_id) = self.matching_workbuddy_account_id(&session)? {
+                if let Ok(saved) = self.load_session(&existing_id) {
+                    session = crate::workbuddy::session::prefer_saved_plaintext(session, &saved);
+                }
+            }
+        }
         let import_type = match kind {
             ApplicationKind::Codex => crate::codex::session::import_type(&session),
             ApplicationKind::Grok => crate::grok::session::import_type(&session),
-            ApplicationKind::Cursor => ImportType::Native,
+            ApplicationKind::Cursor | ApplicationKind::Workbuddy => ImportType::Native,
         };
         self.save_imported_session(kind, label, session, import_type)
     }
@@ -730,6 +761,25 @@ impl Controller {
         Ok(None)
     }
 
+    fn matching_workbuddy_account_id(&self, session: &Session) -> Result<Option<String>> {
+        let Some(uid) = crate::workbuddy::session::uid(session) else {
+            return Ok(None);
+        };
+        for account in self.all_accounts()? {
+            if account.application != ApplicationKind::Workbuddy {
+                continue;
+            }
+            let Ok(saved) = self.load_session(&account.id) else {
+                continue;
+            };
+            if crate::workbuddy::session::uid(&saved).as_deref() == Some(uid.as_str()) {
+                return Ok(Some(account.id));
+            }
+        }
+        Ok(None)
+    }
+
+
     #[cfg(test)]
     pub(crate) fn import_payload(
         &mut self,
@@ -746,6 +796,21 @@ impl Controller {
             let session = crate::grok::session::from_import(payload)?;
             let import_type = crate::grok::session::import_type(&session);
             return self.save_imported_session(kind, label, session, import_type);
+        }
+        if kind == ApplicationKind::Workbuddy {
+            let sessions = crate::workbuddy::session::from_import_many(payload)?;
+            let shared_label = if sessions.len() == 1 { label } else { None };
+            let mut last = None;
+            for session in sessions {
+                let import_type = crate::workbuddy::session::import_type(&session);
+                last = Some(self.save_imported_session(
+                    kind,
+                    shared_label.clone(),
+                    session,
+                    import_type,
+                )?);
+            }
+            return last.ok_or(AppError::InvalidImport);
         }
         if kind != ApplicationKind::Cursor {
             return Err(AppError::ComingSoon);
@@ -955,7 +1020,71 @@ impl Controller {
         Ok(())
     }
 
-    pub(crate) fn save_grok_bot_usage(
+    pub(crate) fn saved_workbuddy_usage(&self, id: &str) -> Result<Option<CursorUsageDetails>> {
+        let account = self.account(id)?;
+        if account.application != ApplicationKind::Workbuddy {
+            return Err(AppError::ComingSoon);
+        }
+        let json: Option<String> = self.database.query_row(
+            "SELECT usage_json FROM accounts WHERE id=?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        if let Some(json) = json {
+            if let Ok(mut details) = serde_json::from_str::<CursorUsageDetails>(&json) {
+                if details.account_id == id {
+                    if let Some(plan) = account.subscription.plan.clone() {
+                        details.membership_type = Some(plan);
+                    }
+                    return Ok(Some(details));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    pub(crate) fn save_workbuddy_snapshot(
+        &mut self,
+        id: &str,
+        snapshot: crate::workbuddy::usage::WorkbuddySnapshot,
+    ) -> Result<()> {
+        if snapshot.usage.account_id != id {
+            return Err(AppError::Message("用量数据与账号不匹配。".into()));
+        }
+        let mut account = self.account(id)?;
+        if account.application != ApplicationKind::Workbuddy {
+            return Err(AppError::ComingSoon);
+        }
+        account.subscription.plan = snapshot
+            .subscription
+            .plan
+            .or_else(|| account.subscription.plan.take());
+        account.subscription.expires_at = snapshot.subscription.expires_at;
+        account.subscription.billing_cycle_end = snapshot.subscription.billing_cycle_end;
+        account.subscription.checked_at = snapshot
+            .subscription
+            .checked_at
+            .or(account.subscription.checked_at);
+        if let Some(obj) = account.raw_export.as_object_mut() {
+            obj.insert("workbuddy_billing_raw".into(), snapshot.billing_raw);
+        }
+        let updated = now();
+        account.updated_at = updated;
+        self.database.execute(
+            "UPDATE accounts SET usage_json=?1, usage_summary_json=?2, raw_export_json=?3, subscription_json=?4, token_status=NULL, updated_at=?5 WHERE id=?6",
+            params![
+                serde_json::to_string(&snapshot.usage)?,
+                serde_json::to_string(&snapshot.usage.primary)?,
+                serde_json::to_string(&account.raw_export)?,
+                serde_json::to_string(&account.subscription)?,
+                updated as i64,
+                id
+            ],
+        )?;
+        Ok(())
+    }
+
+        pub(crate) fn save_grok_bot_usage(
         &mut self,
         id: &str,
         grok_bot: Option<crate::models::UsageMetric>,
@@ -1548,6 +1677,22 @@ impl Controller {
                 "base_url": crate::grok::session::base_url(&session),
             }));
         }
+        if account.application == ApplicationKind::Workbuddy {
+            let session = self.load_session(&account.id)?;
+            return crate::workbuddy::session::export_record(&session).or_else(|_| {
+                // Fallback: sanitize account.raw_export if session profile is missing.
+                let mut raw = account.raw_export.clone();
+                if let Some(object) = raw.as_object_mut() {
+                    object.remove("workbuddy_billing_raw");
+                    object.remove("workos_token");
+                }
+                if raw.get("auth").is_some() {
+                    Ok(raw)
+                } else {
+                    Err(AppError::SecretMissing)
+                }
+            });
+        }
         self.export_cursor_account(account)
     }
 
@@ -1930,6 +2075,95 @@ INSERT INTO providers (id, app_type, name, settings_config, meta, is_current, in
         assert_eq!(
             crate::codex::session::base_url(&session).as_deref(),
             Some("https://example.com/v1")
+        );
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn workbuddy_json_export_import_roundtrip() {
+        let data_dir = env::temp_dir().join(format!(
+            "storm-dock-wb-export-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut controller = Controller::new(data_dir.clone()).unwrap();
+        let source = r#"{
+          "account": {"uid":"u-round","nickname":"Round"},
+          "auth": {
+            "accessToken":"tok-round",
+            "refreshToken":"ref-round",
+            "domain":"www.workbuddy.cn",
+            "source":"oauth"
+          }
+        }"#;
+        let account = controller
+            .import_payload(ApplicationKind::Workbuddy, None, source)
+            .unwrap();
+        assert_eq!(account.label, "Round");
+        // Simulate usage refresh polluting raw_export.
+        controller
+            .database
+            .execute(
+                "UPDATE accounts SET raw_export_json=?1 WHERE id=?2",
+                params![
+                    serde_json::to_string(&serde_json::json!({
+                        "account": {"uid":"u-round","nickname":"Round"},
+                        "auth": {
+                            "accessToken":"tok-round",
+                            "refreshToken":"ref-round",
+                            "domain":"www.workbuddy.cn",
+                            "source":"oauth"
+                        },
+                        "workbuddy_billing_raw": {"TotalCredits":"2000"}
+                    }))
+                    .unwrap(),
+                    account.id
+                ],
+            )
+            .unwrap();
+        // Keep session profile in sync for export_record.
+        let session = controller.load_session(&account.id).unwrap();
+        let mut profile = crate::workbuddy::session::profile_value(&session).unwrap();
+        profile.as_object_mut().unwrap().insert(
+            "workbuddy_billing_raw".into(),
+            serde_json::json!({"TotalCredits":"2000"}),
+        );
+        let mut session = session;
+        session.values.insert(
+            crate::workbuddy::session::WORKBUDDY_PROFILE_KEY.into(),
+            serde_json::to_string(&profile).unwrap(),
+        );
+        session.raw_export = Some(profile);
+        controller.replace_account_session(&account.id, &session).unwrap();
+
+        let file = data_dir.join("workbuddy-accounts.json");
+        controller
+            .export_accounts(ApplicationKind::Workbuddy, file.clone())
+            .unwrap();
+        let exported: serde_json::Value =
+            serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+        assert!(exported.is_array());
+        assert_eq!(exported.as_array().unwrap().len(), 1);
+        assert!(exported[0].get("workbuddy_billing_raw").is_none());
+        assert_eq!(
+            exported[0].pointer("/auth/accessToken").and_then(|v| v.as_str()),
+            Some("tok-round")
+        );
+
+        // Delete and re-import the exported array.
+        controller.delete_account(&account.id).unwrap();
+        assert!(controller.accounts(ApplicationKind::Workbuddy).is_empty());
+        let payload = serde_json::to_string(&exported).unwrap();
+        let restored = controller
+            .import_payload(ApplicationKind::Workbuddy, None, &payload)
+            .unwrap();
+        assert_eq!(restored.label, "Round");
+        let restored_session = controller.load_session(&restored.id).unwrap();
+        assert_eq!(
+            crate::workbuddy::session::uid(&restored_session).as_deref(),
+            Some("u-round")
         );
         let _ = fs::remove_dir_all(data_dir);
     }

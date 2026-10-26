@@ -1,6 +1,6 @@
-export type ApplicationKind = "cursor" | "codex" | "grok";
+export type ApplicationKind = "cursor" | "codex" | "grok" | "workbuddy";
 
-export const APPLICATION_KINDS = ["cursor", "codex", "grok"] as const;
+export const APPLICATION_KINDS = ["cursor", "codex", "grok", "workbuddy"] as const;
 
 export function isGrokBotHomeView(search = window.location.search) {
   return new URLSearchParams(search).get("kind") === "grokBot";
@@ -9,7 +9,7 @@ export function isGrokBotHomeView(search = window.location.search) {
 export function applicationKindFromQuery(search = window.location.search): ApplicationKind {
   const kind = new URLSearchParams(search).get("kind");
   if (kind === "grokBot") return "cursor";
-  return kind === "codex" || kind === "grok" ? kind : "cursor";
+  return kind === "codex" || kind === "grok" || kind === "workbuddy" ? kind : "cursor";
 }
 
 export function syncDocumentAppKind(kind?: ApplicationKind | "grokBot") {
@@ -23,8 +23,8 @@ export function homePath(kind: ApplicationKind | "grokBot", notice?: string) {
   return `/?${params}`;
 }
 
-/** Usage detail needs API kind (cursor|grok); optional `from` restores the home tab on back. */
-export function usagePath(accountId: string, kind: "cursor" | "grok", from?: "grokBot") {
+/** Usage detail needs API kind (cursor|grok|workbuddy); optional `from` restores the home tab on back. */
+export function usagePath(accountId: string, kind: "cursor" | "grok" | "workbuddy", from?: "grokBot") {
   const params = new URLSearchParams({ accountId, kind });
   if (from) params.set("from", from);
   return `/usage.html?${params}`;
@@ -33,7 +33,9 @@ export function usagePath(accountId: string, kind: "cursor" | "grok", from?: "gr
 export function homeKindFromUsageQuery(search = window.location.search): ApplicationKind | "grokBot" {
   const params = new URLSearchParams(search);
   if (params.get("from") === "grokBot") return "grokBot";
-  return params.get("kind") === "grok" ? "grok" : "cursor";
+  const kind = params.get("kind");
+  if (kind === "grok" || kind === "workbuddy") return kind;
+  return "cursor";
 }
 
 export function editAccountPath(kind: ApplicationKind, id: string) {
@@ -80,7 +82,7 @@ export type Account = {
   application?: ApplicationKind;
   importType: "oauth" | "token" | "jwt" | "native" | "api_key";
   subscription: { plan?: string; expiresAt?: number; billingCycleEnd?: string; checkedAt?: number };
-  usage?: { kind: "currency" | "percent" | "requests"; used: number; limit?: number; percent: number };
+  usage?: { kind: "currency" | "percent" | "requests" | "credits"; used: number; limit?: number; percent: number };
   grokBotUsage?: { kind: "percent"; used: number; percent: number };
   grokBotResetAt?: string;
   resetAt?: string;
@@ -101,7 +103,7 @@ export type CursorUsageDetails = {
   email?: string;
   name?: string;
   membershipType?: string;
-  primary: { kind: "currency" | "percent" | "requests"; used: number; limit?: number; percent: number };
+  primary: { kind: "currency" | "percent" | "requests" | "credits"; used: number; limit?: number; percent: number };
   resetAt?: string;
   onDemand?: { kind: "currency"; used: number; limit?: number; percent: number };
   grokBot?: { kind: "percent"; used: number; percent: number };

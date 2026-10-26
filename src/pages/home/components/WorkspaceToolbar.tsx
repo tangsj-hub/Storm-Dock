@@ -42,12 +42,12 @@ export function WorkspaceToolbar(props: Props) {
   const sessionsLabel = sessionsRefreshLabel ?? t("refreshSessions");
   return <div aria-label={t("sectionActions")} className={styles.contextToolbar} data-section={section}>
     {section === "accounts" && <>
-      {!showAddAccount ? (
+      {!showAddAccount && kind === "cursor" ? (
         <Tooltip content={t("refreshGrokBotAllUsage")}><button aria-label={t("refreshGrokBotAllUsage")} className={styles.iconButton} disabled={busy || refreshing} onClick={props.onRefresh} type="button"><RefreshCw aria-hidden="true" className={refreshing ? styles.spinning : undefined} size={19} /></button></Tooltip>
       ) : <>
         <Tooltip content={t("export")}><button aria-label={t("export")} className={styles.iconButton} disabled={busy || !canManageAccounts || !hasAccounts} onClick={props.onExport} type="button"><Download aria-hidden="true" size={19} /></button></Tooltip>
         <Tooltip content={t("refresh")}><button aria-label={t("refresh")} className={styles.iconButton} disabled={busy || !canManageAccounts} onClick={props.onRefresh} type="button"><RefreshCw aria-hidden="true" className={refreshing ? styles.spinning : undefined} size={19} /></button></Tooltip>
-        <a aria-disabled={busy || !canManageAccounts} className={styles.addButton} href={busy || !canManageAccounts ? undefined : `/add.html?kind=${kind}`}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a>
+        {showAddAccount ? <a aria-disabled={busy || !canManageAccounts} className={styles.addButton} href={busy || !canManageAccounts ? undefined : `/add.html?kind=${kind}`}><Plus aria-hidden="true" size={18} />{t("addAccount")}</a> : null}
       </>}
     </>}
     {section === "plugins" && <Tooltip content={pluginsExpanded ? t("collapsePluginChildren") : t("expandPluginChildren")}><button aria-expanded={pluginsExpanded} aria-label={pluginsExpanded ? t("collapsePluginChildren") : t("expandPluginChildren")} className={styles.iconButton} onClick={() => props.onPluginsExpandedChange(!pluginsExpanded)} type="button">{pluginsExpanded ? <ChevronsDownUp aria-hidden="true" size={19} /> : <ChevronsUpDown aria-hidden="true" size={19} />}</button></Tooltip>}

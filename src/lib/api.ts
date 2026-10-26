@@ -22,6 +22,7 @@ export const deleteCodexSessions = (ids: string[]) => invoke<SessionDeleteBatchR
 export const launchCursor = () => invoke<void>("launch_cursor");
 export const launchChatgpt = () => invoke<void>("launch_chatgpt");
 export const launchGrokBot = () => invoke<void>("launch_grok_bot");
+export const launchWorkbuddy = () => invoke<void>("launch_workbuddy");
 export const launchCodexSession = (id: string) => invoke("launch_codex_session", { id });
 export const listGrokSessions = () => invoke<LocalSession[]>("list_grok_sessions");
 export const getGrokSessionMessages = (id: string) => invoke<LocalSessionMessage[]>("get_grok_session_messages", { id });

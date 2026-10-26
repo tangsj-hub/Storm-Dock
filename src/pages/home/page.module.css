@@ -1,16 +1,26 @@
 .shell { --app-header-height: 52px; display: flex; flex-direction: column; height: 100vh; min-height: 0; overflow: hidden; padding: var(--window-titlebar-height) 28px 28px; position: relative; }
 .header { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 10px; min-height: var(--app-header-height); padding-bottom: 18px; pointer-events: none; position: relative; z-index: 1; }
-.header button, .header a, .header input, .header [role="tab"] { pointer-events: auto; }
-.brand { align-items: center; display: flex; flex: 1 1 0px; font-size: 17px; font-weight: 720; gap: 8px; min-width: 0; }
+.header button, .header a, .header input, .header [role="tab"], .header [data-radix-collection-item] { pointer-events: auto; }
+.brand { align-items: center; display: flex; flex: 0 0 auto; font-size: 17px; font-weight: 720; gap: 8px; min-width: max-content; }
 .brand > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand > img { height: 19px; width: 19px; }
 .brand svg { color: var(--focus); }
-.headerModes { align-items: center; display: flex; flex: 0 1 auto; gap: 10px; max-width: 100%; min-width: 0; overflow: hidden; }
+.headerModes { align-items: center; display: flex; flex: 1 1 0px; gap: 10px; justify-content: center; max-width: none; min-width: 0; overflow: hidden; }
 .settingsButton { align-items: center; border-radius: 4px; color: var(--muted); display: inline-flex; height: 26px; justify-content: center; margin-left: 2px; width: 26px; }
 .settingsButton:hover { background: var(--track); color: var(--fg); }
-.switcher { max-width: 100%; min-width: 0; }
-.switcher [role="tablist"] { background: var(--track); border: 1px solid var(--border-strong); border-radius: 7px; display: flex; gap: 2px; max-width: 100%; min-width: 0; overflow: hidden; padding: 3px; }
-.appTab { align-items: center; background: transparent; border: 0; border-radius: 4px; color: var(--muted); display: inline-flex; flex-shrink: 1; font-size: 13px; font-weight: 600; gap: 6px; line-height: 28px; max-width: 100%; min-width: 0; padding: 0 14px; white-space: nowrap; }
+.switcher { display: flex; justify-content: center; max-width: 100%; min-width: 0; position: relative; width: 100%; }
+.switcherViewport { align-items: center; background: var(--track); border: 1px solid var(--border-strong); border-radius: 7px; display: flex; gap: 2px; max-width: 100%; min-width: 0; overflow: hidden; padding: 3px; width: max-content; }
+.switcherList { align-items: center; display: flex; flex: 0 1 auto; gap: 2px; min-width: 0; overflow: hidden; }
+.appTabMeasure { align-items: center; display: flex; gap: 2px; left: -9999px; max-width: none; pointer-events: none; position: absolute; top: 0; visibility: hidden; white-space: nowrap; width: max-content; }
+.appTab { align-items: center; background: transparent; border: 0; border-radius: 4px; color: var(--muted); cursor: pointer; display: inline-flex; flex: 0 0 auto; font: inherit; font-size: 13px; font-weight: 600; gap: 6px; line-height: 28px; max-width: none; min-width: 0; padding: 0 14px; white-space: nowrap; }
+.appTabOverflowTrigger { align-items: center; background: transparent; border: 0; border-radius: 4px; color: var(--muted); cursor: pointer; display: inline-flex; flex: 0 0 auto; font: inherit; height: 28px; justify-content: center; min-width: 0; padding: 0 8px; pointer-events: auto; }
+.appTabOverflowTrigger:hover, .appTabOverflowTrigger[data-state="open"] { background: var(--solid); color: var(--fg); }
+.appTabOverflowTriggerActive { background: var(--solid); box-shadow: 0 1px 2px var(--shadow); color: var(--fg); }
+.appTabMenu { background: var(--solid); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 8px 20px var(--shadow-strong); min-width: 160px; padding: 4px; z-index: 40; }
+.appTabMenuItem { align-items: center; border-radius: 4px; color: var(--fg); cursor: pointer; display: flex; font-size: 13px; font-weight: 600; gap: 10px; justify-content: space-between; outline: none; padding: 8px 10px; }
+.appTabMenuItem[data-highlighted] { background: var(--info-bg); color: var(--info); }
+.appTabMenuItemLabel { align-items: center; display: inline-flex; gap: 8px; min-width: 0; }
+.appTabMenuItemLabel img { height: 15px; width: 15px; }
 .appTab img { height: 15px; width: 15px; }
 .appTab[data-state="active"] { background: var(--solid); box-shadow: 0 1px 2px var(--shadow); color: var(--fg); }
 .appTabIcon { display: inline-grid; flex: 0 0 auto; height: 15px; place-items: center; width: 15px; }
@@ -40,7 +50,7 @@
   opacity: 1;
   pointer-events: auto;
 }
-.contextToolbar { align-items: center; display: flex; flex: 1 1 0px; gap: 8px; justify-content: flex-end; min-height: 34px; min-width: max-content; }
+.contextToolbar { align-items: center; display: flex; flex: 0 0 auto; gap: 8px; justify-content: flex-end; min-height: 34px; min-width: max-content; }
 .iconButton { align-items: center; background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--muted); display: inline-flex; height: 34px; justify-content: center; padding: 0; width: 34px; }
 .iconButton:hover { background: var(--hover); border-color: var(--border-strong); color: var(--fg); }
 .iconButton[aria-disabled="true"] { opacity: .48; pointer-events: none; }

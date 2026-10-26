@@ -26,6 +26,7 @@ pub(crate) enum ApplicationKind {
     Cursor,
     Codex,
     Grok,
+    Workbuddy,
 }
 
 impl ApplicationKind {
@@ -34,6 +35,7 @@ impl ApplicationKind {
             Self::Cursor => "Cursor",
             Self::Codex => "Codex",
             Self::Grok => "Grok",
+            Self::Workbuddy => "WorkBuddy",
         }
     }
 }

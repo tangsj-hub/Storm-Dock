@@ -3,7 +3,7 @@ import { APPLICATION_KINDS, homeKindFromUsageQuery, usagePath } from "./types";
 
 describe("application kinds", () => {
   it("keeps app switcher limited to account hosts", () => {
-    expect(APPLICATION_KINDS).toEqual(["cursor", "codex", "grok"]);
+    expect(APPLICATION_KINDS).toEqual(["cursor", "codex", "grok", "workbuddy"]);
   });
 });
 
@@ -13,8 +13,10 @@ describe("usage navigation", () => {
     expect(usagePath("acc-1", "grok", "grokBot")).toBe(
       "/usage.html?accountId=acc-1&kind=grok&from=grokBot",
     );
+    expect(usagePath("acc-1", "workbuddy")).toBe("/usage.html?accountId=acc-1&kind=workbuddy");
     expect(homeKindFromUsageQuery("?accountId=acc-1&kind=cursor")).toBe("cursor");
     expect(homeKindFromUsageQuery("?accountId=acc-1&kind=grok")).toBe("grok");
+    expect(homeKindFromUsageQuery("?accountId=acc-1&kind=workbuddy")).toBe("workbuddy");
     expect(homeKindFromUsageQuery("?accountId=acc-1&kind=cursor&from=grokBot")).toBe("grokBot");
     expect(homeKindFromUsageQuery("?accountId=acc-1&kind=grok&from=grokBot")).toBe("grokBot");
   });

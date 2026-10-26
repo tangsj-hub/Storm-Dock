@@ -147,6 +147,7 @@ html[data-app] body::before { background: url("../assets/cursor.svg") center / m
 html[data-app="codex"] body::before { background-image: url("../assets/codex.svg"); }
 html[data-app="grok"] body::before { background-image: url("../assets/tools/grok.svg"); }
 html[data-app="grokBot"] body::before { background-image: url("../assets/tools/grok-bot.png"); }
+html[data-app="workbuddy"] body::before { background-image: url("../assets/workbuddy.png"); }
 html[data-theme="dark"][data-app] body::before { filter: invert(1); }
 html[data-theme="dark"] img.ink { filter: invert(1); }
 html:not([data-app]) body::before { content: none; }

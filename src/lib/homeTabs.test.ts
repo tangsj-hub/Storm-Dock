@@ -38,6 +38,7 @@ describe("normalizeHomeTabs", () => {
       { id: "grok", visible: false },
       { id: "cursor", visible: true },
       { id: "codex", visible: true },
+      { id: "workbuddy", visible: true },
       { id: "grokBot", visible: true },
     ]);
   });
@@ -49,6 +50,7 @@ describe("normalizeHomeTabs", () => {
       { id: "cursor", visible: true },
       { id: "codex", visible: false },
       { id: "grok", visible: false },
+      { id: "workbuddy", visible: false },
       { id: "grokBot", visible: false },
     ]);
   });
@@ -59,6 +61,7 @@ describe("normalizeHomeTabs", () => {
       { id: "cursor", visible: true },
       { id: "codex", visible: true },
       { id: "grok", visible: true },
+      { id: "workbuddy", visible: true },
     ]);
   });
 });
@@ -74,9 +77,10 @@ describe("home tab storage and view", () => {
       { id: "codex", visible: true },
       { id: "cursor", visible: false },
       { id: "grok", visible: true },
+      { id: "workbuddy", visible: true },
       { id: "grokBot", visible: true },
     ]);
-    expect(visibleHomeTabs()).toEqual(["codex", "grok", "grokBot"]);
+    expect(visibleHomeTabs()).toEqual(["codex", "grok", "workbuddy", "grokBot"]);
   });
 
   it("falls back when the requested tab is hidden", () => {

@@ -33,6 +33,7 @@ import cursorIcon from "../../assets/cursor.svg";
 import codexIcon from "../../assets/codex.svg";
 import grokIcon from "../../assets/tools/grok.svg";
 import grokBotIcon from "../../assets/tools/grok-bot.png";
+import workbuddyIcon from "../../assets/workbuddy.png";
 import { checkForAppUpdate, installUpdateAndRestart } from "../../lib/updater";
 import { LocalEnvPanel } from "./LocalEnvPanel";
 import "../../styles/global.css";
@@ -53,13 +54,15 @@ const sqlFilters = [{ name: "SQL", extensions: ["sql"] }];
 const aboutApps = [
   { icon: cursorIcon, nameKey: "cursor", detailKey: "aboutAppCursor" },
   { icon: codexIcon, nameKey: "codex", detailKey: "aboutAppCodex" },
-  { icon: grokIcon, nameKey: "grok", detailKey: "aboutAppGrok" }
+  { icon: grokIcon, nameKey: "grok", detailKey: "aboutAppGrok" },
+  { icon: workbuddyIcon, nameKey: "workbuddy", detailKey: "aboutAppWorkbuddy" }
 ] as const;
 
 const HOME_TAB_ICONS: Record<HomeTabId, string> = {
   cursor: cursorIcon,
   codex: codexIcon,
   grok: grokIcon,
+  workbuddy: workbuddyIcon,
   grokBot: grokBotIcon
 };
 

@@ -31,6 +31,7 @@ unsafe extern "C" {
         buffersize: libc::c_int,
     ) -> libc::c_int;
     fn proc_name(pid: libc::c_int, buffer: *mut libc::c_void, buffersize: u32) -> libc::c_int;
+    fn proc_pidpath(pid: libc::c_int, buffer: *mut libc::c_void, buffersize: u32) -> libc::c_int;
 }
 
 pub(super) fn resolve(app: DesktopApp) -> Result<PathBuf> {
@@ -72,7 +73,11 @@ pub(super) fn launch(app: DesktopApp) -> Result<()> {
 }
 
 pub(super) fn is_running(app: DesktopApp) -> bool {
-    process_named(app.name())
+    match app {
+        // WorkBuddy's main process is often named Electron; match the app bundle path.
+        DesktopApp::Workbuddy => process_path_contains("WorkBuddy.app"),
+        _ => process_named(app.name()),
+    }
 }
 
 fn each_named_pid(name: &str, mut visit: impl FnMut(i32)) {
@@ -121,12 +126,65 @@ fn signal_named(name: &str, sig: i32) -> bool {
     signaled
 }
 
+fn signal_app(app: DesktopApp, sig: i32) -> bool {
+    match app {
+        DesktopApp::Workbuddy => signal_path_contains("WorkBuddy.app", sig),
+        _ => signal_named(app.name(), sig),
+    }
+}
+
+fn each_path_pid(needle: &str, mut visit: impl FnMut(i32)) {
+    let needed = unsafe { proc_listpids(PROC_ALL_PIDS, 0, std::ptr::null_mut(), 0) };
+    if needed <= 0 {
+        return;
+    }
+    let mut pids = vec![0i32; (needed as usize / std::mem::size_of::<i32>()) + 32];
+    let filled = unsafe {
+        proc_listpids(
+            PROC_ALL_PIDS,
+            0,
+            pids.as_mut_ptr().cast(),
+            (pids.len() * std::mem::size_of::<i32>()) as i32,
+        )
+    };
+    if filled <= 0 {
+        return;
+    }
+    let count = (filled as usize) / std::mem::size_of::<i32>();
+    let mut buf = [0u8; 4096];
+    for pid in pids.iter().take(count).copied().filter(|pid| *pid > 0) {
+        let len = unsafe { proc_pidpath(pid, buf.as_mut_ptr().cast(), buf.len() as u32) };
+        if len <= 0 {
+            continue;
+        }
+        if std::str::from_utf8(&buf[..len as usize]).is_ok_and(|path| path.contains(needle)) {
+            visit(pid);
+        }
+    }
+}
+
+fn process_path_contains(needle: &str) -> bool {
+    let mut found = false;
+    each_path_pid(needle, |_| found = true);
+    found
+}
+
+fn signal_path_contains(needle: &str, sig: i32) -> bool {
+    let mut signaled = false;
+    each_path_pid(needle, |pid| {
+        if unsafe { libc::kill(pid, sig) } == 0 {
+            signaled = true;
+        }
+    });
+    signaled
+}
+
 pub(super) fn terminate(app: DesktopApp) -> Result<()> {
     if !is_running(app) {
         return Ok(());
     }
     // In-process signal instead of `pkill`, so any system UI stays on Storm Dock.
-    if signal_named(app.name(), libc::SIGTERM) {
+    if signal_app(app, libc::SIGTERM) {
         return Ok(());
     }
     Err(terminate_failed(app))
@@ -143,7 +201,7 @@ pub(super) fn quit_and_wait(app: DesktopApp) -> Result<()> {
         return Ok(());
     }
     // SIGTERM in-process — no osascript Automation prompt naming a helper tool.
-    if !signal_named(app.name(), libc::SIGTERM) {
+    if !signal_app(app, libc::SIGTERM) {
         return Err(quit_failed(app));
     }
     wait_while_running(app, QUIT_WAIT, || quit_timeout(app))

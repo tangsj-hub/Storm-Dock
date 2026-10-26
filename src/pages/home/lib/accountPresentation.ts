@@ -80,6 +80,12 @@ export function subscriptionExpiryLabel(days: number | undefined, t: Translate) 
   return t("subscriptionExpired");
 }
 
+export function workbuddyCreditsRemaining(account: Account): number | undefined {
+  const usage = account.usage;
+  if (!usage || usage.kind !== "credits" || usage.limit == null) return undefined;
+  return Math.max(0, Math.round(usage.limit - usage.used));
+}
+
 export function subscriptionLabel(account: Account, t: Translate, nowMs?: number) {
   const plan = account.subscription.plan;
   if (!plan) {
@@ -92,6 +98,25 @@ export function subscriptionLabel(account: Account, t: Translate, nowMs?: number
   }
   const normalizedPlan = plan.toLowerCase();
   const name = subscriptionPlanName(plan, t);
+  // WorkBuddy trial/paid packages are credit pools. Without a real billing end date,
+  // never fall through to daysRemaining/-1 (that showed "体验版 · 已过期").
+  if (account.application === "workbuddy") {
+    const hasCalendarEnd = !!(account.subscription.billingCycleEnd || account.subscription.expiresAt != null);
+    if (!hasCalendarEnd) {
+      const remaining = workbuddyCreditsRemaining(account);
+      const credits =
+        remaining === undefined
+          ? t("subscriptionUnknownExpiry")
+          : t("usageCreditsRemaining", { amount: remaining });
+      return {
+        name,
+        expiry: credits,
+        expiryFull: credits,
+        expiryTitle: remaining === undefined ? undefined : credits,
+        plan: normalizedPlan,
+      };
+    }
+  }
   const dated = subscriptionDatedLabel(account, t, nowMs);
   return {
     name,
@@ -108,7 +133,15 @@ export function usageLabel(account: Account, t: Translate, nowMs?: number) {
   let label: string | undefined;
   if (account.usage?.kind === "currency")
     label = t("usageSpent", { amount: `$${(account.usage.used / 100).toFixed(2)}` });
-  else if (account.usage?.kind === "percent")
+  else if (account.usage?.kind === "credits") {
+    // WorkBuddy list already puts remaining credits on the plan badge.
+    if (account.application === "workbuddy") label = undefined;
+    else {
+      const limit = account.usage.limit ?? 0;
+      const remaining = Math.max(0, Math.round(limit - account.usage.used));
+      label = t("usageCreditsRemaining", { amount: remaining });
+    }
+  } else if (account.usage?.kind === "percent")
     label = t("usagePercent", { percent: resetPassed ? 0 : Math.round(account.usage.percent) });
   else if (account.subscription.plan?.toLowerCase() === "free")
     label = t("usageFree");

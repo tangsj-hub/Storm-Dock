@@ -175,6 +175,39 @@ describe("account presentation", () => {
   });
 });
 
+
+describe("workbuddy subscription badge", () => {
+  it("shows remaining credits instead of expired when there is no billing end", () => {
+    const result = subscriptionLabel(
+      {
+        ...account,
+        application: "workbuddy",
+        daysRemaining: -1,
+        subscription: { plan: "体验版", checkedAt: 1 },
+        usage: { kind: "credits", used: 0, limit: 2000, percent: 0 },
+      },
+      t,
+    );
+    expect(result.name).toContain("体验版");
+    expect(result.expiry).toContain("usageCreditsRemaining");
+    expect(result.expiry).toContain("2000");
+    expect(result.expiry).not.toContain("subscriptionExpired");
+  });
+
+  it("does not treat missing expiry as expired without credits usage yet", () => {
+    const result = subscriptionLabel(
+      {
+        ...account,
+        application: "workbuddy",
+        daysRemaining: -1,
+        subscription: { plan: "体验版" },
+      },
+      t,
+    );
+    expect(result.expiry).toBe("subscriptionUnknownExpiry:");
+  });
+});
+
 describe("subscriptionLabel calendar days (all providers)", () => {
   const subscriptionProviders: Array<Account["application"]> = ["cursor", "grok", undefined];
 

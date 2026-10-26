@@ -13,6 +13,7 @@ pub(crate) enum DesktopApp {
     Cursor,
     ChatGPT,
     GrokBot,
+    Workbuddy,
 }
 
 impl DesktopApp {
@@ -21,6 +22,7 @@ impl DesktopApp {
             Self::Cursor => "Cursor",
             Self::ChatGPT => "ChatGPT",
             Self::GrokBot => "Grok Bot",
+            Self::Workbuddy => "WorkBuddy",
         }
     }
 
@@ -28,6 +30,7 @@ impl DesktopApp {
         match kind {
             ApplicationKind::Cursor => Some(Self::Cursor),
             ApplicationKind::Codex => Some(Self::ChatGPT),
+            ApplicationKind::Workbuddy => Some(Self::Workbuddy),
             ApplicationKind::Grok => None,
         }
     }
@@ -37,6 +40,7 @@ impl DesktopApp {
             Self::Cursor => Some("com.todesktop.230313mzl4w4u92"),
             Self::ChatGPT => Some("com.openai.chat"),
             Self::GrokBot => None,
+            Self::Workbuddy => Some("com.tencent.workbuddy.mac"),
         }
     }
 
@@ -46,6 +50,7 @@ impl DesktopApp {
             Self::Cursor => "Cursor.exe",
             Self::ChatGPT => "ChatGPT.exe",
             Self::GrokBot => "Grok Bot.exe",
+            Self::Workbuddy => "WorkBuddy.exe",
         }
     }
 
@@ -55,6 +60,7 @@ impl DesktopApp {
             Self::Cursor => &["Cursor", "cursor"],
             Self::ChatGPT => &["ChatGPT"],
             Self::GrokBot => &["Grok Bot"],
+            Self::Workbuddy => &["WorkBuddy"],
         }
     }
 
@@ -64,6 +70,7 @@ impl DesktopApp {
             Self::Cursor => "Cursor.lnk",
             Self::ChatGPT => "ChatGPT.lnk",
             Self::GrokBot => "Grok Bot.lnk",
+            Self::Workbuddy => "WorkBuddy.lnk",
         }
     }
 }
@@ -247,6 +254,10 @@ mod tests {
             Some(DesktopApp::ChatGPT)
         );
         assert_eq!(DesktopApp::after_switch(ApplicationKind::Grok), None);
+        assert_eq!(
+            DesktopApp::after_switch(ApplicationKind::Workbuddy),
+            Some(DesktopApp::Workbuddy)
+        );
     }
 
     #[test]

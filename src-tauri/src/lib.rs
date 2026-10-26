@@ -26,6 +26,7 @@ mod tools;
 mod tray;
 mod updater;
 mod window_chrome;
+mod workbuddy;
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU8, Ordering},
@@ -353,11 +354,14 @@ pub fn run() {
             commands::refresh_all_cursor_accounts,
             commands::refresh_grok_bot_accounts,
             commands::refresh_all_grok_accounts,
+            commands::refresh_all_workbuddy_accounts,
             commands::refresh_all_codex_accounts,
             commands::get_cursor_usage,
             commands::get_cursor_cycle_tokens,
             commands::get_grok_usage,
             commands::get_saved_grok_usage,
+            commands::get_workbuddy_usage,
+            commands::get_saved_workbuddy_usage,
             commands::get_saved_cursor_usage,
             commands::reorder_accounts,
             commands::import_current_account,
@@ -373,6 +377,7 @@ pub fn run() {
             commands::launch_cursor,
             commands::launch_chatgpt,
             commands::launch_grok_bot,
+            commands::launch_workbuddy,
             commands::force_restart,
             commands::get_grok_bot_export_record,
             commands::prepare_launch_grok_bot,

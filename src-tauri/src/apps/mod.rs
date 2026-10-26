@@ -1,10 +1,12 @@
 mod codex;
 mod cursor;
 mod grok;
+mod workbuddy;
 
 pub(crate) use codex::CodexAdapter;
 pub(crate) use cursor::CursorAdapter;
 pub(crate) use grok::GrokAdapter;
+pub(crate) use workbuddy::WorkbuddyAdapter;
 
 use crate::error::Result;
 use crate::models::{ApplicationKind, ApplicationStatus, Session};

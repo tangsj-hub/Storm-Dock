@@ -36,7 +36,7 @@ function usageUsedCopy(
   if (value.kind === "currency" && hasLimit(value)) {
     return t("usageUsedWithLimit", { label, amount, percent: Math.round(Math.max(value.percent, 0)) });
   }
-  if (value.kind === "currency" || value.kind === "percent") {
+  if (value.kind === "currency" || value.kind === "percent" || value.kind === "credits") {
     return t("usageUsed", { label, amount });
   }
   return `${label} ${amount}`;
@@ -117,16 +117,19 @@ function UsagePage() {
   const dayKey = useLocalCalendarDay();
   const search = new URLSearchParams(window.location.search);
   const accountId = search.get("accountId") ?? "";
-  const usageKind = search.get("kind") === "grok" ? "grok" : "cursor";
+  const rawKind = search.get("kind");
+  const usageKind = rawKind === "grok" || rawKind === "workbuddy" ? rawKind : "cursor";
   const returnHome = homeKindFromUsageQuery();
   const isGrok = usageKind === "grok";
-  const usageTitle = t(isGrok ? "usageTitleGrok" : "usageTitle");
-  const usageLoadingKey = isGrok ? "usageLoadingGrok" : "usageLoading";
-  const primaryLabel = t(isGrok ? "usagePrimaryGrok" : "usagePrimary");
+  const isWorkbuddy = usageKind === "workbuddy";
+  const isPoolUsage = isGrok || isWorkbuddy;
+  const usageTitle = t(isWorkbuddy ? "usageTitleWorkbuddy" : isGrok ? "usageTitleGrok" : "usageTitle");
+  const usageLoadingKey = isWorkbuddy ? "usageLoadingWorkbuddy" : isGrok ? "usageLoadingGrok" : "usageLoading";
+  const primaryLabel = t(isWorkbuddy ? "usagePrimaryWorkbuddy" : isGrok ? "usagePrimaryGrok" : "usagePrimary");
   const onDemandLabel = t(isGrok ? "usageOnDemandGrok" : "usageOnDemand");
-  const weeklyTitle = t(isGrok ? "usageWeeklyGrok" : "usageWeekly");
-  const modelsTitle = t(isGrok ? "usageModelsGrok" : "usageModels");
-  const noModelsCopy = t(isGrok ? "usageNoModelsGrok" : "usageNoModels");
+  const weeklyTitle = t(isWorkbuddy ? "usageWeeklyWorkbuddy" : isGrok ? "usageWeeklyGrok" : "usageWeekly");
+  const modelsTitle = t(isWorkbuddy ? "usageModelsWorkbuddy" : isGrok ? "usageModelsGrok" : "usageModels");
+  const noModelsCopy = t(isWorkbuddy ? "usageNoModelsWorkbuddy" : isGrok ? "usageNoModelsGrok" : "usageNoModels");
   const [data, setData] = useState<CursorUsageDetails>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -149,7 +152,14 @@ function UsagePage() {
     setError(undefined);
     setAccount(undefined);
     if (!accountId) return () => { cancelled = true; };
-    void invoke<CursorUsageDetails | null>(usageKind === "grok" ? "get_saved_grok_usage" : "get_saved_cursor_usage", { id: accountId })
+    void invoke<CursorUsageDetails | null>(
+      usageKind === "grok"
+        ? "get_saved_grok_usage"
+        : usageKind === "workbuddy"
+          ? "get_saved_workbuddy_usage"
+          : "get_saved_cursor_usage",
+      { id: accountId },
+    )
       .then((usage) => {
         if (!cancelled && usage?.accountId === accountId) setData(usage);
       })
@@ -173,7 +183,14 @@ function UsagePage() {
     setNoticeStatus("loading");
     setNotice(t(usageLoadingKey));
     try {
-      const usage = await invoke<CursorUsageDetails>(usageKind === "grok" ? "get_grok_usage" : "get_cursor_usage", { id: accountId });
+      const usage = await invoke<CursorUsageDetails>(
+        usageKind === "grok"
+          ? "get_grok_usage"
+          : usageKind === "workbuddy"
+            ? "get_workbuddy_usage"
+            : "get_cursor_usage",
+        { id: accountId },
+      );
       if (usage.accountId !== accountId) throw new Error(t("usageAccountMismatch"));
       setData(usage);
       if (usage.breakdown && !(usage.breakdown.tokensComplete && usage.breakdown.tokensCachedAt)) void loadCycleTokens(accountId);
@@ -281,18 +298,18 @@ function UsagePage() {
         {accountStatus === "missing" && <span className={styles.invalidBadge}>{t("credentialMissing", { defaultValue: "凭证缺失" })}</span>}
       </div>
       {accountStatus === "blocked" && <p className={styles.blockedBanner}>{t("usageAccountBlocked", { defaultValue: "此账号已被封禁，无法刷新用量。请更换账号或联系服务方。" })}</p>}
-      {!isGrok && data.breakdown && <CursorBreakdownView b={data.breakdown} daysLeft={resetLabel?.days} membership={membership} grokBot={data.grokBot} grokBotResetAt={data.grokBotResetAt} />}
+      {!isPoolUsage && data.breakdown && <CursorBreakdownView b={data.breakdown} daysLeft={resetLabel?.days} membership={membership} grokBot={data.grokBot} grokBotResetAt={data.grokBotResetAt} />}
       <div className={styles.usageLines}>
-        {(isGrok || !data.breakdown) && <><p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(primaryLabel, data.primary, t, isGrok ? productParts(data.products) : undefined)}{isGrok && data.resetAt ? <span className={styles.poolReset} title={resetLabel?.absolute}>{t("usageResetParen", { reset: resetFull(data.resetAt, t) })}</span> : null}</p>
+        {(isPoolUsage || !data.breakdown) && <><p className={isOverLimit(data.primary) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(primaryLabel, data.primary, t, isPoolUsage ? productParts(data.products) : undefined)}{isGrok && data.resetAt ? <span className={styles.poolReset} title={resetLabel?.absolute}>{t("usageResetParen", { reset: resetFull(data.resetAt, t) })}</span> : null}</p>
         {data.onDemand && <p className={isOverLimit(data.onDemand) ? `${styles.usageLine} ${styles.overLimit}` : styles.usageLine}>{usageUsedCopy(onDemandLabel, data.onDemand, t)}</p>}</>}
-        {data.grokBot && (isGrok || !data.breakdown) && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset} title={resetDatedLabel(data.grokBotResetAt, t).absolute}> · {resetFull(data.grokBotResetAt, t)}</span>}</p>}
+        {data.grokBot && (isPoolUsage || !data.breakdown) && <p className={styles.usageLine}>{usageUsedCopy(t("usageGrokBot"), data.grokBot, t)}{data.grokBotResetAt && <span className={styles.poolReset} title={resetDatedLabel(data.grokBotResetAt, t).absolute}> · {resetFull(data.grokBotResetAt, t)}</span>}</p>}
       </div>
       <div className={styles.charts}>
         <section><h2>{weeklyTitle}</h2>{data.weeklyAvailable ? <WeeklyChart days={data.weekly} events={data.events ?? []} /> : <p className={styles.muted}>{data.weeklyError ?? t("usageWeeklyUnavailable")}</p>}</section>
         <section><h2>{modelsTitle}</h2>{(data.events ?? []).some((event) => spendCents(event) !== undefined) ? <ModelBars events={data.events ?? []} models={data.models} /> : <p className={styles.muted}>{noModelsCopy}</p>}</section>
       </div>
       <EventLedger
-        cycleTokens={!isGrok && data.breakdown ? {
+        cycleTokens={!isPoolUsage && data.breakdown ? {
           loading: tokensLoading,
           pulling: pullingFull,
           complete: data.breakdown.tokensComplete,

@@ -31,6 +31,14 @@ export function metric(value: CursorUsageDetails["primary"] | NonNullable<Cursor
     return hasLimit(value) && limit != null ? `${money(value.used)} / ${money(limit)}` : money(value.used);
   }
   if (value.kind === "percent") return `${Math.round(value.percent)}%`;
+  if (value.kind === "credits") {
+    const limit = value.limit;
+    if (hasLimit(value) && limit != null) {
+      const remaining = Math.max(0, Math.round(limit - value.used));
+      return `${number.format(remaining)} / ${number.format(Math.round(limit))}`;
+    }
+    return number.format(Math.round(value.used));
+  }
   return number.format(value.used);
 }
 

@@ -35,11 +35,12 @@ impl ApplicationAdapter for WorkbuddyAdapter {
     }
 
     fn detect(&self) -> ApplicationStatus {
-        let available = self
-            .auth_path
-            .as_ref()
-            .and_then(|path| auth::read_profile(path).ok())
-            .is_some_and(|profile| session::has_login_material(&profile));
+        let available = self.auth_path.as_ref().is_some_and(|path| {
+            !auth::is_logout_marked(path)
+                && auth::read_profile(path)
+                    .ok()
+                    .is_some_and(|profile| session::has_login_material(&profile))
+        });
         ApplicationStatus {
             kind: self.kind(),
             label: self.kind().display_name().into(),
@@ -51,7 +52,11 @@ impl ApplicationAdapter for WorkbuddyAdapter {
     fn import_current(&self) -> Result<Session> {
         // Save desktop auth as-is (may still be $wbEncrypted). Decrypt runs in a
         // background job after import so the UI never blocks on Electron.
-        let profile = auth::read_profile(self.auth_path()?)?;
+        let path = self.auth_path()?;
+        if auth::is_logout_marked(path) {
+            return Err(AppError::WorkbuddyNotDetected);
+        }
+        let profile = auth::read_profile(path)?;
         if !session::has_login_material(&profile) {
             return Err(AppError::WorkbuddyNotDetected);
         }
@@ -71,10 +76,9 @@ impl ApplicationAdapter for WorkbuddyAdapter {
                 && session::access_token_plaintext(&current)
                     == session::access_token_plaintext(&profile)
             {
-                let marker = auth::logout_marker_path(path);
-                if marker.exists() {
-                    let _ = std::fs::remove_file(marker);
-                }
+                // Same credentials already on disk — still clear the logout
+                // marker so WorkBuddy does not stay signed out after a local logout.
+                auth::clear_logout_marker(path);
                 return Ok(());
             }
         }
@@ -114,10 +118,45 @@ mod tests {
         adapter.apply(&session).unwrap();
         assert!(path.exists(), "workbuddy-desktop.info must exist after apply");
         assert_eq!(path.file_name().and_then(|n| n.to_str()), Some(auth::AUTH_FILE_NAME));
-        let marker = auth::logout_marker_path(&path);
-        assert!(!marker.exists());
+        assert!(!auth::is_logout_marked(&path));
         let live = adapter.import_current().unwrap();
         assert!(session::matches_live(&session, &live));
+        let parent = path.parent().unwrap().to_path_buf();
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn apply_clears_logged_out_marker_for_same_account() {
+        let (adapter, path) = test_adapter();
+        let session = session::from_import(
+            r#"{"account":{"uid":"u-same","nickname":"Sam"},"auth":{"accessToken":"tok-same","refreshToken":"ref-same"}}"#,
+        )
+        .unwrap();
+        adapter.apply(&session).unwrap();
+        let marker = auth::logout_marker_path(&path);
+        fs::write(&marker, "logged-out-id").unwrap();
+        assert!(auth::is_logout_marked(&path));
+        adapter.apply(&session).unwrap();
+        assert!(!marker.exists(), "apply must clear workbuddy-desktop.info.logged-out");
+        assert!(!auth::is_logout_marked(&path));
+        let parent = path.parent().unwrap().to_path_buf();
+        let _ = fs::remove_file(&path);
+        let _ = fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn detect_respects_logged_out_marker() {
+        let (adapter, path) = test_adapter();
+        let session = session::from_import(
+            r#"{"account":{"uid":"u-out","nickname":"Out"},"auth":{"accessToken":"tok-out"}}"#,
+        )
+        .unwrap();
+        adapter.apply(&session).unwrap();
+        assert!(adapter.detect().available);
+        fs::write(auth::logout_marker_path(&path), "out").unwrap();
+        assert!(!adapter.detect().available);
+        assert!(adapter.import_current().is_err());
         let parent = path.parent().unwrap().to_path_buf();
         let _ = fs::remove_file(&path);
         let _ = fs::remove_dir_all(parent);

@@ -6,6 +6,24 @@ Storm Dock 的重要变更记录在此。
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-10-26
+
+### Added
+
+- 新增 WorkBuddy 应用：账号导入 / 切换启动、积分额度与分桶、周期重置与奖励到期、近 7 日用量分析。
+- 新增应用接入范式文档：`docs/add-application.md`。
+
+### Changed
+
+- 设置「关于」与 README 改为推广向介绍，补齐 WorkBuddy / Grok Bot。
+- WorkBuddy Windows 鉴权路径同时探测 Roaming 与 Local。
+- 深色主题下 WorkBuddy、Grok Bot 彩色图标/水印不再反色。
+
+### Fixed
+
+- WorkBuddy 切换账号后仍显示未登录：正确清理 `workbuddy-desktop.info.logged-out`。
+- WorkBuddy 用量展示：已使用/总额度、积分格式化、列表剩余积分徽章等。
+
 ## [1.7.1] - 2026-10-22
 
 ### Fixed

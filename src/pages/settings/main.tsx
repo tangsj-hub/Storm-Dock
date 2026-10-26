@@ -55,7 +55,8 @@ const aboutApps = [
   { icon: cursorIcon, nameKey: "cursor", detailKey: "aboutAppCursor" },
   { icon: codexIcon, nameKey: "codex", detailKey: "aboutAppCodex" },
   { icon: grokIcon, nameKey: "grok", detailKey: "aboutAppGrok" },
-  { icon: workbuddyIcon, nameKey: "workbuddy", detailKey: "aboutAppWorkbuddy" }
+  { icon: workbuddyIcon, nameKey: "workbuddy", detailKey: "aboutAppWorkbuddy" },
+  { icon: grokBotIcon, nameKey: "grokBot", detailKey: "aboutAppGrokBot" }
 ] as const;
 
 const HOME_TAB_ICONS: Record<HomeTabId, string> = {
